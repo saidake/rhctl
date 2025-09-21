@@ -3,6 +3,8 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
 
+use log::debug;
+
 #[derive(Clone)]
 pub struct SshSession {
     pub host: String,
@@ -14,12 +16,15 @@ pub struct SshSession {
 
 impl SshSession {
     pub fn new(config: &super::config::ConfigWrapper) -> Result<Self, String> {
-        let tcp = TcpStream::connect(format!("{}:{}", config.host, config.port)).map_err(|e| e.to_string())?;
-        let mut sess = Session::new().unwrap();
+        debug!("Connecting to {}:{} as {}", config.host, config.port, config.user);
+        let tcp = TcpStream::connect(format!("{}:{}", config.host, config.port))
+            .map_err(|e| format!("Cannot connect to {} on port {}: {}", config.host, config.port, e))?;
+        let mut sess = Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
         sess.set_tcp_stream(tcp);
-        sess.handshake().map_err(|e| e.to_string())?;
-        sess.userauth_password(&config.user, config.password.as_ref().unwrap()).map_err(|e| e.to_string())?;
-
+        sess.handshake().map_err(|e| format!("SSH handshake failed: {}", e))?;
+        sess.userauth_password(&config.user, config.password.as_ref().unwrap())
+            .map_err(|e| format!("Authentication failed for user '{}': {}", config.user, e))?;
+        debug!("SSH session established successfully");
         Ok(Self {
             host: config.host.clone(),
             port: config.port,
@@ -30,49 +35,80 @@ impl SshSession {
     }
 
     pub fn execute(&self, cmd: &str, use_sudo: bool) -> Result<String, String> {
-        let mut channel = self.session.channel_session().map_err(|e| e.to_string())?;
+        debug!("Executing command: {} (sudo: {})", cmd, use_sudo);
+        let mut channel = self.session.channel_session().map_err(|e| format!("Failed to open SSH channel: {}", e))?;
         let full_cmd = if use_sudo {
             format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, cmd)
         } else {
             cmd.to_string()
         };
-        channel.exec(&full_cmd).map_err(|e| e.to_string())?;
+        channel.exec(&full_cmd).map_err(|e| format!("Failed to execute command '{}': {}", cmd, e))?;
         let mut output = String::new();
-        channel.read_to_string(&mut output).map_err(|e| e.to_string())?;
-        channel.wait_close().map_err(|e| e.to_string())?;
-        if channel.exit_status().map_err(|e| e.to_string())? != 0 {
-            return Err(format!("Command failed: {}", output));
+        channel.read_to_string(&mut output).map_err(|e| format!("Failed to read command output: {}", e))?;
+        channel.wait_close().map_err(|e| format!("Failed to close channel: {}", e))?;
+        let exit_status = channel.exit_status().map_err(|e| format!("Failed to get exit status: {}", e))?;
+        debug!("Command exit status: {}", exit_status);
+        if exit_status != 0 {
+            return Err(format!("Command '{}' failed with exit status {}: {}", cmd, exit_status, output));
         }
         Ok(output)
     }
 
     pub fn file_exists(&self, path: &str) -> Result<bool, String> {
+        debug!("Checking if '{}' exists", path);
         let output = self.execute(&format!("test -e '{}'; echo $?", path), false)?;
-        Ok(output.trim() == "0")
+        let exists = output.trim() == "0";
+        debug!("File '{}' exists: {}", path, exists);
+        Ok(exists)
+    }
+
+    pub fn check_directory_writable(&self, path: &str, use_sudo: bool) -> Result<(), String> {
+        debug!("Checking if '{}' is writable", path);
+        let cmd = format!("test -d '{}' && test -w '{}'; echo $?", path, path);
+        let output = self.execute(&cmd, use_sudo)?;
+        if output.trim() != "0" {
+            return Err(format!("Directory '{}' is not writable or does not exist", path));
+        }
+        Ok(())
     }
 
     pub fn scp_upload(&self, local_path: &Path, remote_path: &str, use_sudo: bool) -> Result<(), String> {
+        debug!("Starting SCP upload from '{}' to '{}'", local_path.display(), remote_path);
+        if !local_path.exists() {
+            return Err(format!("Local file '{}' does not exist", local_path.display()));
+        }
         if use_sudo {
             let temp_path = super::utils::generate_temp_path("upload");
+            debug!("Uploading to temporary path '{}' with sudo", temp_path);
             self.do_scp_upload(local_path, &temp_path)?;
             self.execute(&format!("mv '{}' '{}'", temp_path, remote_path), true)?;
         } else {
             self.do_scp_upload(local_path, remote_path)?;
         }
+        debug!("SCP upload to '{}' completed", remote_path);
         Ok(())
     }
 
     fn do_scp_upload(&self, local_path: &Path, remote_path: &str) -> Result<(), String> {
-        let mut file = std::fs::File::open(local_path).map_err(|e| e.to_string())?;
-        let stat = file.metadata().map_err(|e| e.to_string())?;
-        let mut channel = self.session.scp_send(Path::new(remote_path), 0o644, stat.len(), None).map_err(|e| e.to_string())?;
+        let mut file = std::fs::File::open(local_path)
+            .map_err(|e| format!("Failed to open local file '{}': {}", local_path.display(), e))?;
+        let stat = file.metadata().map_err(|e| format!("Failed to get metadata for '{}': {}", local_path.display(), e))?;
+        debug!("File size: {} bytes, permissions: 0644", stat.len());
+        let mut channel = self.session.scp_send(Path::new(remote_path), 0o644, stat.len(), None)
+            .map_err(|e| format!("Failed to initiate SCP upload to '{}': {}", remote_path, e))?;
         let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
-        channel.write_all(&buffer).map_err(|e| e.to_string())?;
-        channel.send_eof().map_err(|e| e.to_string())?;
-        channel.wait_eof().map_err(|e| e.to_string())?;
-        channel.close().map_err(|e| e.to_string())?;
-        channel.wait_close().map_err(|e| e.to_string())?;
+        file.read_to_end(&mut buffer)
+            .map_err(|e| format!("Failed to read file '{}': {}", local_path.display(), e))?;
+        channel.write_all(&buffer)
+            .map_err(|e| format!("Failed to write to SCP channel for '{}': {}", remote_path, e))?;
+        channel.send_eof()
+            .map_err(|e| format!("Failed to send EOF for SCP upload to '{}': {}", remote_path, e))?;
+        channel.wait_eof()
+            .map_err(|e| format!("Failed to wait for EOF for SCP upload to '{}': {}", remote_path, e))?;
+        channel.close()
+            .map_err(|e| format!("Failed to close SCP channel for '{}': {}", remote_path, e))?;
+        channel.wait_close()
+            .map_err(|e| format!("Failed to wait for SCP channel close for '{}': {}", remote_path, e))?;
         Ok(())
     }
 }
