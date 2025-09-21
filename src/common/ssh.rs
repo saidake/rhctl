@@ -13,25 +13,25 @@ pub struct SshSession {
 }
 
 impl SshSession {
-    pub fn new(config: &super::config::Config) -> Result<Self, String> {
+    pub fn new(config: &super::config::ConfigWrapper) -> Result<Self, String> {
         let tcp = TcpStream::connect(format!("{}:{}", config.host, config.port)).map_err(|e| e.to_string())?;
         let mut sess = Session::new().unwrap();
         sess.set_tcp_stream(tcp);
         sess.handshake().map_err(|e| e.to_string())?;
-        sess.userauth_password(&config.user, &config.password).map_err(|e| e.to_string())?;
+        sess.userauth_password(&config.user, config.password.as_ref().unwrap()).map_err(|e| e.to_string())?;
 
         Ok(Self {
             host: config.host.clone(),
             port: config.port,
             user: config.user.clone(),
-            password: config.password.clone(),
+            password: config.password.clone().unwrap(),
             session: sess,
         })
     }
 
-    pub fn execute(&self, cmd: &str, sudo: bool) -> Result<String, String> {
+    pub fn execute(&self, cmd: &str, use_sudo: bool) -> Result<String, String> {
         let mut channel = self.session.channel_session().map_err(|e| e.to_string())?;
-        let full_cmd = if sudo {
+        let full_cmd = if use_sudo {
             format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, cmd)
         } else {
             cmd.to_string()
@@ -51,9 +51,8 @@ impl SshSession {
         Ok(output.trim() == "0")
     }
 
-    pub fn scp_upload(&self, local_path: &Path, remote_path: &str, sudo: bool) -> Result<(), String> {
-        if sudo {
-            // Upload to temp, then mv with sudo
+    pub fn scp_upload(&self, local_path: &Path, remote_path: &str, use_sudo: bool) -> Result<(), String> {
+        if use_sudo {
             let temp_path = super::utils::generate_temp_path("upload");
             self.do_scp_upload(local_path, &temp_path)?;
             self.execute(&format!("mv '{}' '{}'", temp_path, remote_path), true)?;
@@ -72,7 +71,7 @@ impl SshSession {
         channel.write_all(&buffer).map_err(|e| e.to_string())?;
         channel.send_eof().map_err(|e| e.to_string())?;
         channel.wait_eof().map_err(|e| e.to_string())?;
-        channel.close().map_err(|e| e.to_string())?; // Changed from send_close to close
+        channel.close().map_err(|e| e.to_string())?;
         channel.wait_close().map_err(|e| e.to_string())?;
         Ok(())
     }

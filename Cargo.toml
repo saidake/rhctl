@@ -1,12 +1,12 @@
 [package]
-name = "remote-tool"
+name = "sbxctl"
 version = "0.1.0"
 edition = "2021"
 description = "High-performance Rust CLI for remote SSH operations"
 authors = ["Your Name <you@example.com>"]
 license = "MIT"
-repository = "https://github.com/yourusername/remote-tool"
-homepage = "https://github.com/yourusername/remote-tool"
+repository = "https://github.com/yourusername/sbxctl"
+homepage = "https://github.com/yourusername/sbxctl"
 readme = "README.md"
 keywords = ["ssh", "cli", "upload", "execute", "patch"]
 categories = ["command-line-utilities"]
@@ -16,6 +16,9 @@ clap = { version = "4.5", features = ["derive"] }
 ssh2 = "0.9"
 log = "0.4"
 env_logger = "0.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+rpassword = "7.2"
 
 [build-dependencies]
 # If needed for build scripts

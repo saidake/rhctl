@@ -1,9 +1,7 @@
-# Homebrew Formula (save as remote-tool.rb in tap repo)
-
-class RemoteTool < Formula
+class Sbxctl < Formula
   desc "High-performance Rust CLI for remote SSH operations"
-  homepage "https://github.com/yourusername/remote-tool"
-  url "https://github.com/yourusername/remote-tool/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/yourusername/sbxctl"
+  url "https://github.com/yourusername/sbxctl/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "compute_sha_here"
   license "MIT"
 
@@ -14,6 +12,6 @@ class RemoteTool < Formula
   end
 
   test do
-    system "#{bin}/remote-tool", "--version"
+    system "#{bin}/sbxctl", "--version"
   end
 end

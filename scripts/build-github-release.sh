@@ -4,12 +4,12 @@
 
 set -e
 
-VERSION=$(cargo metadata --no-deps --format-version 1)
+VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
 TARGETS=("x86_64-unknown-linux-gnu" "x86_64-apple-darwin" "aarch64-apple-darwin" "x86_64-pc-windows-msvc")
 
 for TARGET in "${TARGETS[@]}"; do
   cross build --release --target $TARGET
-  zip -j "remote-tool-${VERSION}-${TARGET}.zip" "target/${TARGET}/release/remote-tool"
+  zip -j "sbxctl-${VERSION}-${TARGET}.zip" "target/${TARGET}/release/sbxctl"
 done
 
 # Use gh CLI to create release

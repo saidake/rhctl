@@ -5,4 +5,4 @@
 set -e
 
 cargo deb
-# Outputs target/debian/remote-tool_0.1.0_amd64.deb
+# Outputs target/debian/sbxctl_0.1.0_amd64.deb

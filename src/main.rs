@@ -1,17 +1,18 @@
-// src/main.rs
 use clap::{Parser, Subcommand};
 use log::{error, info};
-use std::env;
+use rpassword::prompt_password;
 use std::process::exit;
 
 mod commands;
 mod common;
 
-use common::config::Config;
+use common::config::{Config, load_yaml_config};
 use common::ssh::SshSession;
 
+use crate::common::config::ConfigWrapper;
+
 #[derive(Parser)]
-#[command(name = "remote-tool")]
+#[command(name = "sbxctl")]
 #[command(about = "A high-performance Rust CLI for remote file operations via SSH")]
 #[command(version = "0.1.0")]
 struct Cli {
@@ -24,14 +25,17 @@ struct Cli {
     #[arg(long, help = "Remote username")]
     user: Option<String>,
 
-    #[arg(long, help = "Remote password (use environment variable for security)")]
+    #[arg(long, help = "Remote password")]
     password: Option<String>,
 
+    #[arg(long, help = "Path to YAML configuration file")]
+    config: Option<String>,
+
     #[arg(long, default_value = "false", help = "Use sudo for operations")]
-    sudo: bool,
+    use_sudo: bool,
 
     #[arg(long, default_value = "false", help = "Use rsync if available (falls back to scp)")]
-    rsync: bool,
+    use_rsync: bool,
 
     #[arg(long, default_value = "false", help = "Silent mode (no prompts, assume yes)")]
     silent: bool,
@@ -48,10 +52,10 @@ enum Commands {
     #[command(about = "Upload files based on property mappings")]
     Upload {
         #[arg(long, help = "Path to properties file")]
-        properties: String,
+        properties: Option<String>,
 
         #[arg(long, help = "Assets root directory")]
-        assets_root: String,
+        assets_root: Option<String>,
     },
 
     #[command(about = "Execute a local bash script remotely")]
@@ -66,16 +70,16 @@ enum Commands {
     #[command(about = "Patch a remote file with a local patch")]
     Patch {
         #[arg(long, help = "Local patch file")]
-        local_patch: String,
+        local_patch: Option<String>,
 
         #[arg(long, help = "Remote upload path for patch")]
-        remote_upload: String,
+        remote_upload: Option<String>,
 
         #[arg(long, help = "Remote target file to patch")]
-        remote_file: String,
+        remote_file: Option<String>,
 
         #[arg(long, help = "Remote backup file path")]
-        remote_backup: String,
+        remote_backup: Option<String>,
 
         #[arg(long, default_value = "false", help = "Recover from backup")]
         recover: bool,
@@ -96,26 +100,53 @@ fn main() {
         })
         .init();
 
-    // Load config, prefer env vars over CLI args for security
-    let config = Config {
-        host: cli.host.unwrap_or_else(|| env::var("REMOTE_HOST").unwrap_or_default()),
-        port: cli.port.unwrap_or_else(|| env::var("REMOTE_SSH_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(22)),
-        user: cli.user.unwrap_or_else(|| env::var("REMOTE_USER").unwrap_or_default()),
-        password: cli.password.unwrap_or_else(|| env::var("REMOTE_PWD").unwrap_or_default()),
-        sudo: cli.sudo,
-        rsync: cli.rsync,
+    // Load config from YAML if provided
+    let yaml_config = cli.config.as_ref().map(|path| load_yaml_config(path)).transpose().unwrap_or_default();
+
+    // Merge YAML config with CLI args (CLI args take precedence)
+    let config = ConfigWrapper {
+        host: cli.host.or_else(|| yaml_config.as_ref().and_then(|c| c.remote.host.clone())).unwrap_or_default(),
+        port: cli.port.unwrap_or(yaml_config.as_ref().map_or(22, |c| c.remote.ssh_port)),
+        user: cli.user.or_else(|| yaml_config.as_ref().and_then(|c| c.remote.user.clone())).unwrap_or_default(),
+        password: cli.password.or_else(|| yaml_config.as_ref().and_then(|c| c.remote.password.clone())),
+        use_sudo: cli.use_sudo,
+        use_rsync: cli.use_rsync,
         silent: cli.silent,
+        upload: yaml_config.as_ref().map(|c| c.upload.clone()).unwrap_or_default(),
+        execute: yaml_config.as_ref().map(|c| c.execute.clone()).unwrap_or_default(),
+        patch: yaml_config.as_ref().map(|c| c.patch.clone()).unwrap_or_default(),
     };
 
-    if config.host.is_empty() || config.user.is_empty() || config.password.is_empty() {
-        error!("Missing required config: host, user, or password.");
+    // Validate required fields
+    if config.host.is_empty() || config.user.is_empty() {
+        error!("Missing required config: host and user must be provided via --host/--user or config file.");
         exit(1);
     }
 
-    info!("Connecting to {}@{}:{}", config.user, config.host, config.port);
+    // Prompt for password if not provided
+    let password = match config.password {
+        Some(pwd) => pwd,
+        None => {
+            match prompt_password("Enter SSH password: ") {
+                Ok(pwd) if !pwd.is_empty() => pwd,
+                _ => {
+                    error!("Password is required.");
+                    exit(1);
+                }
+            }
+        }
+    };
+
+    // Create final config with password
+    let final_config = ConfigWrapper {
+        password: Some(password),
+        ..config
+    };
+
+    info!("Connecting to {}@{}:{}", final_config.user, final_config.host, final_config.port);
 
     // Create SSH session
-    let session = match SshSession::new(&config) {
+    let session = match SshSession::new(&final_config) {
         Ok(s) => s,
         Err(e) => {
             error!("SSH connection failed: {}", e);
@@ -125,19 +156,33 @@ fn main() {
 
     match cli.command {
         Commands::Upload { properties, assets_root } => {
-            if let Err(e) = commands::upload::run(&session, &config, &properties, &assets_root) {
+            let properties = properties.unwrap_or_else(|| final_config.upload.properties_file.clone());
+            let assets_root = assets_root.unwrap_or_else(|| final_config.upload.assets_root.clone());
+            if properties.is_empty() || assets_root.is_empty() {
+                error!("Missing required arguments: --properties and --assets-root must be provided via CLI or config file.");
+                exit(1);
+            }
+            if let Err(e) = commands::upload::run(&session, &final_config, &properties, &assets_root) {
                 error!("Upload failed: {}", e);
                 exit(1);
             }
         }
         Commands::Execute { script, remote_path } => {
-            if let Err(e) = commands::execute::run(&session, &config, &script, &remote_path) {
+            if let Err(e) = commands::execute::run(&session, &final_config, &script, &remote_path) {
                 error!("Execute failed: {}", e);
                 exit(1);
             }
         }
         Commands::Patch { local_patch, remote_upload, remote_file, remote_backup, recover } => {
-            if let Err(e) = commands::patch::run(&session, &config, &local_patch, &remote_upload, &remote_file, &remote_backup, recover) {
+            let local_patch = local_patch.unwrap_or_else(|| final_config.patch.local_patch.clone());
+            let remote_upload = remote_upload.unwrap_or_else(|| final_config.patch.remote_upload.clone());
+            let remote_file = remote_file.unwrap_or_else(|| final_config.patch.remote_file.clone());
+            let remote_backup = remote_backup.unwrap_or_else(|| final_config.patch.remote_backup.clone());
+            if !recover && (local_patch.is_empty() || remote_upload.is_empty() || remote_file.is_empty() || remote_backup.is_empty()) {
+                error!("Missing required arguments: --local-patch, --remote-upload, --remote-file, and --remote-backup must be provided via CLI or config file.");
+                exit(1);
+            }
+            if let Err(e) = commands::patch::run(&session, &final_config, &local_patch, &remote_upload, &remote_file, &remote_backup, recover) {
                 error!("Patch failed: {}", e);
                 exit(1);
             }

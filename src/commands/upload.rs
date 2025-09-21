@@ -7,11 +7,11 @@ use std::thread;
 
 use log::{error, info, warn};
 
-use crate::common::config::Config;
+use crate::common::config::{ConfigWrapper, UploadConfig};
 use crate::common::ssh::SshSession;
 use crate::common::utils::{ask_user, resolve_remote_path};
 
-pub fn run(session: &SshSession, config: &Config, properties_file: &str, assets_root: &str) -> Result<(), String> {
+pub fn run(session: &SshSession, config: &ConfigWrapper, properties_file: &str, assets_root: &str) -> Result<(), String> {
     let mut mappings = HashMap::new();
     load_properties(properties_file, &mut mappings)?;
 
@@ -27,7 +27,7 @@ pub fn run(session: &SshSession, config: &Config, properties_file: &str, assets_
 
         let remote_dir_resolved = resolve_remote_path(session, config, &remote_dir)?;
         let config_clone = config.clone();
-        let session_clone = session.clone(); // Assuming SshSession is Clone or Arc-wrapped if needed
+        let session_clone = session.clone();
         let local_path_clone = local_path.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
 
@@ -39,7 +39,6 @@ pub fn run(session: &SshSession, config: &Config, properties_file: &str, assets_
         threads.lock().unwrap().push(handle);
     }
 
-    // Join all threads
     let mut errors = Vec::new();
     for handle in threads.lock().unwrap().drain(..) {
         if let Err(e) = handle.join().unwrap() {
@@ -70,9 +69,8 @@ fn load_properties(file: &str, mappings: &mut HashMap<String, String>) -> Result
     Ok(())
 }
 
-fn upload_file_or_dir(session: &SshSession, config: &Config, local_path: &PathBuf, remote_dir: &str) -> Result<(), String> {
-    // Ensure remote dir exists
-    session.execute(&format!("mkdir -p {}", remote_dir), config.sudo)?;
+fn upload_file_or_dir(session: &SshSession, config: &ConfigWrapper, local_path: &PathBuf, remote_dir: &str) -> Result<(), String> {
+    session.execute(&format!("mkdir -p {}", remote_dir), config.use_sudo)?;
 
     if local_path.is_dir() {
         for entry in std::fs::read_dir(local_path).map_err(|e| e.to_string())? {
@@ -105,16 +103,15 @@ fn upload_file_or_dir(session: &SshSession, config: &Config, local_path: &PathBu
     Ok(())
 }
 
-fn upload_single(session: &SshSession, config: &Config, local_path: &PathBuf, remote_path: &str) -> Result<(), String> {
-    // If rsync preferred and available, use external rsync, else scp via ssh2
-    if config.rsync && command_exists("rsync") {
+fn upload_single(session: &SshSession, config: &ConfigWrapper, local_path: &PathBuf, remote_path: &str) -> Result<(), String> {
+    if config.use_rsync && command_exists("rsync") {
         let status = std::process::Command::new("rsync")
             .arg("-avz")
             .arg("-e")
             .arg(format!("ssh -p {}", session.port))
             .arg(local_path.to_str().unwrap())
             .arg(format!("{}@{}:{}", session.user, session.host, remote_path))
-            .env("RSYNC_PASSWORD", &session.password) // Note: rsync doesn't directly support password, but we can use sshpass
+            .env("RSYNC_PASSWORD", &session.password)
             .status()
             .map_err(|e| e.to_string())?;
 
@@ -122,7 +119,7 @@ fn upload_single(session: &SshSession, config: &Config, local_path: &PathBuf, re
             return Err("rsync failed".to_string());
         }
     } else {
-        session.scp_upload(local_path, remote_path, config.sudo)?;
+        session.scp_upload(local_path, remote_path, config.use_sudo)?;
     }
     Ok(())
 }
