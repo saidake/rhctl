@@ -1,0 +1,105 @@
+{
+  "Groups": [
+    {
+      "GroupName": "default",
+      "GroupId": "sg-245f6a01"
+    }
+  ],
+  "Instances": [
+    {
+      "AmiLaunchIndex": 0,
+      "ImageId": "ami-0123456789abcdef0",
+      "InstanceId": "i-f2d405a3e1e572919",
+      "InstanceType": "t2.micro",
+      "KernelId": "None",
+      "KeyName": "SimiKeyPair",
+      "LaunchTime": "2024-10-05T18:09:51+00:00",
+      "Monitoring": {
+        "State": "disabled"
+      },
+      "Placement": {
+        "AvailabilityZone": "us-east-1a",
+        "GroupName": "",
+        "Tenancy": "default"
+      },
+      "PrivateDnsName": "ip-10-37-163-213.ec2.internal",
+      "PrivateIpAddress": "10.37.163.213",
+      "PublicDnsName": "ec2-54-214-109-170.compute-1.amazonaws.com",
+      "PublicIpAddress": "54.214.109.170",
+      "State": {
+        "Code": 0,
+        "Name": "pending"
+      },
+      "StateTransitionReason": "",
+      "SubnetId": "subnet-85cce0cb",
+      "VpcId": "vpc-bd3948b4",
+      "Architecture": "x86_64",
+      "BlockDeviceMappings": [
+        {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "AttachTime": "2024-10-05T18:09:51+00:00",
+            "DeleteOnTermination": false,
+            "Status": "in-use",
+            "VolumeId": "vol-cf107656"
+          }
+        }
+      ],
+      "ClientToken": "ABCDE0000000000003",
+      "EbsOptimized": false,
+      "Hypervisor": "xen",
+      "NetworkInterfaces": [
+        {
+          "Association": {
+            "IpOwnerId": "000000000000",
+            "PublicIp": "54.214.109.170"
+          },
+          "Attachment": {
+            "AttachTime": "2015-01-01T00:00:00+00:00",
+            "AttachmentId": "eni-attach-32e8e2af",
+            "DeleteOnTermination": true,
+            "DeviceIndex": 0,
+            "Status": "attached"
+          },
+          "Description": "Primary network interface",
+          "Groups": [
+            {
+              "GroupName": "sg-0123456789abcdef0",
+              "GroupId": "sg-0123456789abcdef0"
+            }
+          ],
+          "MacAddress": "1b:2b:3c:4d:5e:6f",
+          "NetworkInterfaceId": "eni-413b55a3",
+          "OwnerId": "000000000000",
+          "PrivateIpAddress": "10.37.163.213",
+          "PrivateIpAddresses": [
+            {
+              "Association": {
+                "IpOwnerId": "000000000000",
+                "PublicIp": "54.214.109.170"
+              },
+              "Primary": true,
+              "PrivateIpAddress": "10.37.163.213"
+            }
+          ],
+          "SourceDestCheck": true,
+          "Status": "in-use",
+          "SubnetId": "subnet-85cce0cb",
+          "VpcId": "vpc-bd3948b4"
+        }
+      ],
+      "RootDeviceName": "/dev/sda1",
+      "RootDeviceType": "ebs",
+      "SecurityGroups": [],
+      "SourceDestCheck": true,
+      "StateReason": {
+        "Code": "",
+        "Message": ""
+      },
+      "VirtualizationType": "paravirtual"
+    }
+  ],
+  "OwnerId": "000000000000",
+  "ReservationId": "r-43ee95f2"
+}
+

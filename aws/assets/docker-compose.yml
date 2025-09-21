@@ -1,0 +1,15 @@
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"   # Main entry point for all services
+      - "4571:4571"   # Optional services like Lambda, DynamoDB
+    environment:
+      - SERVICES=s3,sns,sqs,iam,ec2,lambda,dynamodb   # Define the AWS services you want to simulate
+      - DEFAULT_REGION=us-east-1
+      - EDGE_PORT=4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"  # Enable Docker-in-Docker
