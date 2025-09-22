@@ -6,6 +6,7 @@ use std::process::exit;
 
 mod commands;
 mod common;
+mod domain;
 
 use common::config::{load_yaml_config, Config};
 use common::ssh::SshSession;
@@ -216,7 +217,7 @@ fn main() {
             if let Err(e) =
                 commands::upload::run(&session, &final_config, &properties, &assets_root)
             {
-                error!("Upload failed: {}", e);
+                log_error_with_lock!("Upload failed: {}", e);
                 exit(1);
             }
         }

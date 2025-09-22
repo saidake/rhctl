@@ -1,1 +1,1 @@
-example file 2
+sbxctl example file 2

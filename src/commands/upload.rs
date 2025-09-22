@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use log::{debug, error, info, warn};
-
 use crate::common::config::{Config, ConfigWrapper};
 use crate::common::ssh::SshSession;
 use crate::common::utils::{ask_user, resolve_remote_path};
+use crate::domain::constants::GLOBAL_LOG_LOCK;
+use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock};
 
 pub fn run(
     session: &SshSession,
@@ -31,7 +31,7 @@ pub fn run(
     for (local_item, remote_dir) in mappings {
         let local_path = assets_path.join(&local_item);
         if !local_path.exists() {
-            warn!(
+            log_warn_with_lock!(
                 "Local item '{}' not found in assets directory '{}'. Skipping.",
                 local_item, assets_root
             );
@@ -87,7 +87,7 @@ pub fn run(
         return Err(errors.join("\n"));
     }
 
-    info!("Upload complete.");
+    log_info_with_lock!("Upload complete.");
     Ok(())
 }
 
@@ -157,7 +157,7 @@ fn upload_file_or_dir(
             if session.file_exists(&remote_sub)? {
                 if !config.upload.silent
                     && !ask_user(&format!(
-                        "Remote file '{}' already exists. Overwrite? (y/n): ",
+                        "Remote file '{}' already exists. Overwrite?",
                         remote_sub
                     ))
                 {
@@ -166,7 +166,7 @@ fn upload_file_or_dir(
             }
 
             upload_single(session, config, &sub_path, &remote_sub)?;
-            info!(
+            log_info_with_lock!(
                 "Successfully uploaded '{}' to '{}'",
                 sub_path.display(),
                 remote_sub
@@ -183,7 +183,7 @@ fn upload_file_or_dir(
         if session.file_exists(&remote_file)? {
             if !config.upload.silent
                 && !ask_user(&format!(
-                    "Remote file '{}' already exists. Overwrite? (y/n): ",
+                    "Remote file '{}' already exists. Overwrite?",
                     remote_file
                 ))
             {
@@ -192,7 +192,7 @@ fn upload_file_or_dir(
         }
 
         upload_single(session, config, local_path, &remote_file)?;
-        info!(
+        log_info_with_lock!(
             "Successfully uploaded '{}' to '{}'",
             local_path.display(),
             remote_file
@@ -208,13 +208,13 @@ fn upload_single(
     local_path: &PathBuf,
     remote_path: &str,
 ) -> Result<(), String> {
-    debug!(
+    log_debug_with_lock!(
         "Attempting to upload '{}' to '{}'",
         local_path.display(),
         remote_path
     );
     if config.upload.use_rsync && command_exists("rsync") {
-        debug!("Using rsync for upload");
+        log_debug_with_lock!("Using rsync for upload");
         let status = std::process::Command::new("rsync")
             .arg("-avz")
             .arg("-e")
@@ -232,7 +232,7 @@ fn upload_single(
             ));
         }
     } else {
-        debug!("Using SCP for upload");
+        log_debug_with_lock!("Using SCP for upload");
         session.scp_upload(local_path, remote_path, config.upload.use_sudo)?;
     }
     Ok(())

@@ -17,7 +17,7 @@ pub fn run(session: &SshSession, config: &ConfigWrapper, local_patch: &str, remo
     let resolved_backup = resolve_remote_path(session, config, remote_backup)?;
 
     if recover {
-        if !config.silent && !ask_user(&format!("Restore {} from {}? (y/n): ", remote_file, remote_backup)) {
+        if !config.silent && !ask_user(&format!("Restore {} from {}?", remote_file, remote_backup)) {
             return Ok(());
         }
         session.execute(&format!("cp {} {} -f", resolved_backup, resolved_file), config.use_sudo)?;
@@ -26,7 +26,7 @@ pub fn run(session: &SshSession, config: &ConfigWrapper, local_patch: &str, remo
     }
 
     if session.file_exists(&resolved_upload)? {
-        if !config.silent && !ask_user(&format!("Overwrite {}? (y/n): ", resolved_upload)) {
+        if !config.silent && !ask_user(&format!("Overwrite {}?", resolved_upload)) {
             return Ok(());
         }
     }
@@ -35,12 +35,12 @@ pub fn run(session: &SshSession, config: &ConfigWrapper, local_patch: &str, remo
     if !session.file_exists(&resolved_file)? {
         return Err("Remote file does not exist".to_string());
     }
-    if !config.silent && !ask_user(&format!("Backup {} to {}? (y/n): ", remote_file, remote_backup)) {
+    if !config.silent && !ask_user(&format!("Backup {} to {}?", remote_file, remote_backup)) {
         return Ok(());
     }
     session.execute(&format!("cp {} {} -f", resolved_file, resolved_backup), config.use_sudo)?;
 
-    if !config.silent && !ask_user(&format!("Overwrite {} with {}? (y/n): ", remote_file, resolved_upload)) {
+    if !config.silent && !ask_user(&format!("Overwrite {} with {}?", remote_file, resolved_upload)) {
         return Ok(());
     }
     session.execute(&format!("cp {} {} -f", resolved_upload, resolved_file), config.use_sudo)?;
