@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::process::Command;
-use log::{error, info};
+use log::info;
 
 use crate::common::config::ConfigWrapper;
 use crate::common::ssh::SshSession;

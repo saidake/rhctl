@@ -5,10 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::common::config::{Config, ConfigWrapper};
+use crate::common::config::ConfigWrapper;
 use crate::common::ssh::SshSession;
 use crate::common::utils::{ask_user, resolve_remote_path};
-use crate::domain::constants::GLOBAL_LOG_LOCK;
 use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock};
 
 pub fn run(

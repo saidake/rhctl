@@ -8,7 +8,7 @@ mod commands;
 mod common;
 mod domain;
 
-use common::config::{load_yaml_config, Config};
+use common::config::load_yaml_config;
 use common::ssh::SshSession;
 
 use crate::common::config::ConfigWrapper;

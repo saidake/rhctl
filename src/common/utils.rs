@@ -2,8 +2,7 @@
 use crate::common::config::ConfigWrapper;
 use crate::common::ssh::SshSession;
 use crate::domain::constants::GLOBAL_LOG_LOCK;
-use std::io::{self, Write, Read};
-use std::sync::{Mutex, MutexGuard};
+use std::io::{self, Write};
 use log::{debug, error, info, warn};
 
 
