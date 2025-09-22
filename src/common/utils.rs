@@ -66,9 +66,16 @@ macro_rules! log_debug_with_lock {
 }
 
 
-pub fn resolve_remote_path(session: &SshSession, config: &ConfigWrapper, path: &str) -> Result<String, String> {
-    session.execute(&format!("echo {}", path), config.use_sudo)
+pub fn resolve_remote_path(
+    session: &SshSession,
+    config: &ConfigWrapper,
+    path: &str,
+) -> Result<String, String> {
+    session
+        .execute(&format!("echo {}", path), config.use_sudo)
+        .map(|s| s.trim_end().to_string()) // Trim trailing whitespace and newlines
 }
+
 
 pub fn generate_temp_path(prefix: &str) -> String {
     let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();

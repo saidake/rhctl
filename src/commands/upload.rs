@@ -45,7 +45,6 @@ pub fn run(
                 remote_dir
             ));
         }
-        let remote_dir_resolved = remote_dir_resolved.trim_end().to_string();
         // println!("remote_dir_resolved: '{}'",remote_dir_resolved);
         // Check if remote directory is writable
         if let Err(e) =

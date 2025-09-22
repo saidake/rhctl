@@ -24,3 +24,4 @@ execute:
   use_rsync: false
   use_sudo: false
   silent: false
+  remote_path: "~"
