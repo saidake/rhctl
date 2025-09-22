@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use log::{error, info};
+use log::{debug, error, info};
 use rpassword::prompt_password;
 use std::path::Path;
 use std::process::exit;
@@ -16,7 +16,7 @@ use crate::common::config::ConfigWrapper;
 #[derive(Parser)]
 #[command(name = "sbxctl")]
 #[command(about = "A high-performance Rust CLI for remote file operations via SSH")]
-#[command(version = "0.1.0")]
+#[command(version = "1.0.0")]
 struct Cli {
     #[arg(long, help = "Remote host IP or hostname")]
     host: Option<String>,
@@ -121,9 +121,9 @@ fn main() {
         .map(|path| load_yaml_config(path))
         .transpose()
         .unwrap_or_default();
-
+    debug!("yaml_config.is_none(): {}",yaml_config.is_none());
     // Merge YAML config with CLI args (CLI args take precedence)
-    let config = ConfigWrapper {
+    let config: ConfigWrapper = ConfigWrapper {
         host: cli
             .host
             .or_else(|| yaml_config.as_ref().and_then(|c| c.remote.host.clone()))

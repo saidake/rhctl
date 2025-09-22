@@ -8,6 +8,7 @@ upload:
   use_rsync: false
   use_sudo: false
   silent: false
+  
   assets_root: "AAA/assets"
   properties_file: "AAA/config/path-mapping.properties"
 
@@ -15,6 +16,7 @@ patch:
   use_rsync: false
   use_sudo: false
   silent: false
+  
   local_patch: "AAA/assets/example-patch.txt"
   remote_upload: "~/tmp/example-patch.txt.upload"
   remote_file: "~/examples/example-patch-remote.txt"
@@ -24,4 +26,5 @@ execute:
   use_rsync: false
   use_sudo: false
   silent: false
+
   remote_path: "~"
