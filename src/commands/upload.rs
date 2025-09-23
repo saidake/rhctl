@@ -5,13 +5,20 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use log::info;
+
 use crate::common::ssh::SshSession;
-use crate::common::utils::{ask_user, connect_ssh, resolve_remote_path};
+use crate::common::utils::{ask_user, connect_ssh, connect_ssh_thread, resolve_remote_path};
 use crate::domain::cmd_params::UploadCmdConfig;
 use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock};
 
 pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
-    let session = connect_ssh(config.host.clone(), config.user.clone(), config.ssh_port, config.password.clone());
+    let session = connect_ssh(
+        config.host.clone(),
+        config.user.clone(),
+        config.ssh_port,
+        config.password.clone(),
+    );
     let mut mappings = HashMap::new();
     if let Err(e) = load_properties(config.properties_file.clone(), &mut mappings) {
         return Err(format!(
@@ -43,20 +50,20 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
         }
         // println!("remote_dir_resolved: '{}'",remote_dir_resolved);
         // Check if remote directory is writable
-        if let Err(e) = session.check_directory_writable(&remote_dir_resolved, config.use_sudo) {
-            return Err(format!(
-                "Remote directory '{}' is not writable: {}",
-                remote_dir_resolved, e
-            ));
-        }
+        session.check_directory_writable(&remote_dir_resolved, config.use_sudo)?;
 
         let local_path_clone = local_path.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
-        let session_clone = session.clone();
         let config_clone = config.clone();
         let handle = thread::spawn(move || {
+            let session_thread = connect_ssh_thread(
+                config_clone.host.clone(),
+                config_clone.user.clone(),
+                config_clone.ssh_port,
+                config_clone.password.clone(),
+            );
             upload_file_or_dir(
-                &session_clone,
+                &session_thread,
                 &local_path_clone,
                 &remote_dir_clone,
                 config_clone.use_sudo,
@@ -209,34 +216,55 @@ fn upload_single(
         local_path.display(),
         remote_path
     );
+
     if use_rsync && command_exists("rsync") {
         log_debug_with_lock!("Using rsync for upload");
-        let status = std::process::Command::new("rsync")
-            .arg("-avz")
-            .arg("-e")
-            .arg(format!("ssh -p {}", session.port))
-            .arg(local_path.to_str().ok_or("Invalid local path encoding")?)
-            .arg(format!("{}@{}:{}", session.user, session.host, remote_path))
-            .env("RSYNC_PASSWORD", &session.password)
-            .status()
-            .map_err(|e| format!("Failed to execute rsync: {}", e))?;
+        if !session.password.is_empty() {
+            if command_exists("sshpass") {
+                let mut sshpass_cmd = std::process::Command::new("sshpass");
+                sshpass_cmd
+                    .arg("-p")
+                    .arg(&session.password)
+                    .arg("rsync")
+                    .arg("-avz")
+                    .arg("-e")
+                    .arg(format!("ssh -p {}", session.port))
+                    .arg(local_path.to_str().ok_or("Invalid local path encoding")?)
+                    .arg(format!("{}@{}:{}", session.user, session.host, remote_path))
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
 
-        if !status.success() {
-            return Err(format!(
-                "rsync failed with exit code {}",
-                status.code().unwrap_or(-1)
-            ));
+                let status = sshpass_cmd
+                    .status()
+                    .map_err(|e| format!("Failed to execute rsync via sshpass: {}", e))?;
+
+                if !status.success() {
+                    return Err(format!(
+                        "rsync (sshpass) failed with exit code {}",
+                        status.code().unwrap_or(-1)
+                    ));
+                }
+                return Ok(()); 
+            } else {
+                log_warn_with_lock!(
+                    "rsync password required but sshpass not found; will fallback to SCP"
+                );
+                return session.scp_upload(local_path, remote_path, use_sudo);
+            }
         }
     } else {
         log_debug_with_lock!("Using SCP for upload");
         session.scp_upload(local_path, remote_path, use_sudo)?;
     }
+
     Ok(())
 }
 
 fn command_exists(cmd: &str) -> bool {
     std::process::Command::new("which")
         .arg(cmd)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)

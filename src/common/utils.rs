@@ -14,11 +14,30 @@ pub fn prompt_password_or_exit() -> String {
     }
 }
 pub fn connect_ssh(host: String, user: String, ssh_port: u16, password: String) -> SshSession {
-    info!("Connecting to {}@{}:{}", user, host, ssh_port);
-    match SshSession::new(host, user, ssh_port, password) {
-        Ok(s) => s,
+    info!("Connecting via SSH to {}@{}:{}", user, host, ssh_port);
+
+    match SshSession::new(host.clone(), user.clone(), ssh_port, password.clone()) {
+        Ok(session) => {
+            info!("SSH session established: {}@{}:{}", user, host, ssh_port);
+            session
+        },
         Err(e) => {
             error!("SSH connection failed: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+pub fn connect_ssh_thread(
+    host: String,
+    user: String,
+    ssh_port: u16,
+    password: String,
+) -> SshSession {
+    match SshSession::new(host.clone(), user.clone(), ssh_port.clone(), password.clone()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("SSH connection failed in sub thread: {}", e);
             std::process::exit(1);
         }
     }

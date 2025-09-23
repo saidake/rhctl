@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
 
-use log::debug;
+use log::{debug, info};
 
 #[derive(Clone)]
 pub struct SshSession {
@@ -15,17 +15,15 @@ pub struct SshSession {
 }
 
 impl SshSession {
-    pub fn new(host: String, user: String, ssh_port:u16, password: String) -> Result<Self, String> {
-        debug!(
-            "Connecting to {}:{} as {}",
-            host, ssh_port, user
-        );
-        let tcp = TcpStream::connect(format!("{}:{}", host, ssh_port)).map_err(|e| {
-            format!(
-                "Cannot connect to {} on port {}: {}",
-                host, ssh_port, e
-            )
-        })?;
+    pub fn new(
+        host: String,
+        user: String,
+        ssh_port: u16,
+        password: String,
+    ) -> Result<Self, String> {
+        debug!("Connecting to {}:{} as {}", host, ssh_port, user);
+        let tcp = TcpStream::connect(format!("{}:{}", host, ssh_port))
+            .map_err(|e| format!("Cannot connect to {} on port {}: {}", host, ssh_port, e))?;
         let mut sess =
             Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
         sess.set_tcp_stream(tcp);
@@ -141,15 +139,23 @@ impl SshSession {
     }
 
     pub fn check_directory_writable(&self, path: &str, use_sudo: bool) -> Result<(), String> {
-        debug!("Checking if '{}' is writable", path);
-        let cmd = format!("test -d '{}' && test -w '{}'; echo $?", path, path);
-        let output = self.execute(&cmd, use_sudo)?;
+        debug!("Ensuring remote directory '{}' exists", path);
+
+        let mkdir_cmd = format!("mkdir -p '{}'", path);
+        self.execute(&mkdir_cmd, use_sudo)
+            .map_err(|e| format!("Failed to create directory '{}': {}", path, e))?;
+
+        debug!("Checking if remote directory '{}' is writable", path);
+
+        let check_cmd = format!("test -w '{}'; echo $?", path);
+        let output = self
+            .execute(&check_cmd, use_sudo)
+            .map_err(|e| format!("Failed to check write permission for '{}': {}", path, e))?;
+
         if output.trim() != "0" {
-            return Err(format!(
-                "Directory '{}' is not writable or does not exist",
-                path
-            ));
+            return Err(format!("Directory '{}' is not writable", path));
         }
+
         Ok(())
     }
 

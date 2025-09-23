@@ -13,9 +13,10 @@ upload:
 
 patch:
   local-patch: "AAA/assets/example-patch.txt"
-  remote-upload: "~/tmp/example-patch.txt.upload"
+  remote-upload: "/tmp/example-patch.txt.upload"
   remote-file: "~/examples/example-patch-remote.txt"
-  remote-backup: "~/tmp/example-patch-remote.txt.bak"
+  remote-backup: "/tmp/example-patch-remote.txt.bak"
 
 execute:
   remote-path: "~"
+  script: "AAA/assets/example-bash.sh"
