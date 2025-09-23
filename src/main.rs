@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use log::{debug, error, info};
+use log::{debug, error};
 use std::{path::Path, process::exit};
 
 mod commands;
@@ -10,7 +10,6 @@ mod handlers;
 use common::config::load_yaml_config;
 
 use crate::{
-    common::utils::connect_ssh,
     domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig},
     handlers::command_handler::{merge_execute, merge_patch, merge_upload},
 };
@@ -61,7 +60,7 @@ enum Commands {
         silent: bool,
 
         #[arg(long, help = "Log level (debug, info, warn, error)")]
-        log_level: String,
+        log_level: Option<String>,
 
         #[arg(long, help = "Path to properties file")]
         properties_file: Option<String>,
@@ -105,7 +104,7 @@ enum Commands {
         silent: bool,
 
         #[arg(long, help = "Log level (debug, info, warn, error)")]
-        log_level: String,
+        log_level: Option<String>,
 
         #[arg(help = "Local bash script file")]
         script: Option<String>,
@@ -149,7 +148,7 @@ enum Commands {
         silent: bool,
 
         #[arg(long, help = "Log level (debug, info, warn, error)")]
-        log_level: String,
+        log_level: Option<String>,
 
         #[arg(long, help = "Local patch file")]
         local_patch: Option<String>,
@@ -172,9 +171,10 @@ fn main() {
     let cli = Cli::parse();
     //[CORE] Common data
     let log_level = match &cli.command {
-        Commands::Upload { log_level, .. } => log_level,
-        Commands::Execute { log_level, .. } => log_level,
-        Commands::Patch { log_level, .. } => log_level,
+        Commands::Upload { log_level, .. }
+        | Commands::Execute { log_level, .. }
+        | Commands::Patch { log_level, .. } 
+        => log_level.as_deref().unwrap_or("info"),
     };
     let config_path = match &cli.command {
         Commands::Upload { config, .. } => config,
@@ -183,7 +183,7 @@ fn main() {
     };
     // Initialize logging
     env_logger::builder()
-        .filter_level(match log_level.as_str() {
+        .filter_level(match log_level {
             "debug" => log::LevelFilter::Debug,
             "info" => log::LevelFilter::Info,
             "warn" => log::LevelFilter::Warn,
