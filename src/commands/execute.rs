@@ -4,22 +4,22 @@ use std::path::Path;
 
 use log::{error, info};
 
-use crate::common::config::{ConfigWrapper};
-use crate::common::ssh::SshSession;
-use crate::common::utils::generate_temp_path;
+use crate::common::utils::{connect_ssh, generate_temp_path};
+use crate::domain::cmd_params::ExecuteCmdConfig;
 
-pub fn run(session: &SshSession, config: &ConfigWrapper, script: &str, remote_path: &str) -> Result<(), String> {
-    let script_path = Path::new(script);
+pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
+    let session = connect_ssh(config.host.clone(), config.user.clone(), config.ssh_port, config.password.clone());
+    let script_path = Path::new(&config.script);
     if !script_path.exists() || !script_path.is_file() {
-        return Err(format!("Script file '{}' does not exist or is not a file", script));
+        return Err(format!("Script file '{}' does not exist or is not a file", config.script));
     }
 
-    if config.execute.use_sudo {
+    if config.use_sudo {
         let temp_remote = generate_temp_path("exec");
-        info!("Uploading script '{}' to temporary path '{}'", script, temp_remote);
+        info!("Uploading script '{}' to temporary path '{}'", config.script, temp_remote);
         session.scp_upload(script_path, &temp_remote, false)?;
-        info!("Executing script in '{}' with sudo", remote_path);
-        session.execute_stream(&format!("cd {} && bash {}", remote_path, temp_remote), true, |line, is_stderr| {
+        info!("Executing script in '{}' with sudo", config.remote_path);
+        session.execute_stream(&format!("cd {} && bash {}", config.remote_path, temp_remote), true, |line, is_stderr| {
             if is_stderr {
                 error!("{}", line);
             } else {
@@ -32,11 +32,11 @@ pub fn run(session: &SshSession, config: &ConfigWrapper, script: &str, remote_pa
     } else {
         let mut content = String::new();
         File::open(script_path)
-            .map_err(|e| format!("Failed to open script '{}': {}", script, e))?
+            .map_err(|e| format!("Failed to open script '{}': {}", config.script, e))?
             .read_to_string(&mut content)
-            .map_err(|e| format!("Failed to read script '{}': {}", script, e))?;
-        info!("Executing script in '{}'", remote_path);
-        session.execute_stream(&format!("cd {} && bash -l -s <<EOF\n{}\nEOF", remote_path, content), false, |line, is_stderr| {
+            .map_err(|e| format!("Failed to read script '{}': {}", config.script, e))?;
+        info!("Executing script in '{}'", config.remote_path);
+        session.execute_stream(&format!("cd {} && bash -l -s <<EOF\n{}\nEOF", config.remote_path, content), false, |line, is_stderr| {
             if is_stderr {
                 error!("{}", line);
             } else {

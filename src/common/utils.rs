@@ -1,10 +1,28 @@
-
-use crate::common::config::ConfigWrapper;
 use crate::common::ssh::SshSession;
 use crate::domain::constants::GLOBAL_LOG_LOCK;
-use std::io::{self, Write};
 use log::{debug, error, info, warn};
+use rpassword::prompt_password;
+use std::io::{self, Write};
 
+pub fn prompt_password_or_exit() -> String {
+    match prompt_password("Enter SSH password: ") {
+        Ok(pwd) if !pwd.is_empty() => pwd,
+        _ => {
+            eprintln!("Password is required.");
+            std::process::exit(1);
+        }
+    }
+}
+pub fn connect_ssh(host: String, user: String, ssh_port: u16, password: String) -> SshSession {
+    info!("Connecting to {}@{}:{}", user, host, ssh_port);
+    match SshSession::new(host, user, ssh_port, password) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("SSH connection failed: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
 
 /// Ask user with a prompt, return true if input is 'y' or 'Y'
 /// User must press Enter
@@ -64,19 +82,20 @@ macro_rules! log_debug_with_lock {
     };
 }
 
-
 pub fn resolve_remote_path(
     session: &SshSession,
-    config: &ConfigWrapper,
+    use_sudo: bool,
     path: &str,
 ) -> Result<String, String> {
     session
-        .execute(&format!("echo {}", path), config.use_sudo)
+        .execute(&format!("echo {}", path), use_sudo)
         .map(|s| s.trim_end().to_string()) // Trim trailing whitespace and newlines
 }
 
-
 pub fn generate_temp_path(prefix: &str) -> String {
-    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     format!("/tmp/sandbox/{}_{:x}", prefix, timestamp)
 }

@@ -5,26 +5,22 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::common::config::ConfigWrapper;
 use crate::common::ssh::SshSession;
-use crate::common::utils::{ask_user, resolve_remote_path};
+use crate::common::utils::{ask_user, connect_ssh, resolve_remote_path};
+use crate::domain::cmd_params::UploadCmdConfig;
 use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock};
 
-pub fn run(
-    session: &SshSession,
-    config: &ConfigWrapper,
-    properties_file: &str,
-    assets_root: &str,
-) -> Result<(), String> {
+pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
+    let session = connect_ssh(config.host.clone(), config.user.clone(), config.ssh_port, config.password.clone());
     let mut mappings = HashMap::new();
-    if let Err(e) = load_properties(properties_file, &mut mappings) {
+    if let Err(e) = load_properties(config.properties_file.clone(), &mut mappings) {
         return Err(format!(
             "Failed to load properties file '{}': {}",
-            properties_file, e
+            config.properties_file, e
         ));
     }
 
-    let assets_path = Path::new(assets_root);
+    let assets_path = Path::new(&config.assets_root);
     let threads = Arc::new(Mutex::new(Vec::new()));
 
     for (local_item, remote_dir) in mappings {
@@ -32,12 +28,13 @@ pub fn run(
         if !local_path.exists() {
             log_warn_with_lock!(
                 "Local item '{}' not found in assets directory '{}'. Skipping.",
-                local_item, assets_root
+                local_item,
+                config.assets_root
             );
             continue;
         }
 
-        let remote_dir_resolved = resolve_remote_path(session, config, &remote_dir)?;
+        let remote_dir_resolved = resolve_remote_path(&session, config.use_sudo, &remote_dir)?;
         if remote_dir_resolved.is_empty() {
             return Err(format!(
                 "Failed to resolve remote directory '{}'",
@@ -46,27 +43,25 @@ pub fn run(
         }
         // println!("remote_dir_resolved: '{}'",remote_dir_resolved);
         // Check if remote directory is writable
-        if let Err(e) =
-            session.check_directory_writable(&remote_dir_resolved, config.upload.use_sudo)
-        {
+        if let Err(e) = session.check_directory_writable(&remote_dir_resolved, config.use_sudo) {
             return Err(format!(
                 "Remote directory '{}' is not writable: {}",
                 remote_dir_resolved, e
             ));
         }
 
-        let config_clone = config.clone();
-        let session = SshSession::new(&config_clone)
-            .map_err(|e| format!("Failed to create SSH session for '{}': {}", local_item, e))?;
         let local_path_clone = local_path.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
-
+        let session_clone = session.clone();
+        let config_clone = config.clone();
         let handle = thread::spawn(move || {
             upload_file_or_dir(
-                &session,
-                &config_clone,
+                &session_clone,
                 &local_path_clone,
                 &remote_dir_clone,
+                config_clone.use_sudo,
+                config_clone.use_rsync,
+                config_clone.silent,
             )
             .map_err(|e| format!("Failed to upload '{}': {}", local_path_clone.display(), e))
         });
@@ -89,7 +84,7 @@ pub fn run(
     Ok(())
 }
 
-fn load_properties(file: &str, mappings: &mut HashMap<String, String>) -> Result<(), String> {
+fn load_properties(file: String, mappings: &mut HashMap<String, String>) -> Result<(), String> {
     let f = File::open(file).map_err(|e| format!("Error opening file: {}", e))?;
     for (line_num, line) in io::BufReader::new(f).lines().enumerate() {
         let line = line.map_err(|e| format!("Error reading line {}: {}", line_num + 1, e))?;
@@ -122,17 +117,19 @@ fn load_properties(file: &str, mappings: &mut HashMap<String, String>) -> Result
 
 fn upload_file_or_dir(
     session: &SshSession,
-    config: &ConfigWrapper,
     local_path: &PathBuf,
     remote_dir: &str,
+    use_sudo: bool,
+    use_rsync: bool,
+    silent: bool,
 ) -> Result<(), String> {
     // Create remote directory with appropriate permissions
-    let mkdir_cmd = if config.upload.use_sudo {
+    let mkdir_cmd = if use_sudo {
         format!("mkdir -p {} && chmod 755 {}", remote_dir, remote_dir)
     } else {
         format!("mkdir -p {}", remote_dir)
     };
-    if let Err(e) = session.execute(&mkdir_cmd, config.upload.use_sudo) {
+    if let Err(e) = session.execute(&mkdir_cmd, use_sudo) {
         return Err(format!(
             "Failed to create remote directory '{}': {}",
             remote_dir, e
@@ -153,7 +150,7 @@ fn upload_file_or_dir(
             let remote_sub = format!("{}/{}", remote_dir, base_name);
 
             if session.file_exists(&remote_sub)? {
-                if !config.upload.silent
+                if !silent
                     && !ask_user(&format!(
                         "Remote file '{}' already exists. Overwrite?",
                         remote_sub
@@ -163,7 +160,7 @@ fn upload_file_or_dir(
                 }
             }
 
-            upload_single(session, config, &sub_path, &remote_sub)?;
+            upload_single(session, use_sudo, use_rsync, &sub_path, &remote_sub)?;
             log_info_with_lock!(
                 "Successfully uploaded '{}' to '{}'",
                 sub_path.display(),
@@ -179,7 +176,7 @@ fn upload_file_or_dir(
         let remote_file = format!("{}/{}", remote_dir, base_name);
 
         if session.file_exists(&remote_file)? {
-            if !config.upload.silent
+            if !silent
                 && !ask_user(&format!(
                     "Remote file '{}' already exists. Overwrite?",
                     remote_file
@@ -189,7 +186,7 @@ fn upload_file_or_dir(
             }
         }
 
-        upload_single(session, config, local_path, &remote_file)?;
+        upload_single(session, use_sudo, use_rsync, local_path, &remote_file)?;
         log_info_with_lock!(
             "Successfully uploaded '{}' to '{}'",
             local_path.display(),
@@ -202,7 +199,8 @@ fn upload_file_or_dir(
 
 fn upload_single(
     session: &SshSession,
-    config: &ConfigWrapper,
+    use_sudo: bool,
+    use_rsync: bool,
     local_path: &PathBuf,
     remote_path: &str,
 ) -> Result<(), String> {
@@ -211,7 +209,7 @@ fn upload_single(
         local_path.display(),
         remote_path
     );
-    if config.upload.use_rsync && command_exists("rsync") {
+    if use_rsync && command_exists("rsync") {
         log_debug_with_lock!("Using rsync for upload");
         let status = std::process::Command::new("rsync")
             .arg("-avz")
@@ -231,7 +229,7 @@ fn upload_single(
         }
     } else {
         log_debug_with_lock!("Using SCP for upload");
-        session.scp_upload(local_path, remote_path, config.upload.use_sudo)?;
+        session.scp_upload(local_path, remote_path, use_sudo)?;
     }
     Ok(())
 }

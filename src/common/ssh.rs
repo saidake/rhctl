@@ -15,15 +15,15 @@ pub struct SshSession {
 }
 
 impl SshSession {
-    pub fn new(config: &super::config::ConfigWrapper) -> Result<Self, String> {
+    pub fn new(host: String, user: String, ssh_port:u16, password: String) -> Result<Self, String> {
         debug!(
             "Connecting to {}:{} as {}",
-            config.host, config.port, config.user
+            host, ssh_port, user
         );
-        let tcp = TcpStream::connect(format!("{}:{}", config.host, config.port)).map_err(|e| {
+        let tcp = TcpStream::connect(format!("{}:{}", host, ssh_port)).map_err(|e| {
             format!(
                 "Cannot connect to {} on port {}: {}",
-                config.host, config.port, e
+                host, ssh_port, e
             )
         })?;
         let mut sess =
@@ -31,14 +31,14 @@ impl SshSession {
         sess.set_tcp_stream(tcp);
         sess.handshake()
             .map_err(|e| format!("SSH handshake failed: {}", e))?;
-        sess.userauth_password(&config.user, config.password.as_ref().unwrap())
-            .map_err(|e| format!("Authentication failed for user '{}': {}", config.user, e))?;
+        sess.userauth_password(&user, &password)
+            .map_err(|e| format!("Authentication failed for user '{}': {}", user, e))?;
         debug!("SSH session established successfully");
         Ok(Self {
-            host: config.host.clone(),
-            port: config.port,
-            user: config.user.clone(),
-            password: config.password.clone().unwrap(),
+            host: host.clone(),
+            port: ssh_port,
+            user: user.clone(),
+            password: password.clone(),
             session: sess,
         })
     }
