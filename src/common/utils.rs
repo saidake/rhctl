@@ -22,7 +22,7 @@ pub fn connect_ssh(host: String, user: String, ssh_port: u16, password: String) 
             session
         },
         Err(e) => {
-            error!("SSH connection failed: {}", e);
+            error!("SSH connection failed. \n\t{}", e);
             std::process::exit(1);
         }
     }
@@ -37,7 +37,7 @@ pub fn connect_ssh_thread(
     match SshSession::new(host.clone(), user.clone(), ssh_port.clone(), password.clone()) {
         Ok(s) => s,
         Err(e) => {
-            error!("SSH connection failed in sub thread: {}", e);
+            error!("SSH connection failed in sub thread. \n\t{}", e);
             std::process::exit(1);
         }
     }

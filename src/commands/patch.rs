@@ -40,7 +40,7 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         .arg("-al")
         .arg(&local_path)
         .output()
-        .map_err(|e| format!("Failed to execute ls -al on '{}': {}", local_path.display(), e))?;
+        .map_err(|e| format!("Failed to execute ls -al on '{}'. \n\t{}", local_path.display(), e))?;
     if !ls_local.status.success() {
         return Err(format!("Failed to get local file info for '{}'", local_path.display()));
     }

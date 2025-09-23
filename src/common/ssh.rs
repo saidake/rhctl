@@ -23,14 +23,14 @@ impl SshSession {
     ) -> Result<Self, String> {
         debug!("Connecting to {}:{} as {}", host, ssh_port, user);
         let tcp = TcpStream::connect(format!("{}:{}", host, ssh_port))
-            .map_err(|e| format!("Cannot connect to {} on port {}: {}", host, ssh_port, e))?;
+            .map_err(|e| format!("Cannot connect to {} on port {}. \n\t{}", host, ssh_port, e))?;
         let mut sess =
-            Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
+            Session::new().map_err(|e| format!("Failed to create SSH session. \n\t{}", e))?;
         sess.set_tcp_stream(tcp);
         sess.handshake()
-            .map_err(|e| format!("SSH handshake failed: {}", e))?;
+            .map_err(|e| format!("SSH handshake failed. \n\t{}", e))?;
         sess.userauth_password(&user, &password)
-            .map_err(|e| format!("Authentication failed for user '{}': {}", user, e))?;
+            .map_err(|e| format!("Authentication failed for user '{}'. \n\t{}", user, e))?;
         debug!("SSH session established successfully");
         Ok(Self {
             host: host.clone(),
@@ -46,7 +46,7 @@ impl SshSession {
         let mut channel = self
             .session
             .channel_session()
-            .map_err(|e| format!("Failed to open SSH channel: {}", e))?;
+            .map_err(|e| format!("Failed to open SSH channel. \n\t{}", e))?;
         let full_cmd = if use_sudo {
             format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, cmd)
         } else {
@@ -54,17 +54,17 @@ impl SshSession {
         };
         channel
             .exec(&full_cmd)
-            .map_err(|e| format!("Failed to execute command '{}': {}", cmd, e))?;
+            .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
         let mut output = String::new();
         channel
             .read_to_string(&mut output)
-            .map_err(|e| format!("Failed to read command output: {}", e))?;
+            .map_err(|e| format!("Failed to read command output. \n\t{}", e))?;
         channel
             .wait_close()
-            .map_err(|e| format!("Failed to close channel: {}", e))?;
+            .map_err(|e| format!("Failed to close channel. \n\t{}", e))?;
         let exit_status = channel
             .exit_status()
-            .map_err(|e| format!("Failed to get exit status: {}", e))?;
+            .map_err(|e| format!("Failed to get exit status. \n\t{}", e))?;
         debug!("Command exit status: {}", exit_status);
         if exit_status != 0 {
             return Err(format!(
@@ -88,7 +88,7 @@ impl SshSession {
         let mut channel = self
             .session
             .channel_session()
-            .map_err(|e| format!("Failed to open SSH channel: {}", e))?;
+            .map_err(|e| format!("Failed to open SSH channel. \n\t{}", e))?;
         let full_cmd = if use_sudo {
             format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, cmd)
         } else {
@@ -96,13 +96,13 @@ impl SshSession {
         };
         channel
             .exec(&full_cmd)
-            .map_err(|e| format!("Failed to execute command '{}': {}", cmd, e))?;
+            .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
 
         // Read stdout
         let stdout = channel.stream(0);
         let stdout_reader = BufReader::new(stdout);
         for line in stdout_reader.lines() {
-            let line = line.map_err(|e| format!("Failed to read stdout: {}", e))?;
+            let line = line.map_err(|e| format!("Failed to read stdout. \n\t{}", e))?;
             callback(&line, false)?;
         }
 
@@ -110,16 +110,16 @@ impl SshSession {
         let stderr = channel.stderr();
         let stderr_reader = BufReader::new(stderr);
         for line in stderr_reader.lines() {
-            let line = line.map_err(|e| format!("Failed to read stderr: {}", e))?;
+            let line = line.map_err(|e| format!("Failed to read stderr. \n\t{}", e))?;
             callback(&line, true)?;
         }
 
         channel
             .wait_close()
-            .map_err(|e| format!("Failed to close channel: {}", e))?;
+            .map_err(|e| format!("Failed to close channel. \n\t{}", e))?;
         let exit_status = channel
             .exit_status()
-            .map_err(|e| format!("Failed to get exit status: {}", e))?;
+            .map_err(|e| format!("Failed to get exit status. \n\t{}", e))?;
         debug!("Command exit status: {}", exit_status);
         if exit_status != 0 {
             return Err(format!(
@@ -143,14 +143,14 @@ impl SshSession {
 
         let mkdir_cmd = format!("mkdir -p '{}'", path);
         self.execute(&mkdir_cmd, use_sudo)
-            .map_err(|e| format!("Failed to create directory '{}': {}", path, e))?;
+            .map_err(|e| format!("Failed to create directory '{}'. \n\t{}", path, e))?;
 
         debug!("Checking if remote directory '{}' is writable", path);
 
         let check_cmd = format!("test -w '{}'; echo $?", path);
         let output = self
             .execute(&check_cmd, use_sudo)
-            .map_err(|e| format!("Failed to check write permission for '{}': {}", path, e))?;
+            .map_err(|e| format!("Failed to check write permission for '{}'. \n\t{}", path, e))?;
 
         if output.trim() != "0" {
             return Err(format!("Directory '{}' is not writable", path));
@@ -207,34 +207,34 @@ impl SshSession {
         let mut channel = self
             .session
             .scp_send(Path::new(remote_path), 0o644, stat.len(), None)
-            .map_err(|e| format!("Failed to initiate SCP upload to '{}': {}", remote_path, e))?;
+            .map_err(|e| format!("Failed to initiate SCP upload to '{}'. \n\t{}", remote_path, e))?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)
-            .map_err(|e| format!("Failed to read file '{}': {}", local_path.display(), e))?;
+            .map_err(|e| format!("Failed to read file '{}'. \n\t{}", local_path.display(), e))?;
         channel.write_all(&buffer).map_err(|e| {
             format!(
-                "Failed to write to SCP channel for '{}': {}",
+                "Failed to write to SCP channel for '{}'. \n\t{}",
                 remote_path, e
             )
         })?;
         channel.send_eof().map_err(|e| {
             format!(
-                "Failed to send EOF for SCP upload to '{}': {}",
+                "Failed to send EOF for SCP upload to '{}'. \n\t{}",
                 remote_path, e
             )
         })?;
         channel.wait_eof().map_err(|e| {
             format!(
-                "Failed to wait for EOF for SCP upload to '{}': {}",
+                "Failed to wait for EOF for SCP upload to '{}'. \n\t{}",
                 remote_path, e
             )
         })?;
         channel
             .close()
-            .map_err(|e| format!("Failed to close SCP channel for '{}': {}", remote_path, e))?;
+            .map_err(|e| format!("Failed to close SCP channel for '{}'. \n\t{}", remote_path, e))?;
         channel.wait_close().map_err(|e| {
             format!(
-                "Failed to wait for SCP channel close for '{}': {}",
+                "Failed to wait for SCP channel close for '{}'. \n\t{}",
                 remote_path, e
             )
         })?;

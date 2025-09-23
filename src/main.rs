@@ -1,7 +1,9 @@
 use clap::{Parser, Subcommand};
 use log::{debug, error};
 use std::{path::Path, process::exit};
-
+use ansi_term::Colour;
+use log::Level;
+use std::io::Write;
 mod commands;
 mod common;
 mod domain;
@@ -173,8 +175,7 @@ fn main() {
     let log_level = match &cli.command {
         Commands::Upload { log_level, .. }
         | Commands::Execute { log_level, .. }
-        | Commands::Patch { log_level, .. } 
-        => log_level.as_deref().unwrap_or("info"),
+        | Commands::Patch { log_level, .. } => log_level.as_deref().unwrap_or("info"),
     };
     let config_path = match &cli.command {
         Commands::Upload { config, .. } => config,
@@ -183,6 +184,16 @@ fn main() {
     };
     // Initialize logging
     env_logger::builder()
+        .format(|buf, record| {
+            let level_str = match record.level() {
+                Level::Error => Colour::Red.paint("ERROR"),
+                Level::Warn  => Colour::Yellow.paint("WARN"),
+                Level::Info  => Colour::Green.paint("INFO"),
+                Level::Debug => Colour::Blue.paint("DEBUG"),
+                Level::Trace => Colour::Purple.paint("TRACE"),
+            };
+            writeln!(buf, "[{}] {}", level_str, record.args())
+        })
         .filter_level(match log_level {
             "debug" => log::LevelFilter::Debug,
             "info" => log::LevelFilter::Info,
@@ -217,7 +228,7 @@ fn main() {
                 exit(1);
             }
             if let Err(e) = commands::upload::run(&config) {
-                log_error_with_lock!("Upload failed: {}", e);
+                log_error_with_lock!("Upload failed. \n\t{}", e);
                 exit(1);
             }
         }
@@ -225,7 +236,7 @@ fn main() {
         Commands::Execute { .. } => {
             let config: ExecuteCmdConfig = merge_execute(&cli.command, yaml_config);
             if let Err(e) = commands::execute::run(&config) {
-                error!("Execute failed: {}", e);
+                error!("Execute failed. \n\t{}", e);
                 exit(1);
             }
         }
@@ -233,7 +244,7 @@ fn main() {
         Commands::Patch { .. } => {
             let config: PatchCmdConfig = merge_patch(&cli.command, yaml_config);
             if let Err(e) = commands::patch::run(&config) {
-                error!("Patch failed: {}", e);
+                error!("Patch failed. \n\t{}", e);
                 exit(1);
             }
         }

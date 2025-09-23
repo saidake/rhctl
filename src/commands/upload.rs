@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use log::info;
+use log::{error, info};
 
 use crate::common::ssh::SshSession;
 use crate::common::utils::{ask_user, connect_ssh, connect_ssh_thread, resolve_remote_path};
@@ -20,12 +21,13 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
         config.password.clone(),
     );
     let mut mappings = HashMap::new();
-    if let Err(e) = load_properties(config.properties_file.clone(), &mut mappings) {
+    if let Err(e) = load_properties(config.properties_file.as_str(), &mut mappings) {
         return Err(format!(
-            "Failed to load properties file '{}': {}",
+            "Failed to load properties file '{}'. \n\t{}",
             config.properties_file, e
         ));
     }
+
 
     let assets_path = Path::new(&config.assets_root);
     let threads = Arc::new(Mutex::new(Vec::new()));
@@ -70,7 +72,7 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
                 config_clone.use_rsync,
                 config_clone.silent,
             )
-            .map_err(|e| format!("Failed to upload '{}': {}", local_path_clone.display(), e))
+            .map_err(|e| format!("Failed to upload '{}'. \n\t{}", local_path_clone.display(), e))
         });
 
         threads.lock().unwrap().push(handle);
@@ -84,17 +86,17 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
     }
 
     if !errors.is_empty() {
-        return Err(errors.join("\n"));
+        return Err(errors.join("\n\n\t"));
     }
 
     log_info_with_lock!("Upload complete.");
     Ok(())
 }
 
-fn load_properties(file: String, mappings: &mut HashMap<String, String>) -> Result<(), String> {
-    let f = File::open(file).map_err(|e| format!("Error opening file: {}", e))?;
+fn load_properties(file: &str, mappings: &mut HashMap<String, String>) -> Result<(), String> {
+    let f = File::open(file).map_err(|e| format!("Error opening file. \n\t{}", e))?;
     for (line_num, line) in io::BufReader::new(f).lines().enumerate() {
-        let line = line.map_err(|e| format!("Error reading line {}: {}", line_num + 1, e))?;
+        let line = line.map_err(|e| format!("Error reading line {}. \n\t{}", line_num + 1, e))?;
         let line = line.trim_end_matches(|c| c == '\n' || c == '\r' || c == ' ' || c == '\t');
         if line.trim().is_empty() || line.starts_with('#') {
             continue;
@@ -138,16 +140,16 @@ fn upload_file_or_dir(
     };
     if let Err(e) = session.execute(&mkdir_cmd, use_sudo) {
         return Err(format!(
-            "Failed to create remote directory '{}': {}",
+            "Failed to create remote directory '{}'. \n\t{}",
             remote_dir, e
         ));
     }
 
     if local_path.is_dir() {
         for entry in std::fs::read_dir(local_path)
-            .map_err(|e| format!("Failed to read directory '{}': {}", local_path.display(), e))?
+            .map_err(|e| format!("Failed to read directory '{}'. \n\t{}", local_path.display(), e))?
         {
-            let entry = entry.map_err(|e| format!("Error reading directory entry: {}", e))?;
+            let entry = entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
             let sub_path = entry.path();
             let base_name = sub_path
                 .file_name()
@@ -200,7 +202,6 @@ fn upload_file_or_dir(
             remote_file
         );
     }
-
     Ok(())
 }
 
@@ -236,7 +237,7 @@ fn upload_single(
 
                 let status = sshpass_cmd
                     .status()
-                    .map_err(|e| format!("Failed to execute rsync via sshpass: {}", e))?;
+                    .map_err(|e| format!("Failed to execute rsync via sshpass. \n\t{}", e))?;
 
                 if !status.success() {
                     return Err(format!(
@@ -244,7 +245,7 @@ fn upload_single(
                         status.code().unwrap_or(-1)
                     ));
                 }
-                return Ok(()); 
+                return Ok(());
             } else {
                 log_warn_with_lock!(
                     "rsync password required but sshpass not found; will fallback to SCP"
