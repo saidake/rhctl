@@ -48,7 +48,7 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         info!("{}", line);
     }
 
-    if session.file_exists(&resolved_upload)? {
+    if session.file_or_dir_exists(&resolved_upload)? {
         if !config.silent && !ask_user(&format!("The remote file '{}' already exists. Overwrite with '{}'?", resolved_upload, local_path.display())) {
             return Ok(());
         }
@@ -66,7 +66,7 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
     }
 
     info!("==================================== Backup the server file");
-    if !session.file_exists(&resolved_file)? {
+    if !session.file_or_dir_exists(&resolved_file)? {
         return Err(format!("Remote file '{}' does not exist", resolved_file));
     }
     info!("Remote file info before backup:");

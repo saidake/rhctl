@@ -138,15 +138,34 @@ impl SshSession {
         Ok(())
     }
 
-    pub fn file_exists(&self, path: &str) -> Result<bool, String> {
+    pub fn file_or_dir_exists(&self, path: &str) -> Result<bool, String> {
         debug!("Checking if '{}' exists", path);
         let output = self.execute(&format!("test -e '{}'; echo $?", path), false)?;
         let exists = output.trim() == "0";
-        debug!("File '{}' exists: {}", path, exists);
+        debug!("Remote path '{}' exists: {}", path, exists);
+        Ok(exists)
+    }
+    pub fn file_exists(&self, path: &str) -> Result<bool, String> {
+        debug!("Checking if file '{}' exists", path);
+        let output = self.execute(&format!("test -f '{}'; echo $?", path), false)?;
+        let exists = output.trim() == "0";
+        debug!("Remote file '{}' exists: {}", path, exists);
         Ok(exists)
     }
 
-    pub fn check_remote_dir_writable(&self, remote_dir: &str, use_sudo: bool) -> Result<(), String> {
+    pub fn dir_exists(&self, path: &str) -> Result<bool, String> {
+        debug!("Checking if directory '{}' exists", path);
+        let output = self.execute(&format!("test -d '{}'; echo $?", path), false)?;
+        let exists = output.trim() == "0";
+        debug!("Remote directory '{}' exists: {}", path, exists);
+        Ok(exists)
+    }
+
+    pub fn check_remote_dir_writable(
+        &self,
+        remote_dir: &str,
+        use_sudo: bool,
+    ) -> Result<(), String> {
         debug!("Ensuring remote directory '{}' exists", remote_dir);
 
         let check_file_cmd = format!("[ -f '{}' ] && echo FILE || echo OK", remote_dir);
@@ -167,9 +186,12 @@ impl SshSession {
         debug!("Checking if remote directory '{}' is writable", remote_dir);
 
         let check_cmd = format!("test -w '{}'; echo $?", remote_dir);
-        let output = self
-            .execute(&check_cmd, use_sudo)
-            .map_err(|e| format!("Failed to check write permission for '{}'. \n\t{}", remote_dir, e))?;
+        let output = self.execute(&check_cmd, use_sudo).map_err(|e| {
+            format!(
+                "Failed to check write permission for '{}'. \n\t{}",
+                remote_dir, e
+            )
+        })?;
         if output.trim() != "0" {
             return Err(format!("Directory '{}' is not writable", remote_dir));
         }
@@ -276,7 +298,7 @@ impl SshSession {
         Ok(())
     }
 
-    fn command_exists( &self, cmd: &str) -> bool {
+    fn command_exists(&self, cmd: &str) -> bool {
         std::process::Command::new("which")
             .arg(cmd)
             .stdout(std::process::Stdio::null())
@@ -343,7 +365,11 @@ impl SshSession {
         Ok(())
     }
 
-    pub fn load_properties(&self, file: &str, mappings: &mut HashMap<String, String>) -> Result<(), String> {
+    pub fn load_properties(
+        &self,
+        file: &str,
+        mappings: &mut HashMap<String, String>,
+    ) -> Result<(), String> {
         let f = File::open(file).map_err(|e| format!("Error opening file. \n\t{}", e))?;
         for (line_num, line) in BufReader::new(f).lines().enumerate() {
             let line =
@@ -402,15 +428,10 @@ impl SshSession {
                     .ok_or("Invalid file name encoding")?;
                 let remote_sub = format!("{}/{}", remote_dir, base_name);
 
-                if self.file_exists(&remote_sub)? {
-                    if !silent
-                        && !ask_user(&format!(
-                            "Remote file '{}' already exists. Overwrite?",
-                            remote_sub
-                        ))
-                    {
-                        continue;
-                    }
+                // Check if remote file or directory exists
+
+                if !self.confirm_and_overwrite_remote(&remote_sub, use_sudo, silent)? {
+                    continue;
                 }
 
                 self.do_upload(use_sudo, use_rsync, &sub_path, &remote_sub)?;
@@ -428,24 +449,64 @@ impl SshSession {
                 .ok_or("Invalid file name encoding")?;
             let remote_file = format!("{}/{}", remote_dir, base_name);
 
-            if self.file_exists(&remote_file)? {
-                if !silent
-                    && !ask_user(&format!(
-                        "Remote file '{}' already exists. Overwrite?",
-                        remote_file
-                    ))
-                {
-                    return Ok(());
-                }
+            if self.confirm_and_overwrite_remote(&remote_file, use_sudo, silent)? {
+                self.do_upload(use_sudo, use_rsync, local_file_or_dir, &remote_file)?;
+                log_info_with_lock!(
+                    "Successfully uploaded '{}' to '{}'",
+                    local_file_or_dir.display(),
+                    remote_file
+                );
             }
-
-            self.do_upload(use_sudo, use_rsync, local_file_or_dir, &remote_file)?;
-            log_info_with_lock!(
-                "Successfully uploaded '{}' to '{}'",
-                local_file_or_dir.display(),
-                remote_file
-            );
         }
         Ok(())
+    }
+
+    /// Check if a remote path exists (file or directory), ask user for overwrite if needed,
+    /// and delete it if confirmed.
+    /// Returns Ok(true) if deleted, Ok(false) if skipped, Err(...) on error.
+    pub fn confirm_and_overwrite_remote(
+        &self,
+        remote_path: &str,
+        use_sudo: bool,
+        silent: bool,
+    ) -> Result<bool, String> {
+        // Check if remote path is a file or directory
+        let is_file = self.file_exists(remote_path)?;
+        let is_dir = self.dir_exists(remote_path)?;
+
+        if is_file || is_dir {
+            // Build prompt message
+            let prompt = if is_file {
+                format!(
+                    "Remote file '{}' already exists. Overwriting will DELETE it. Continue?",
+                    remote_path
+                )
+            } else {
+                format!(
+                    "Remote directory '{}' already exists. Overwriting will DELETE it and all its contents. Continue?",
+                    remote_path
+                )
+            };
+
+            // Ask user unless in silent mode
+            if !silent && !ask_user(&prompt) {
+                return Ok(false); // User chose not to delete
+            }
+
+            // Execute deletion
+            self.execute(&format!("rm -rf '{}'", remote_path), use_sudo)
+                .map_err(|e| {
+                    format!(
+                        "Failed to remove existing remote {} '{}'. \n\t{}",
+                        if is_file { "file" } else { "directory" },
+                        remote_path,
+                        e
+                    )
+                })?;
+
+            return Ok(true); // Deleted successfully
+        }
+
+        Ok(false) // Path does not exist
     }
 }
