@@ -1,5 +1,5 @@
-use crate::common::ssh::SshSession;
 use crate::domain::constants::GLOBAL_LOG_LOCK;
+use crate::{common::ssh::SshSession, domain::constants::REMOTE_TEMP_SBXCTL_FOLDER};
 use log::{debug, error, info, warn};
 use rpassword::prompt_password;
 use std::io::{self, Write};
@@ -20,7 +20,7 @@ pub fn connect_ssh(host: String, user: String, ssh_port: u16, password: String) 
         Ok(session) => {
             info!("SSH session established: {}@{}:{}", user, host, ssh_port);
             session
-        },
+        }
         Err(e) => {
             error!("SSH connection failed. \n\t{}", e);
             std::process::exit(1);
@@ -34,7 +34,12 @@ pub fn connect_ssh_thread(
     ssh_port: u16,
     password: String,
 ) -> SshSession {
-    match SshSession::new(host.clone(), user.clone(), ssh_port.clone(), password.clone()) {
+    match SshSession::new(
+        host.clone(),
+        user.clone(),
+        ssh_port.clone(),
+        password.clone(),
+    ) {
         Ok(s) => s,
         Err(e) => {
             error!("SSH connection failed in sub thread. \n\t{}", e);
@@ -111,10 +116,10 @@ pub fn resolve_remote_path(
         .map(|s| s.trim_end().to_string()) // Trim trailing whitespace and newlines
 }
 
-pub fn generate_temp_path(prefix: &str) -> String {
+pub fn generate_temp_dir(prefix: &str) -> String {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    format!("/tmp/sandbox/{}_{:x}", prefix, timestamp)
+    format!("{}/{}_{:x}", REMOTE_TEMP_SBXCTL_FOLDER, prefix, timestamp)
 }

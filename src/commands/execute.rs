@@ -4,7 +4,7 @@ use std::path::Path;
 
 use log::{error, info};
 
-use crate::common::utils::{connect_ssh, generate_temp_path};
+use crate::common::utils::{connect_ssh, generate_temp_dir};
 use crate::domain::cmd_params::ExecuteCmdConfig;
 
 pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
@@ -23,12 +23,12 @@ pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
     }
 
     if config.use_sudo {
-        let temp_remote = generate_temp_path("exec");
+        let temp_remote = generate_temp_dir("exec");
         info!(
             "Uploading script '{}' to temporary path '{}'",
             config.script, temp_remote
         );
-        session.scp_upload(script_path, &temp_remote, false)?;
+        session.do_upload_with_scp(script_path, &temp_remote, false)?;
         info!("Executing script in '{}' with sudo", config.remote_path);
         session.execute_stream(
             &format!("cd {} && bash {}", config.remote_path, temp_remote),

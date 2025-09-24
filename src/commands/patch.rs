@@ -58,7 +58,7 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         }
     }
     info!("Uploading '{}' to '{}'", local_path.display(), resolved_upload);
-    session.scp_upload(&local_path, &resolved_upload, config.use_sudo)?;
+    session.do_upload_with_scp(&local_path, &resolved_upload, config.use_sudo)?;
     info!("Upload completed. Printing uploaded file info:");
     let ls_upload = session.execute(&format!("ls -al {}", resolved_upload), config.use_sudo)?;
     for line in ls_upload.lines() {

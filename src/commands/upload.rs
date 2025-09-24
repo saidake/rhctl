@@ -1,14 +1,8 @@
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
-use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use log::{error, info};
-
-use crate::common::ssh::SshSession;
 use crate::common::utils::{ask_user, connect_ssh, connect_ssh_thread, resolve_remote_path};
 use crate::domain::cmd_params::UploadCmdConfig;
 use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock};
@@ -21,20 +15,19 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
         config.password.clone(),
     );
     let mut mappings = HashMap::new();
-    if let Err(e) = load_properties(config.properties_file.as_str(), &mut mappings) {
+    if let Err(e) = session.load_properties(config.properties_file.as_str(), &mut mappings) {
         return Err(format!(
             "Failed to load properties file '{}'. \n\t{}",
             config.properties_file, e
         ));
     }
 
-
     let assets_path = Path::new(&config.assets_root);
     let threads = Arc::new(Mutex::new(Vec::new()));
 
     for (local_item, remote_dir) in mappings {
-        let local_path = assets_path.join(&local_item);
-        if !local_path.exists() {
+        let local_file_or_dir = assets_path.join(&local_item);
+        if !local_file_or_dir.exists() {
             log_warn_with_lock!(
                 "Local item '{}' not found in assets directory '{}'. Skipping.",
                 local_item,
@@ -52,9 +45,9 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
         }
         // println!("remote_dir_resolved: '{}'",remote_dir_resolved);
         // Check if remote directory is writable
-        session.check_directory_writable(&remote_dir_resolved, config.use_sudo)?;
+        session.check_remote_dir_writable(&remote_dir_resolved, config.use_sudo)?;
 
-        let local_path_clone = local_path.clone();
+        let local_file_or_dir_clone = local_file_or_dir.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
         let config_clone = config.clone();
         let handle = thread::spawn(move || {
@@ -64,15 +57,21 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
                 config_clone.ssh_port,
                 config_clone.password.clone(),
             );
-            upload_file_or_dir(
-                &session_thread,
-                &local_path_clone,
-                &remote_dir_clone,
-                config_clone.use_sudo,
-                config_clone.use_rsync,
-                config_clone.silent,
-            )
-            .map_err(|e| format!("Failed to upload '{}'. \n\t{}", local_path_clone.display(), e))
+            session_thread
+                .upload_file_or_dir_into_dir(
+                    &local_file_or_dir_clone,
+                    &remote_dir_clone,
+                    config_clone.use_sudo,
+                    config_clone.use_rsync,
+                    config_clone.silent,
+                )
+                .map_err(|e| {
+                    format!(
+                        "Failed to upload '{}'. \n\t{}",
+                        local_file_or_dir_clone.display(),
+                        e
+                    )
+                })
         });
 
         threads.lock().unwrap().push(handle);
@@ -91,182 +90,4 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
 
     log_info_with_lock!("Upload complete.");
     Ok(())
-}
-
-fn load_properties(file: &str, mappings: &mut HashMap<String, String>) -> Result<(), String> {
-    let f = File::open(file).map_err(|e| format!("Error opening file. \n\t{}", e))?;
-    for (line_num, line) in io::BufReader::new(f).lines().enumerate() {
-        let line = line.map_err(|e| format!("Error reading line {}. \n\t{}", line_num + 1, e))?;
-        let line = line.trim_end_matches(|c| c == '\n' || c == '\r' || c == ' ' || c == '\t');
-        if line.trim().is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let parts: Vec<&str> = line.splitn(2, '=').collect();
-        if parts.len() != 2 {
-            return Err(format!(
-                "Invalid format at line {}: '{}'",
-                line_num + 1,
-                line
-            ));
-        }
-        let local_path = parts[0].trim();
-        let target_path = parts[1].trim();
-        // println!("target_path: '{}'",target_path);
-        if local_path.is_empty() || target_path.is_empty() {
-            return Err(format!(
-                "Empty local or target path at line {}: '{}'",
-                line_num + 1,
-                line
-            ));
-        }
-        mappings.insert(local_path.to_string(), target_path.to_string());
-    }
-    Ok(())
-}
-
-fn upload_file_or_dir(
-    session: &SshSession,
-    local_path: &PathBuf,
-    remote_dir: &str,
-    use_sudo: bool,
-    use_rsync: bool,
-    silent: bool,
-) -> Result<(), String> {
-    // Create remote directory with appropriate permissions
-    let mkdir_cmd = if use_sudo {
-        format!("mkdir -p {} && chmod 755 {}", remote_dir, remote_dir)
-    } else {
-        format!("mkdir -p {}", remote_dir)
-    };
-    if let Err(e) = session.execute(&mkdir_cmd, use_sudo) {
-        return Err(format!(
-            "Failed to create remote directory '{}'. \n\t{}",
-            remote_dir, e
-        ));
-    }
-
-    if local_path.is_dir() {
-        for entry in std::fs::read_dir(local_path)
-            .map_err(|e| format!("Failed to read directory '{}'. \n\t{}", local_path.display(), e))?
-        {
-            let entry = entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
-            let sub_path = entry.path();
-            let base_name = sub_path
-                .file_name()
-                .ok_or("Invalid file name")?
-                .to_str()
-                .ok_or("Invalid file name encoding")?;
-            let remote_sub = format!("{}/{}", remote_dir, base_name);
-
-            if session.file_exists(&remote_sub)? {
-                if !silent
-                    && !ask_user(&format!(
-                        "Remote file '{}' already exists. Overwrite?",
-                        remote_sub
-                    ))
-                {
-                    continue;
-                }
-            }
-
-            upload_single(session, use_sudo, use_rsync, &sub_path, &remote_sub)?;
-            log_info_with_lock!(
-                "Successfully uploaded '{}' to '{}'",
-                sub_path.display(),
-                remote_sub
-            );
-        }
-    } else {
-        let base_name = local_path
-            .file_name()
-            .ok_or("Invalid file name")?
-            .to_str()
-            .ok_or("Invalid file name encoding")?;
-        let remote_file = format!("{}/{}", remote_dir, base_name);
-
-        if session.file_exists(&remote_file)? {
-            if !silent
-                && !ask_user(&format!(
-                    "Remote file '{}' already exists. Overwrite?",
-                    remote_file
-                ))
-            {
-                return Ok(());
-            }
-        }
-
-        upload_single(session, use_sudo, use_rsync, local_path, &remote_file)?;
-        log_info_with_lock!(
-            "Successfully uploaded '{}' to '{}'",
-            local_path.display(),
-            remote_file
-        );
-    }
-    Ok(())
-}
-
-fn upload_single(
-    session: &SshSession,
-    use_sudo: bool,
-    use_rsync: bool,
-    local_path: &PathBuf,
-    remote_path: &str,
-) -> Result<(), String> {
-    log_debug_with_lock!(
-        "Attempting to upload '{}' to '{}'",
-        local_path.display(),
-        remote_path
-    );
-
-    if use_rsync && command_exists("rsync") {
-        log_debug_with_lock!("Using rsync for upload");
-        if !session.password.is_empty() {
-            if command_exists("sshpass") {
-                let mut sshpass_cmd = std::process::Command::new("sshpass");
-                sshpass_cmd
-                    .arg("-p")
-                    .arg(&session.password)
-                    .arg("rsync")
-                    .arg("-avz")
-                    .arg("-e")
-                    .arg(format!("ssh -p {}", session.port))
-                    .arg(local_path.to_str().ok_or("Invalid local path encoding")?)
-                    .arg(format!("{}@{}:{}", session.user, session.host, remote_path))
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null());
-
-                let status = sshpass_cmd
-                    .status()
-                    .map_err(|e| format!("Failed to execute rsync via sshpass. \n\t{}", e))?;
-
-                if !status.success() {
-                    return Err(format!(
-                        "rsync (sshpass) failed with exit code {}",
-                        status.code().unwrap_or(-1)
-                    ));
-                }
-                return Ok(());
-            } else {
-                log_warn_with_lock!(
-                    "rsync password required but sshpass not found; will fallback to SCP"
-                );
-                return session.scp_upload(local_path, remote_path, use_sudo);
-            }
-        }
-    } else {
-        log_debug_with_lock!("Using SCP for upload");
-        session.scp_upload(local_path, remote_path, use_sudo)?;
-    }
-
-    Ok(())
-}
-
-fn command_exists(cmd: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(cmd)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
 }
