@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::common::utils::{ask_user, connect_ssh, connect_ssh_thread, resolve_remote_path};
+use crate::common::utils::{connect_ssh, connect_ssh_thread, resolve_remote_path};
 use crate::domain::cmd_params::UploadCmdConfig;
-use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock};
+use crate::{log_info_with_lock, log_warn_with_lock};
 
 pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
     let session = connect_ssh(
@@ -14,6 +14,8 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
         config.ssh_port,
         config.password.clone(),
     );
+    // Ensure global temp dir exists before starting uploads
+    session.check_global_remote_temp_dir(config.use_sudo, config.silent)?;
     let mut mappings = HashMap::new();
     if let Err(e) = session.load_properties(config.properties_file.as_str(), &mut mappings) {
         return Err(format!(
@@ -43,13 +45,14 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
                 remote_dir
             ));
         }
-        // println!("remote_dir_resolved: '{}'",remote_dir_resolved);
+
         // Check if remote directory is writable
         session.check_remote_dir_writable(&remote_dir_resolved, config.use_sudo)?;
-
         let local_file_or_dir_clone = local_file_or_dir.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
         let config_clone = config.clone();
+
+        // spawn upload thread
         let handle = thread::spawn(move || {
             let session_thread = connect_ssh_thread(
                 config_clone.host.clone(),
@@ -75,15 +78,20 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
                 })
         });
 
+        // store thread handle
         threads.lock().unwrap().push(handle);
     }
 
+    // collect thread results
     let mut errors = Vec::new();
     for handle in threads.lock().unwrap().drain(..) {
         if let Err(e) = handle.join().unwrap() {
             errors.push(e);
         }
     }
+
+    // after all uploads done, clean up global temp dir
+    session.delete_global_temp_dir(config.use_sudo)?;
 
     if !errors.is_empty() {
         return Err(errors.join("\n\n\t"));

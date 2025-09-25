@@ -8,9 +8,11 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use crate::common::utils::{ask_user, connect_ssh, connect_ssh_thread, resolve_remote_path};
 use crate::domain::cmd_params::UploadCmdConfig;
+use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
 use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock};
 use log::{debug, info};
 
@@ -66,7 +68,7 @@ impl SshSession {
         channel
             .exec(&full_cmd)
             .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
-
+        // println!("execute full_cmd: {}, use_sudo: {}", full_cmd, use_sudo);
         // stdout
         let mut stdout = String::new();
         channel
@@ -97,9 +99,10 @@ impl SshSession {
             if !stderr.trim().is_empty() {
                 msg.push_str(&format!("\n\tstderr:\n\t{}", stderr));
             }
+            // println!("msg: {}", msg);
             return Err(msg);
         }
-
+        // println!("stdout: {}", stdout);
         Ok(stdout)
     }
 
@@ -220,8 +223,10 @@ impl SshSession {
                 if !self.ask_safe_to_transfer(&remote_sub, use_sudo, silent)? {
                     continue;
                 }
-
+                // thread::sleep(Duration::from_secs(500000));
                 if use_sudo && self.user != "root" {
+                    // println!("sub_path: {}", sub_path.display());
+
                     let temp_dir = remote_temp_dir.as_ref().unwrap();
                     // println!("do_upload_with_scp_recursive");
                     self.do_upload(use_sudo, use_rsync, &sub_path, &temp_dir)?;
@@ -238,17 +243,8 @@ impl SshSession {
             if use_sudo && self.user != "root" {
                 let temp_dir = remote_temp_dir.as_ref().unwrap();
                 // Move the content in temp_dir to the remote_dir
-                self.execute(
-                    &format!("mv {0}/* {1} && rm -rf '{0}'", temp_dir, remote_dir),
-                    true,
-                )?;
-                // self.execute(
-                // &format!(
-                //     "sh -c 'find \"{0}\" -mindepth 1 -maxdepth 1 -exec mv -t \"{1}\" {{}} + && rm -rf \"{0}\"'",
-                //     temp_dir, remote_dir
-                //     ),
-                //     true,
-                //     )?;
+                // thread::sleep(Duration::from_secs(30));
+                self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
             }
         } else {
             let base_name = local_file_or_dir
@@ -265,18 +261,8 @@ impl SshSession {
                     // println!("do_upload_with_scp_recursive");
                     self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &temp_dir)?;
                     // Move the content in temp_dir to the remote_dir
-                    // println!("move content");
-                    self.execute(
-                        &format!("mv {0}/* {1} && rm -rf '{0}'", temp_dir, remote_dir),
-                        true,
-                    )?;
-                    // self.execute(
-                    // &format!(
-                    //     "sh -c 'find \"{0}\" -mindepth 1 -maxdepth 1 -exec mv -t \"{1}\" {{}} + && rm -rf \"{0}\"'",
-                    //     temp_dir, remote_dir
-                    //     ),
-                    //     true,
-                    //     )?;
+                    // thread::sleep(Duration::from_secs(15));
+                    self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
                 } else {
                     self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &remote_dir)?;
                 }
@@ -290,28 +276,113 @@ impl SshSession {
         Ok(())
     }
 
+    fn move_and_delete_temp_dir(
+        &self,
+        temp_dir: &str,
+        remote_dir: &str,
+        use_sudo: bool,
+    ) -> Result<(), String> {
+        // Move hidden files if any exist
+        let hidden_exists = self.file_or_dir_exists(&format!("{}/.[!.]*", temp_dir), use_sudo)?;
+        if hidden_exists {
+            self.execute(
+                &format!("mv \"{0}\"/.[!.]* \"{1}\"/", temp_dir, remote_dir),
+                use_sudo,
+            )?;
+        }
+
+        // Move normal files if any exist
+        let normal_exists = self.file_or_dir_exists(&format!("{0}/*", temp_dir), use_sudo)?;
+        if normal_exists {
+            self.execute(
+                &format!("mv \"{0}\"/* \"{1}\"/", temp_dir, remote_dir),
+                use_sudo,
+            )?;
+        }
+
+        // Remove the temporary directory
+        self.execute(&format!("rm -rf \"{}\"", temp_dir), use_sudo)?;
+
+        Ok(())
+    }
+
+    /// Check if a remote path REMOTE_TEMP_SBXCTL_FOLDER exists, ask user for overwrite if needed,
+    /// and delete it if confirmed.
+    /// Returns Ok(true) if deleted, Ok(false) if skipped, Err(...) on error.
+    pub fn check_global_remote_temp_dir(&self, use_sudo: bool, silent: bool) -> Result<(), String> {
+        // Only non-root sudo users need to handle the global temp folder
+        if use_sudo && self.user != "root" {
+            let exists = self.file_or_dir_exists(REMOTE_TEMP_SBXCTL_FOLDER, use_sudo)?;
+            // println!("exists: {}",exists);
+            if exists {
+                if !silent
+                    && !ask_user(format!(
+                        "Remote path '{}' already exists. Transfering will DELETE it and use it as a temp folder. Continue?",
+                        REMOTE_TEMP_SBXCTL_FOLDER
+                    ).as_str())
+                {
+                    return Err("Operation aborted by user".into());
+                }
+
+                self.execute(
+                    &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
+                    use_sudo,
+                )
+                .map_err(|e| {
+                    format!(
+                        "Failed to remove existing remote '{}'. \n\t{}",
+                        REMOTE_TEMP_SBXCTL_FOLDER, e
+                    )
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn delete_global_temp_dir(&self, use_sudo: bool) -> Result<(), String> {
+        if use_sudo && self.user != "root" {
+            // println!("delete_global_temp_dir");
+            let remote_temp_sbxctl_folder_exists =
+                self.file_or_dir_exists(REMOTE_TEMP_SBXCTL_FOLDER, use_sudo)?;
+            // println!(
+            //     "remote_temp_sbxctl_folder_exists: {}",
+            //     remote_temp_sbxctl_folder_exists
+            // );
+            if remote_temp_sbxctl_folder_exists {
+                self.execute(
+                    &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
+                    use_sudo,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     /// Check if a remote path exists with specific test flag (-e, -f, -d).
     fn check_path(&self, path: &str, flag: &str, use_sudo: bool) -> Result<bool, String> {
         debug!("Checking if '{}' exists with flag '{}'", path, flag);
 
-        // Build command, e.g. test -f 'path'
-        let full_cmd = format!("test {} '{}'", flag, path);
+        let full_cmd = format!("test {} \"{}\"", flag, path);
+        // println!(
+        //     "path: {}, full_cmd: {}, use_sudo: {}",
+        //     path, full_cmd, use_sudo
+        // );
+
         let result = self.execute(&full_cmd, use_sudo);
 
         match result {
-            // test returns 0 → exists
             Ok(_) => {
                 debug!("Remote path '{}' exists (flag '{}'): true", path, flag);
                 Ok(true)
             }
-            // test returns 1 → does not exist
             Err(e) => {
+                // If test returns 1 → path does not exist
                 if e.contains("exit status 1") {
                     debug!("Remote path '{}' exists (flag '{}'): false", path, flag);
                     Ok(false)
                 } else {
-                    // Other errors (e.g. permission denied)
-                    Err(e)
+                    // Other errors (such as insufficient sudo permissions) return Err directly
+                    Err(format!("Failed to check remote path '{}'. \n\t{}", path, e))
                 }
             }
         }
@@ -332,7 +403,6 @@ impl SshSession {
         self.check_path(path, "-d", use_sudo)
     }
 
-
     pub fn check_remote_dir_writable(
         &self,
         remote_dir: &str,
@@ -340,7 +410,7 @@ impl SshSession {
     ) -> Result<(), String> {
         debug!("Ensuring remote directory '{}' exists", remote_dir);
 
-        let check_file_cmd = format!("[ -f '{}' ] && echo FILE || echo OK", remote_dir);
+        let check_file_cmd = format!("[ -f \"{}\" ] && echo FILE || echo OK", remote_dir);
         let check_output = self
             .execute(&check_file_cmd, use_sudo)
             .map_err(|e| format!("Failed to check path type for '{}'. \n\t{}", remote_dir, e))?;
@@ -351,13 +421,13 @@ impl SshSession {
             ));
         }
 
-        let mkdir_cmd = format!("mkdir -p '{}'", remote_dir);
+        let mkdir_cmd = format!("mkdir -p \"{}\"", remote_dir);
         self.execute(&mkdir_cmd, use_sudo)
             .map_err(|e| format!("Failed to create directory '{}'. \n\t{}", remote_dir, e))?;
 
         debug!("Checking if remote directory '{}' is writable", remote_dir);
 
-        let check_cmd = format!("test -w '{}'; echo $?", remote_dir);
+        let check_cmd = format!("test -w \"{}\"; echo $?", remote_dir);
         let output = self.execute(&check_cmd, use_sudo).map_err(|e| {
             format!(
                 "Failed to check write permission for '{}'. \n\t{}",
@@ -383,6 +453,9 @@ impl SshSession {
         remote_dir: &str,
         use_sudo: bool,
     ) -> Result<(), String> {
+        // println!("local_file_or_dir: {}", local_file_or_dir.display());
+        // println!("remote_dir: {}", remote_dir);
+        // thread::sleep(Duration::from_secs(60));
         if !local_file_or_dir.exists() {
             return Err(format!(
                 "Local path '{}' does not exist",
@@ -397,10 +470,15 @@ impl SshSession {
 
         // Build the remote target path
         let remote_target = format!("{}/{}", remote_dir, base_name);
-        // println!("remote_target: {}", remote_target);
+        // println!(
+        //     "local_file_or_dir:{}, remote_target: {}",
+        //     local_file_or_dir.display(),
+        //     remote_target
+        // );
 
         // Create remote directory if local path is a directory
         if local_file_or_dir.is_dir() {
+            // println!("local_file_or_dir.is_dir");
             self.create_remote_dir(remote_target.as_str(), use_sudo)?;
             // Recursively upload each entry
             for entry in fs::read_dir(local_file_or_dir).map_err(|e| {
@@ -418,9 +496,6 @@ impl SshSession {
                 self.do_upload_with_scp_recursive(&sub_path, &remote_target, use_sudo)?;
             }
         } else {
-            // println!("local_file_or_dir: {}", local_file_or_dir.display());
-            // println!("remote_target: {}", remote_target);
-
             // Local path is a file → upload
             let mut file = fs::File::open(local_file_or_dir).map_err(|e| {
                 format!(
@@ -495,7 +570,7 @@ impl SshSession {
                 )
             })?;
         }
-
+        // thread::sleep(Duration::from_secs(1500000000));
         Ok(())
     }
     fn command_exists(&self, cmd: &str) -> bool {
@@ -643,7 +718,7 @@ impl SshSession {
             }
 
             // Execute deletion
-            self.execute(&format!("rm -rf '{}'", remote_path), use_sudo)
+            self.execute(&format!("rm -rf \"{}\"", remote_path), use_sudo)
                 .map_err(|e| {
                     format!(
                         "Failed to remove existing remote {} '{}'. \n\t{}",
@@ -652,7 +727,7 @@ impl SshSession {
                         e
                     )
                 })?;
-
+            // println!("delete remote_path: {}", remote_path);
             return Ok(true); // Deleted successfully
         }
 
@@ -662,11 +737,11 @@ impl SshSession {
     pub fn create_remote_dir(&self, remote_dir: &str, use_sudo: bool) -> Result<String, String> {
         let cmd = if use_sudo {
             format!(
-                "mkdir -p '{}'; chown {} '{}'",
-                remote_dir, self.user, remote_dir
+                "mkdir -p \"{}\"; chown {} \"{}\"; chmod 700 \"{}\"",
+                remote_dir, self.user, remote_dir, remote_dir
             )
         } else {
-            format!("mkdir -p '{}'", remote_dir)
+            format!("mkdir -p \"{}\"; chmod 700 \"{}\"", remote_dir, remote_dir)
         };
 
         self.execute(&cmd, use_sudo).map_err(|e| {
