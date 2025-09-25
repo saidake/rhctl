@@ -48,7 +48,7 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         info!("{}", line);
     }
 
-    if session.file_or_dir_exists(&resolved_upload)? {
+    if session.file_or_dir_exists(&resolved_upload, config.use_sudo)? {
         if !config.silent && !ask_user(&format!("The remote file '{}' already exists. Overwrite with '{}'?", resolved_upload, local_path.display())) {
             return Ok(());
         }
@@ -58,7 +58,7 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         }
     }
     info!("Uploading '{}' to '{}'", local_path.display(), resolved_upload);
-    session.do_upload_with_scp(&local_path, &resolved_upload, config.use_sudo)?;
+    session.do_upload_with_scp_recursive(&local_path, &resolved_upload, config.use_sudo)?;
     info!("Upload completed. Printing uploaded file info:");
     let ls_upload = session.execute(&format!("ls -al {}", resolved_upload), config.use_sudo)?;
     for line in ls_upload.lines() {
@@ -66,7 +66,7 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
     }
 
     info!("==================================== Backup the server file");
-    if !session.file_or_dir_exists(&resolved_file)? {
+    if !session.file_or_dir_exists(&resolved_file, config.use_sudo)? {
         return Err(format!("Remote file '{}' does not exist", resolved_file));
     }
     info!("Remote file info before backup:");

@@ -1,5 +1,6 @@
 use ssh2::Session;
 use std::collections::HashMap;
+use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
@@ -55,32 +56,51 @@ impl SshSession {
             .session
             .channel_session()
             .map_err(|e| format!("Failed to open SSH channel. \n\t{}", e))?;
+
         let full_cmd = if use_sudo {
             format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, cmd)
         } else {
             cmd.to_string()
         };
+
         channel
             .exec(&full_cmd)
             .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
-        let mut output = String::new();
+
+        // stdout
+        let mut stdout = String::new();
         channel
-            .read_to_string(&mut output)
-            .map_err(|e| format!("Failed to read command output. \n\t{}", e))?;
+            .read_to_string(&mut stdout)
+            .map_err(|e| format!("Failed to read command stdout. \n\t{}", e))?;
+
+        // stderr
+        let mut stderr = String::new();
+        channel
+            .stderr()
+            .read_to_string(&mut stderr)
+            .map_err(|e| format!("Failed to read command stderr. \n\t{}", e))?;
+
         channel
             .wait_close()
             .map_err(|e| format!("Failed to close channel. \n\t{}", e))?;
         let exit_status = channel
             .exit_status()
             .map_err(|e| format!("Failed to get exit status. \n\t{}", e))?;
+
         debug!("Command exit status: {}", exit_status);
+
         if exit_status != 0 {
-            return Err(format!(
-                "Command '{}' failed with exit status {}: {}",
-                cmd, exit_status, output
-            ));
+            let mut msg = format!("Command '{}' failed with exit status {}.", cmd, exit_status);
+            if !stdout.trim().is_empty() {
+                msg.push_str(&format!("\n\tstdout:\n\t{}", stdout));
+            }
+            if !stderr.trim().is_empty() {
+                msg.push_str(&format!("\n\tstderr:\n\t{}", stderr));
+            }
+            return Err(msg);
         }
-        Ok(output)
+
+        Ok(stdout)
     }
 
     pub fn execute_stream<F>(
@@ -97,29 +117,42 @@ impl SshSession {
             .session
             .channel_session()
             .map_err(|e| format!("Failed to open SSH channel. \n\t{}", e))?;
+
         let full_cmd = if use_sudo {
             format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, cmd)
         } else {
             cmd.to_string()
         };
+
         channel
             .exec(&full_cmd)
             .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
 
+        let mut stdout_buf = String::new();
+        let mut stderr_buf = String::new();
+
         // Read stdout
-        let stdout = channel.stream(0);
-        let stdout_reader = BufReader::new(stdout);
-        for line in stdout_reader.lines() {
-            let line = line.map_err(|e| format!("Failed to read stdout. \n\t{}", e))?;
-            callback(&line, false)?;
+        {
+            let stdout = channel.stream(0);
+            let stdout_reader = BufReader::new(stdout);
+            for line in stdout_reader.lines() {
+                let line = line.map_err(|e| format!("Failed to read stdout. \n\t{}", e))?;
+                stdout_buf.push_str(&line);
+                stdout_buf.push('\n');
+                callback(&line, false)?;
+            }
         }
 
         // Read stderr
-        let stderr = channel.stderr();
-        let stderr_reader = BufReader::new(stderr);
-        for line in stderr_reader.lines() {
-            let line = line.map_err(|e| format!("Failed to read stderr. \n\t{}", e))?;
-            callback(&line, true)?;
+        {
+            let stderr = channel.stderr();
+            let stderr_reader = BufReader::new(stderr);
+            for line in stderr_reader.lines() {
+                let line = line.map_err(|e| format!("Failed to read stderr. \n\t{}", e))?;
+                stderr_buf.push_str(&line);
+                stderr_buf.push('\n');
+                callback(&line, true)?;
+            }
         }
 
         channel
@@ -128,38 +161,177 @@ impl SshSession {
         let exit_status = channel
             .exit_status()
             .map_err(|e| format!("Failed to get exit status. \n\t{}", e))?;
+
         debug!("Command exit status: {}", exit_status);
+
         if exit_status != 0 {
-            return Err(format!(
-                "Command '{}' failed with exit status {}",
-                cmd, exit_status
-            ));
+            let mut msg = format!("Command '{}' failed with exit status {}.", cmd, exit_status);
+            if !stdout_buf.trim().is_empty() {
+                msg.push_str(&format!("\n\tstdout:\n\t{}", stdout_buf));
+            }
+            if !stderr_buf.trim().is_empty() {
+                msg.push_str(&format!("\n\tstderr:\n\t{}", stderr_buf));
+            }
+            return Err(msg);
+        }
+
+        Ok(())
+    }
+
+    pub fn upload_file_or_dir_into_dir(
+        &self,
+        local_file_or_dir: &PathBuf,
+        remote_dir: &str,
+        use_sudo: bool,
+        use_rsync: bool,
+        silent: bool,
+    ) -> Result<(), String> {
+        // Create a temp directory for the current user
+        let mut remote_temp_dir: Option<String> = None;
+        if use_sudo && self.user != "root" {
+            let temp_dir = super::utils::generate_temp_dir("upload");
+            log_debug_with_lock!("Uploading to temporary path '{}' with sudo", temp_dir);
+            self.create_remote_dir(temp_dir.as_str(), use_sudo)?;
+            remote_temp_dir = Some(temp_dir);
+        }
+
+        // Create remote directory with appropriate permissions
+        if local_file_or_dir.is_dir() {
+            for entry in std::fs::read_dir(local_file_or_dir).map_err(|e| {
+                format!(
+                    "Failed to read local directory '{}'. \n\t{}",
+                    local_file_or_dir.display(),
+                    e
+                )
+            })? {
+                let entry =
+                    entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
+                let sub_path = entry.path();
+                let base_name = sub_path
+                    .file_name()
+                    .ok_or("Invalid file name")?
+                    .to_str()
+                    .ok_or("Invalid file name encoding")?
+                    .trim_end();
+                let remote_sub = format!("{}/{}", remote_dir, base_name);
+
+                // Check if remote file or directory exists
+
+                if !self.ask_safe_to_transfer(&remote_sub, use_sudo, silent)? {
+                    continue;
+                }
+
+                if use_sudo && self.user != "root" {
+                    let temp_dir = remote_temp_dir.as_ref().unwrap();
+                    // println!("do_upload_with_scp_recursive");
+                    self.do_upload(use_sudo, use_rsync, &sub_path, &temp_dir)?;
+                } else {
+                    self.do_upload(use_sudo, use_rsync, &sub_path, &remote_dir)?;
+                }
+
+                log_info_with_lock!(
+                    "Successfully uploaded '{}' to '{}'",
+                    sub_path.display(),
+                    remote_sub
+                );
+            }
+            if use_sudo && self.user != "root" {
+                let temp_dir = remote_temp_dir.as_ref().unwrap();
+                // Move the content in temp_dir to the remote_dir
+                self.execute(
+                    &format!("mv {0}/* {1} && rm -rf '{0}'", temp_dir, remote_dir),
+                    true,
+                )?;
+                // self.execute(
+                // &format!(
+                //     "sh -c 'find \"{0}\" -mindepth 1 -maxdepth 1 -exec mv -t \"{1}\" {{}} + && rm -rf \"{0}\"'",
+                //     temp_dir, remote_dir
+                //     ),
+                //     true,
+                //     )?;
+            }
+        } else {
+            let base_name = local_file_or_dir
+                .file_name()
+                .ok_or("Invalid file name")?
+                .to_str()
+                .ok_or("Invalid file name encoding")?
+                .trim_end();
+            let remote_file = format!("{}/{}", remote_dir, base_name);
+
+            if self.ask_safe_to_transfer(&remote_file, use_sudo, silent)? {
+                if use_sudo && self.user != "root" {
+                    let temp_dir = remote_temp_dir.as_ref().unwrap();
+                    // println!("do_upload_with_scp_recursive");
+                    self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &temp_dir)?;
+                    // Move the content in temp_dir to the remote_dir
+                    // println!("move content");
+                    self.execute(
+                        &format!("mv {0}/* {1} && rm -rf '{0}'", temp_dir, remote_dir),
+                        true,
+                    )?;
+                    // self.execute(
+                    // &format!(
+                    //     "sh -c 'find \"{0}\" -mindepth 1 -maxdepth 1 -exec mv -t \"{1}\" {{}} + && rm -rf \"{0}\"'",
+                    //     temp_dir, remote_dir
+                    //     ),
+                    //     true,
+                    //     )?;
+                } else {
+                    self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &remote_dir)?;
+                }
+                log_info_with_lock!(
+                    "Successfully uploaded '{}' into '{}'",
+                    local_file_or_dir.display(),
+                    remote_dir
+                );
+            }
         }
         Ok(())
     }
 
-    pub fn file_or_dir_exists(&self, path: &str) -> Result<bool, String> {
-        debug!("Checking if '{}' exists", path);
-        let output = self.execute(&format!("test -e '{}'; echo $?", path), false)?;
-        let exists = output.trim() == "0";
-        debug!("Remote path '{}' exists: {}", path, exists);
-        Ok(exists)
-    }
-    pub fn file_exists(&self, path: &str) -> Result<bool, String> {
-        debug!("Checking if file '{}' exists", path);
-        let output = self.execute(&format!("test -f '{}'; echo $?", path), false)?;
-        let exists = output.trim() == "0";
-        debug!("Remote file '{}' exists: {}", path, exists);
-        Ok(exists)
+    /// Check if a remote path exists with specific test flag (-e, -f, -d).
+    fn check_path(&self, path: &str, flag: &str, use_sudo: bool) -> Result<bool, String> {
+        debug!("Checking if '{}' exists with flag '{}'", path, flag);
+
+        // Build command, e.g. test -f 'path'
+        let full_cmd = format!("test {} '{}'", flag, path);
+        let result = self.execute(&full_cmd, use_sudo);
+
+        match result {
+            // test returns 0 → exists
+            Ok(_) => {
+                debug!("Remote path '{}' exists (flag '{}'): true", path, flag);
+                Ok(true)
+            }
+            // test returns 1 → does not exist
+            Err(e) => {
+                if e.contains("exit status 1") {
+                    debug!("Remote path '{}' exists (flag '{}'): false", path, flag);
+                    Ok(false)
+                } else {
+                    // Other errors (e.g. permission denied)
+                    Err(e)
+                }
+            }
+        }
     }
 
-    pub fn dir_exists(&self, path: &str) -> Result<bool, String> {
-        debug!("Checking if directory '{}' exists", path);
-        let output = self.execute(&format!("test -d '{}'; echo $?", path), false)?;
-        let exists = output.trim() == "0";
-        debug!("Remote directory '{}' exists: {}", path, exists);
-        Ok(exists)
+    /// Check if file or directory exists (-e).
+    pub fn file_or_dir_exists(&self, path: &str, use_sudo: bool) -> Result<bool, String> {
+        self.check_path(path, "-e", use_sudo)
     }
+
+    /// Check if file exists (-f).
+    pub fn file_exists(&self, path: &str, use_sudo: bool) -> Result<bool, String> {
+        self.check_path(path, "-f", use_sudo)
+    }
+
+    /// Check if directory exists (-d).
+    pub fn dir_exists(&self, path: &str, use_sudo: bool) -> Result<bool, String> {
+        self.check_path(path, "-d", use_sudo)
+    }
+
 
     pub fn check_remote_dir_writable(
         &self,
@@ -199,105 +371,133 @@ impl SshSession {
         Ok(())
     }
 
-    pub fn do_upload_with_scp(
+    // Upload a local file or directory to a remote directory via SCP recursively.
+    // If the remote path does not exist, it will be created.
+    // Example:
+    //    local_path = /test/testdir
+    //    remote_dir = /tmp
+    // Result: /tmp/testdir created on remote with all contents.
+    pub fn do_upload_with_scp_recursive(
         &self,
         local_file_or_dir: &Path,
         remote_dir: &str,
         use_sudo: bool,
     ) -> Result<(), String> {
-        debug!(
-            "Starting SCP upload from '{}' to '{}'",
-            local_file_or_dir.display(),
-            remote_dir
-        );
         if !local_file_or_dir.exists() {
             return Err(format!(
-                "Local file '{}' does not exist",
+                "Local path '{}' does not exist",
                 local_file_or_dir.display()
             ));
         }
-        if use_sudo {
-            let temp_dir = super::utils::generate_temp_dir("upload");
-            debug!("Uploading to temporary path '{}' with sudo", temp_dir);
-            self.do_upload_with_scp2(local_file_or_dir, &temp_dir)?;
-            self.execute(&format!("mv '{}' '{}'", temp_dir, remote_dir), true)?;
-        } else {
-            self.do_upload_with_scp2(local_file_or_dir, remote_dir)?;
-        }
-        debug!("SCP upload to '{}' completed", remote_dir);
-        Ok(())
-    }
 
-    fn do_upload_with_scp2(
-        &self,
-        local_file_or_dir: &Path,
-        remote_path: &str,
-    ) -> Result<(), String> {
-        let mut file = std::fs::File::open(local_file_or_dir).map_err(|e| {
-            format!(
-                "Failed to open local file '{}'. \n\t{}",
-                local_file_or_dir.display(),
-                e
-            )
-        })?;
-        let stat = file.metadata().map_err(|e| {
-            format!(
-                "Failed to get metadata for '{}'. \n\t{}",
-                local_file_or_dir.display(),
-                e
-            )
-        })?;
-        debug!("File size: {} bytes, permissions: 0644", stat.len());
-        let mut channel = self
-            .session
-            .scp_send(Path::new(remote_path), 0o644, stat.len(), None)
-            .map_err(|e| {
+        let base_name = local_file_or_dir
+            .file_name()
+            .ok_or("Invalid file or directory name")?
+            .to_string_lossy();
+
+        // Build the remote target path
+        let remote_target = format!("{}/{}", remote_dir, base_name);
+        // println!("remote_target: {}", remote_target);
+
+        // Create remote directory if local path is a directory
+        if local_file_or_dir.is_dir() {
+            self.create_remote_dir(remote_target.as_str(), use_sudo)?;
+            // Recursively upload each entry
+            for entry in fs::read_dir(local_file_or_dir).map_err(|e| {
                 format!(
-                    "Failed to initiate SCP upload to '{}'. \n\t{}",
-                    remote_path, e
+                    "Failed to read local directory '{}'. \n\t{}",
+                    local_file_or_dir.display(),
+                    e
+                )
+            })? {
+                let entry =
+                    entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
+                let sub_path = entry.path();
+
+                // Recursive call
+                self.do_upload_with_scp_recursive(&sub_path, &remote_target, use_sudo)?;
+            }
+        } else {
+            // println!("local_file_or_dir: {}", local_file_or_dir.display());
+            // println!("remote_target: {}", remote_target);
+
+            // Local path is a file → upload
+            let mut file = fs::File::open(local_file_or_dir).map_err(|e| {
+                format!(
+                    "Failed to open local file '{}'. \n\t{}",
+                    local_file_or_dir.display(),
+                    e
                 )
             })?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer).map_err(|e| {
-            format!(
-                "Failed to read file '{}'. \n\t{}",
+
+            let stat = file.metadata().map_err(|e| {
+                format!(
+                    "Failed to get metadata for '{}'. \n\t{}",
+                    local_file_or_dir.display(),
+                    e
+                )
+            })?;
+
+            debug!(
+                "Uploading file '{}' ({} bytes) to '{}'",
                 local_file_or_dir.display(),
-                e
-            )
-        })?;
-        channel.write_all(&buffer).map_err(|e| {
-            format!(
-                "Failed to write to SCP channel for '{}'. \n\t{}",
-                remote_path, e
-            )
-        })?;
-        channel.send_eof().map_err(|e| {
-            format!(
-                "Failed to send EOF for SCP upload to '{}'. \n\t{}",
-                remote_path, e
-            )
-        })?;
-        channel.wait_eof().map_err(|e| {
-            format!(
-                "Failed to wait for EOF for SCP upload to '{}'. \n\t{}",
-                remote_path, e
-            )
-        })?;
-        channel.close().map_err(|e| {
-            format!(
-                "Failed to close SCP channel for '{}'. \n\t{}",
-                remote_path, e
-            )
-        })?;
-        channel.wait_close().map_err(|e| {
-            format!(
-                "Failed to wait for SCP channel close for '{}'. \n\t{}",
-                remote_path, e
-            )
-        })?;
+                stat.len(),
+                remote_target
+            );
+
+            let mut channel = self
+                .session
+                .scp_send(Path::new(&remote_target), 0o644, stat.len(), None)
+                .map_err(|e| {
+                    format!(
+                        "Failed to initiate SCP upload to '{}'. \n\t{}",
+                        remote_target, e
+                    )
+                })?;
+
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer).map_err(|e| {
+                format!(
+                    "Failed to read file '{}'. \n\t{}",
+                    local_file_or_dir.display(),
+                    e
+                )
+            })?;
+
+            channel.write_all(&buffer).map_err(|e| {
+                format!(
+                    "Failed to write to SCP channel for '{}'. \n\t{}",
+                    remote_target, e
+                )
+            })?;
+            channel.send_eof().map_err(|e| {
+                format!(
+                    "Failed to send EOF for SCP upload to '{}'. \n\t{}",
+                    remote_target, e
+                )
+            })?;
+            channel.wait_eof().map_err(|e| {
+                format!(
+                    "Failed to wait for EOF for SCP upload to '{}'. \n\t{}",
+                    remote_target, e
+                )
+            })?;
+            channel.close().map_err(|e| {
+                format!(
+                    "Failed to close SCP channel for '{}'. \n\t{}",
+                    remote_target, e
+                )
+            })?;
+            channel.wait_close().map_err(|e| {
+                format!(
+                    "Failed to wait for SCP channel close for '{}'. \n\t{}",
+                    remote_target, e
+                )
+            })?;
+        }
+
         Ok(())
     }
-
     fn command_exists(&self, cmd: &str) -> bool {
         std::process::Command::new("which")
             .arg(cmd)
@@ -358,8 +558,13 @@ impl SshSession {
                 }
             }
         } else {
-            log_debug_with_lock!("Using SCP for upload");
-            self.do_upload_with_scp(local_file_or_dir, remote_dir, use_sudo)?;
+            debug!(
+                "Starting SCP upload from '{}' to '{}'",
+                local_file_or_dir.display(),
+                remote_dir
+            );
+            self.do_upload_with_scp_recursive(local_file_or_dir, remote_dir, use_sudo)?;
+            debug!("SCP upload to '{}' completed", remote_dir);
         }
 
         Ok(())
@@ -401,78 +606,22 @@ impl SshSession {
         Ok(())
     }
 
-    pub fn upload_file_or_dir_into_dir(
-        &self,
-        local_file_or_dir: &PathBuf,
-        remote_dir: &str,
-        use_sudo: bool,
-        use_rsync: bool,
-        silent: bool,
-    ) -> Result<(), String> {
-        // Create remote directory with appropriate permissions
-        if local_file_or_dir.is_dir() {
-            for entry in std::fs::read_dir(local_file_or_dir).map_err(|e| {
-                format!(
-                    "Failed to read local directory '{}'. \n\t{}",
-                    local_file_or_dir.display(),
-                    e
-                )
-            })? {
-                let entry =
-                    entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
-                let sub_path = entry.path();
-                let base_name = sub_path
-                    .file_name()
-                    .ok_or("Invalid file name")?
-                    .to_str()
-                    .ok_or("Invalid file name encoding")?;
-                let remote_sub = format!("{}/{}", remote_dir, base_name);
-
-                // Check if remote file or directory exists
-
-                if !self.confirm_and_overwrite_remote(&remote_sub, use_sudo, silent)? {
-                    continue;
-                }
-
-                self.do_upload(use_sudo, use_rsync, &sub_path, &remote_sub)?;
-                log_info_with_lock!(
-                    "Successfully uploaded '{}' to '{}'",
-                    sub_path.display(),
-                    remote_sub
-                );
-            }
-        } else {
-            let base_name = local_file_or_dir
-                .file_name()
-                .ok_or("Invalid file name")?
-                .to_str()
-                .ok_or("Invalid file name encoding")?;
-            let remote_file = format!("{}/{}", remote_dir, base_name);
-
-            if self.confirm_and_overwrite_remote(&remote_file, use_sudo, silent)? {
-                self.do_upload(use_sudo, use_rsync, local_file_or_dir, &remote_file)?;
-                log_info_with_lock!(
-                    "Successfully uploaded '{}' to '{}'",
-                    local_file_or_dir.display(),
-                    remote_file
-                );
-            }
-        }
-        Ok(())
-    }
-
     /// Check if a remote path exists (file or directory), ask user for overwrite if needed,
     /// and delete it if confirmed.
     /// Returns Ok(true) if deleted, Ok(false) if skipped, Err(...) on error.
-    pub fn confirm_and_overwrite_remote(
+    pub fn ask_safe_to_transfer(
         &self,
         remote_path: &str,
         use_sudo: bool,
         silent: bool,
     ) -> Result<bool, String> {
         // Check if remote path is a file or directory
-        let is_file = self.file_exists(remote_path)?;
-        let is_dir = self.dir_exists(remote_path)?;
+        let is_file = self.file_exists(remote_path, use_sudo)?;
+        let is_dir = self.dir_exists(remote_path, use_sudo)?;
+        // println!(
+        //     "is_file: {}, is_dir: {}, remote_path: {}",
+        //     is_file, is_dir, remote_path
+        // );
 
         if is_file || is_dir {
             // Build prompt message
@@ -507,6 +656,24 @@ impl SshSession {
             return Ok(true); // Deleted successfully
         }
 
-        Ok(false) // Path does not exist
+        Ok(true) // Path does not exist
+    }
+
+    pub fn create_remote_dir(&self, remote_dir: &str, use_sudo: bool) -> Result<String, String> {
+        let cmd = if use_sudo {
+            format!(
+                "mkdir -p '{}'; chown {} '{}'",
+                remote_dir, self.user, remote_dir
+            )
+        } else {
+            format!("mkdir -p '{}'", remote_dir)
+        };
+
+        self.execute(&cmd, use_sudo).map_err(|e| {
+            format!(
+                "Failed to create remote directory '{}'. \n\t{}",
+                remote_dir, e
+            )
+        })
     }
 }

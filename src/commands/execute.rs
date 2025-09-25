@@ -28,7 +28,7 @@ pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
             "Uploading script '{}' to temporary path '{}'",
             config.script, temp_remote
         );
-        session.do_upload_with_scp(script_path, &temp_remote, false)?;
+        session.do_upload_with_scp_recursive(script_path, &temp_remote, false)?;
         info!("Executing script in '{}' with sudo", config.remote_path);
         session.execute_stream(
             &format!("cd {} && bash {}", config.remote_path, temp_remote),

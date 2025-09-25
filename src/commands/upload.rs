@@ -67,8 +67,9 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
                 )
                 .map_err(|e| {
                     format!(
-                        "Failed to upload '{}'. \n\t{}",
+                        "Failed to upload '{}' to remote directory '{}' . \n\t{}",
                         local_file_or_dir_clone.display(),
+                        remote_dir_clone,
                         e
                     )
                 })
