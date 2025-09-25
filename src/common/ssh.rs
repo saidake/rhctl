@@ -183,7 +183,7 @@ impl SshSession {
 
     pub fn upload_file_or_dir_into_dir(
         &self,
-        local_file_or_dir: &PathBuf,
+        local_file_or_dir: &Path,
         remote_dir: &str,
         use_sudo: bool,
         use_rsync: bool,
@@ -233,12 +233,6 @@ impl SshSession {
                 } else {
                     self.do_upload(use_sudo, use_rsync, &sub_path, &remote_dir)?;
                 }
-
-                log_info_with_lock!(
-                    "Successfully uploaded '{}' to '{}'",
-                    sub_path.display(),
-                    remote_sub
-                );
             }
             if use_sudo && self.user != "root" {
                 let temp_dir = remote_temp_dir.as_ref().unwrap();
@@ -246,6 +240,11 @@ impl SshSession {
                 // thread::sleep(Duration::from_secs(30));
                 self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
             }
+            log_info_with_lock!(
+                "Successfully uploaded the contents of the folder '{}' into '{}'",
+                local_file_or_dir.display(),
+                remote_dir
+            );
         } else {
             let base_name = local_file_or_dir
                 .file_name()
@@ -266,13 +265,14 @@ impl SshSession {
                 } else {
                     self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &remote_dir)?;
                 }
-                log_info_with_lock!(
-                    "Successfully uploaded '{}' into '{}'",
-                    local_file_or_dir.display(),
-                    remote_dir
-                );
             }
+            log_info_with_lock!(
+                "Successfully uploaded the file '{}' into '{}'",
+                local_file_or_dir.display(),
+                remote_dir
+            );
         }
+
         Ok(())
     }
 
@@ -447,7 +447,7 @@ impl SshSession {
     //    local_path = /test/testdir
     //    remote_dir = /tmp
     // Result: /tmp/testdir created on remote with all contents.
-    pub fn do_upload_with_scp_recursive(
+    fn do_upload_with_scp_recursive(
         &self,
         local_file_or_dir: &Path,
         remote_dir: &str,
@@ -587,7 +587,7 @@ impl SshSession {
         &self,
         use_sudo: bool,
         use_rsync: bool,
-        local_file_or_dir: &PathBuf,
+        local_file_or_dir: &Path,
         remote_dir: &str,
     ) -> Result<(), String> {
         log_debug_with_lock!(

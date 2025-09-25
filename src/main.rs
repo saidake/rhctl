@@ -9,11 +9,8 @@ mod common;
 mod domain;
 mod handlers;
 
-use common::config::load_yaml_config;
-
 use crate::{
-    domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig},
-    handlers::command_handler::{merge_execute, merge_patch, merge_upload},
+    common::utils::load_yaml_config, domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig}, handlers::command_handler::{merge_execute, merge_patch, merge_upload}
 };
 
 #[derive(Parser)]

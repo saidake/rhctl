@@ -6,6 +6,7 @@ use log::{error, info};
 
 use crate::common::utils::{connect_ssh, generate_temp_dir};
 use crate::domain::cmd_params::ExecuteCmdConfig;
+use crate::remote;
 
 pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
     let session = connect_ssh(
@@ -28,7 +29,13 @@ pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
             "Uploading script '{}' to temporary path '{}'",
             config.script, temp_remote
         );
-        session.do_upload_with_scp_recursive(script_path, &temp_remote, false)?;
+        session.upload_file_or_dir_into_dir(
+            Path::new(&script_path),
+            &temp_remote,
+            config.use_sudo,
+            config.use_rsync,
+            config.silent,
+        )?;
         info!("Executing script in '{}' with sudo", config.remote_path);
         session.execute_stream(
             &format!("cd {} && bash {}", config.remote_path, temp_remote),
@@ -51,7 +58,7 @@ pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
             .map_err(|e| format!("Failed to open script '{}'. \n\t{}", config.script, e))?
             .read_to_string(&mut content)
             .map_err(|e| format!("Failed to read script '{}'. \n\t{}", config.script, e))?;
-        info!("Executing script in '{}'", config.remote_path);
+        info!("Executing script in '{}': ", config.remote_path);
         session.execute_stream(
             &format!(
                 "cd {} && bash -l -s <<EOF\n{}\nEOF",
@@ -63,7 +70,7 @@ pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
                     error!("{}", line);
                     std::process::exit(1);
                 } else {
-                    info!("{}", line);
+                    remote!("{}", line);
                 }
                 Ok(())
             },

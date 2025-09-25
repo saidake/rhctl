@@ -1,15 +1,23 @@
-use std::path::PathBuf;
-use std::process::Command;
 use log::info;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::common::utils::{ask_user, connect_ssh, resolve_remote_path};
 use crate::domain::cmd_params::PatchCmdConfig;
 
 pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
-    let session = connect_ssh(config.host.clone(), config.user.clone(), config.ssh_port, config.password.clone());
+    let session = connect_ssh(
+        config.host.clone(),
+        config.user.clone(),
+        config.ssh_port,
+        config.password.clone(),
+    );
     let local_path = PathBuf::from(&config.local_patch);
     if !config.recover && !local_path.exists() {
-        return Err(format!("Local patch file '{}' does not exist", config.local_patch));
+        return Err(format!(
+            "Local patch file '{}' does not exist",
+            config.local_patch
+        ));
     }
 
     let resolved_upload = resolve_remote_path(&session, config.use_sudo, &config.remote_upload)?;
@@ -21,11 +29,19 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
     }
 
     if config.recover {
-        if !config.silent && !ask_user(&format!("Restore '{}' from '{}'?", resolved_file, resolved_backup)) {
+        if !config.silent
+            && !ask_user(&format!(
+                "Restore '{}' from '{}'?",
+                resolved_file, resolved_backup
+            ))
+        {
             return Ok(());
         }
         info!("Restoring '{}' from '{}'", resolved_file, resolved_backup);
-        session.execute(&format!("cp {} {} -f", resolved_backup, resolved_file), config.use_sudo)?;
+        session.execute(
+            &format!("cp {} {} -f", resolved_backup, resolved_file),
+            config.use_sudo,
+        )?;
         info!("Recovery completed. Remote file info:");
         let ls_output = session.execute(&format!("ls -al {}", resolved_file), config.use_sudo)?;
         for line in ls_output.lines() {
@@ -40,25 +56,56 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         .arg("-al")
         .arg(&local_path)
         .output()
-        .map_err(|e| format!("Failed to execute ls -al on '{}'. \n\t{}", local_path.display(), e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to execute ls -al on '{}'. \n\t{}",
+                local_path.display(),
+                e
+            )
+        })?;
     if !ls_local.status.success() {
-        return Err(format!("Failed to get local file info for '{}'", local_path.display()));
+        return Err(format!(
+            "Failed to get local file info for '{}'",
+            local_path.display()
+        ));
     }
     for line in String::from_utf8_lossy(&ls_local.stdout).lines() {
         info!("{}", line);
     }
 
     if session.file_or_dir_exists(&resolved_upload, config.use_sudo)? {
-        if !config.silent && !ask_user(&format!("The remote file '{}' already exists. Overwrite with '{}'?", resolved_upload, local_path.display())) {
+        if !config.silent
+            && !ask_user(&format!(
+                "The remote file '{}' already exists. Overwrite with '{}'?",
+                resolved_upload,
+                local_path.display()
+            ))
+        {
             return Ok(());
         }
     } else {
-        if !config.silent && !ask_user(&format!("Upload '{}' to '{}'?", local_path.display(), resolved_upload)) {
+        if !config.silent
+            && !ask_user(&format!(
+                "Upload '{}' to '{}'?",
+                local_path.display(),
+                resolved_upload
+            ))
+        {
             return Ok(());
         }
     }
-    info!("Uploading '{}' to '{}'", local_path.display(), resolved_upload);
-    session.do_upload_with_scp_recursive(&local_path, &resolved_upload, config.use_sudo)?;
+    info!(
+        "Uploading '{}' to '{}'",
+        local_path.display(),
+        resolved_upload
+    );
+    session.upload_file_or_dir_into_dir(
+        Path::new(&local_path),
+        &resolved_upload,
+        config.use_sudo,
+        config.use_rsync,
+        config.silent,
+    )?;
     info!("Upload completed. Printing uploaded file info:");
     let ls_upload = session.execute(&format!("ls -al {}", resolved_upload), config.use_sudo)?;
     for line in ls_upload.lines() {
@@ -74,11 +121,19 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
     for line in ls_remote.lines() {
         info!("{}", line);
     }
-    if !config.silent && !ask_user(&format!("Backup '{}' to '{}'?", resolved_file, resolved_backup)) {
+    if !config.silent
+        && !ask_user(&format!(
+            "Backup '{}' to '{}'?",
+            resolved_file, resolved_backup
+        ))
+    {
         return Ok(());
     }
     info!("Backing up '{}' to '{}'", resolved_file, resolved_backup);
-    session.execute(&format!("cp {} {} -f", resolved_file, resolved_backup), config.use_sudo)?;
+    session.execute(
+        &format!("cp {} {} -f", resolved_file, resolved_backup),
+        config.use_sudo,
+    )?;
     info!("Backup completed. Printing backup file info:");
     let ls_backup = session.execute(&format!("ls -al {}", resolved_backup), config.use_sudo)?;
     for line in ls_backup.lines() {
@@ -87,15 +142,24 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
 
     info!("==================================== Overwrite the server file");
     info!("Uploaded file info:");
-    let ls_upload_before = session.execute(&format!("ls -al {}", resolved_upload), config.use_sudo)?;
+    let ls_upload_before =
+        session.execute(&format!("ls -al {}", resolved_upload), config.use_sudo)?;
     for line in ls_upload_before.lines() {
         info!("{}", line);
     }
-    if !config.silent && !ask_user(&format!("Overwrite '{}' with '{}'?", resolved_file, resolved_upload)) {
+    if !config.silent
+        && !ask_user(&format!(
+            "Overwrite '{}' with '{}'?",
+            resolved_file, resolved_upload
+        ))
+    {
         return Ok(());
     }
     info!("Applying patch to '{}'", resolved_file);
-    session.execute(&format!("cp {} {} -f", resolved_upload, resolved_file), config.use_sudo)?;
+    session.execute(
+        &format!("cp {} {} -f", resolved_upload, resolved_file),
+        config.use_sudo,
+    )?;
     info!("Overwrite completed. Final file info:");
     let ls_final = session.execute(&format!("ls -al {}", resolved_file), config.use_sudo)?;
     for line in ls_final.lines() {

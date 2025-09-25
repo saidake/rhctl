@@ -3,6 +3,23 @@ use crate::{common::ssh::SshSession, domain::constants::REMOTE_TEMP_SBXCTL_FOLDE
 use log::{debug, error, info, warn};
 use rpassword::prompt_password;
 use std::io::{self, Write};
+use std::fs::File;
+use std::io::Read;
+
+use crate::domain::yml_config::YmlConfig;
+
+
+
+pub fn load_yaml_config(path: &str) -> Result<YmlConfig, String> {
+    let mut file =
+        File::open(path).map_err(|e| format!("Failed to open config file {}. \n\t{}", path, e))?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .map_err(|e| format!("Failed to read config file {}. \n\t{}", path, e))?;
+    serde_yaml::from_str(&contents)
+        .map_err(|e| format!("Failed to parse YAML config {}. \n\t{}", path, e))
+}
+
 
 pub fn prompt_password_or_exit() -> String {
     match prompt_password("Enter SSH password: ") {
@@ -104,6 +121,14 @@ macro_rules! log_debug_with_lock {
     ($($arg:tt)*) => {
         $crate::common::utils::log_with_lock("DEBUG", &format!($($arg)*));
     };
+}
+
+#[macro_export]
+macro_rules! remote {
+    ($($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        println!("[{}] {}", ansi_term::Colour::Purple.paint("REMOTE"), msg);
+    }};
 }
 
 pub fn resolve_remote_path(
