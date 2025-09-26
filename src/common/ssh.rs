@@ -13,8 +13,8 @@ use std::time::Duration;
 use crate::common::utils::{ask_user, connect_ssh, connect_ssh_thread, resolve_remote_path};
 use crate::domain::cmd_params::UploadCmdConfig;
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
-use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock};
-use log::{debug, info};
+use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock, remote};
+use log::{debug, error, info};
 
 #[derive(Clone)]
 pub struct SshSession {
@@ -106,14 +106,21 @@ impl SshSession {
         Ok(stdout)
     }
 
-    pub fn execute_stream<F>(
+    fn execution_print(&self, line: &str, is_stderr: bool) -> Result<(), String> {
+        if is_stderr {
+            error!("{}", line);
+            std::process::exit(1);
+        } else {
+            remote!("{}", line);
+        }
+        Ok(())
+    }
+
+    pub fn execute_stream(
         &self,
         cmd: &str,
         use_sudo: bool,
-        mut callback: F,
     ) -> Result<(), String>
-    where
-        F: FnMut(&str, bool) -> Result<(), String>,
     {
         debug!("Streaming command: {} (sudo: {})", cmd, use_sudo);
         let mut channel = self
@@ -142,7 +149,7 @@ impl SshSession {
                 let line = line.map_err(|e| format!("Failed to read stdout. \n\t{}", e))?;
                 stdout_buf.push_str(&line);
                 stdout_buf.push('\n');
-                callback(&line, false)?;
+                self.execution_print(&line, false)?;
             }
         }
 
@@ -154,7 +161,7 @@ impl SshSession {
                 let line = line.map_err(|e| format!("Failed to read stderr. \n\t{}", e))?;
                 stderr_buf.push_str(&line);
                 stderr_buf.push('\n');
-                callback(&line, true)?;
+                self.execution_print(&line, true)?;
             }
         }
 
@@ -176,6 +183,70 @@ impl SshSession {
                 msg.push_str(&format!("\n\tstderr:\n\t{}", stderr_buf));
             }
             return Err(msg);
+        }
+
+        Ok(())
+    }
+
+    pub fn upload_file_or_dir_into_temp_dir(
+        &self,
+        local_file_or_dir: &Path,
+        temp_dir: &str,
+        use_sudo: bool,
+        use_rsync: bool,
+        silent: bool,
+    ) -> Result<(), String> {
+        // Create a temp directory for the current user
+        self.create_remote_dir(temp_dir, use_sudo)?;
+        // Create remote directory with appropriate permissions
+        if local_file_or_dir.is_dir() {
+            for entry in std::fs::read_dir(local_file_or_dir).map_err(|e| {
+                format!(
+                    "Failed to read local directory '{}'. \n\t{}",
+                    local_file_or_dir.display(),
+                    e
+                )
+            })? {
+                let entry =
+                    entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
+                let sub_path = entry.path();
+                let base_name = sub_path
+                    .file_name()
+                    .ok_or("Invalid file name")?
+                    .to_str()
+                    .ok_or("Invalid file name encoding")?
+                    .trim_end();
+                let remote_sub = format!("{}/{}", temp_dir, base_name);
+
+                // Check if remote file or directory exists
+
+                if !self.ask_safe_to_transfer(&remote_sub, use_sudo, silent)? {
+                    continue;
+                }
+                self.do_upload(use_sudo, use_rsync, &sub_path, &temp_dir)?;
+            }
+            log_debug_with_lock!(
+                "Successfully uploaded the contents of the folder '{}' into '{}'",
+                local_file_or_dir.display(),
+                temp_dir
+            );
+        } else {
+            let base_name = local_file_or_dir
+                .file_name()
+                .ok_or("Invalid file name")?
+                .to_str()
+                .ok_or("Invalid file name encoding")?
+                .trim_end();
+            let remote_file = format!("{}/{}", temp_dir, base_name);
+
+            if self.ask_safe_to_transfer(&remote_file, use_sudo, silent)? {
+                self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &temp_dir)?;
+            }
+            log_debug_with_lock!(
+                "Successfully uploaded the file '{}' into '{}'",
+                local_file_or_dir.display(),
+                temp_dir
+            );
         }
 
         Ok(())

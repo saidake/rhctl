@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::Read; // Added Read import
 use std::path::Path;
 
-use log::{error, info};
+use log::{debug, error, info};
 
 use crate::common::utils::{connect_ssh, generate_temp_dir};
 use crate::domain::cmd_params::ExecuteCmdConfig;
@@ -22,36 +22,37 @@ pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
             config.script
         ));
     }
+    let script_name = script_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| format!("Failed to get basename for '{}'", &config.script))?;
 
     if config.use_sudo {
-        let temp_remote = generate_temp_dir("exec");
-        info!(
+        session.check_global_remote_temp_dir(config.use_sudo, config.silent)?;
+        let temp_remote_dir = generate_temp_dir("exec");
+        debug!(
             "Uploading script '{}' to temporary path '{}'",
-            config.script, temp_remote
+            config.script, temp_remote_dir
         );
-        session.upload_file_or_dir_into_dir(
-            Path::new(&script_path),
-            &temp_remote,
+        session.upload_file_or_dir_into_temp_dir(
+            script_path,
+            &temp_remote_dir,
             config.use_sudo,
             config.use_rsync,
             config.silent,
         )?;
-        info!("Executing script in '{}' with sudo", config.remote_path);
+        let remote_script = format!("{}/{}", temp_remote_dir, script_name);
+        info!(
+            "Executing script {} in '{}' with sudo",
+            script_name, config.remote_path
+        );
         session.execute_stream(
-            &format!("cd {} && bash {}", config.remote_path, temp_remote),
-            true,
-            |line, is_stderr| {
-                if is_stderr {
-                    error!("{}", line);
-                    std::process::exit(1);
-                } else {
-                    info!("{}", line);
-                }
-                Ok(())
-            },
+            &format!("cd {} && bash {}", config.remote_path, remote_script),
+            config.use_sudo,
         )?;
-        info!("Cleaning up temporary script '{}'", temp_remote);
-        session.execute(&format!("rm -f {}", temp_remote), true)?;
+        debug!("Cleaning up temporary script '{}'", temp_remote_dir);
+        session.execute(&format!("rm -rf {}", temp_remote_dir), config.use_sudo)?;
+        session.delete_global_temp_dir(config.use_sudo)?;
     } else {
         let mut content = String::new();
         File::open(script_path)
@@ -65,15 +66,6 @@ pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
                 config.remote_path, content
             ),
             false,
-            |line, is_stderr| {
-                if is_stderr {
-                    error!("{}", line);
-                    std::process::exit(1);
-                } else {
-                    remote!("{}", line);
-                }
-                Ok(())
-            },
         )?;
     }
 
