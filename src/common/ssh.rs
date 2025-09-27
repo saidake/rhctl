@@ -49,60 +49,6 @@ impl SshSession {
         })
     }
 
-    pub fn execute(&self, cmd: &str, use_sudo: bool) -> Result<String, String> {
-        debug!("Executing command: {} (sudo: {})", cmd, use_sudo);
-        let mut channel = self
-            .session
-            .channel_session()
-            .map_err(|e| format!("Failed to open SSH channel. \n\t{}", e))?;
-        let full_cmd = if use_sudo {
-            let escaped = cmd.replace("'", "'\\''");
-            format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, escaped)
-        } else {
-            cmd.to_string()
-        };
-        // println!("full_cmd: {}", full_cmd);
-        channel
-            .exec(&full_cmd)
-            .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
-        // println!("execute full_cmd: {}, use_sudo: {}", full_cmd, use_sudo);
-        // stdout
-        let mut stdout = String::new();
-        channel
-            .read_to_string(&mut stdout)
-            .map_err(|e| format!("Failed to read command stdout. \n\t{}", e))?;
-
-        // stderr
-        let mut stderr = String::new();
-        channel
-            .stderr()
-            .read_to_string(&mut stderr)
-            .map_err(|e| format!("Failed to read command stderr. \n\t{}", e))?;
-
-        channel
-            .wait_close()
-            .map_err(|e| format!("Failed to close channel. \n\t{}", e))?;
-        let exit_status = channel
-            .exit_status()
-            .map_err(|e| format!("Failed to get exit status. \n\t{}", e))?;
-
-        debug!("Command exit status: {}", exit_status);
-
-        if exit_status != 0 {
-            let mut msg = format!("Command '{}' failed with exit status {}.", cmd, exit_status);
-            if !stdout.trim().is_empty() {
-                msg.push_str(&format!("\n\tstdout:\n\t{}", stdout));
-            }
-            if !stderr.trim().is_empty() {
-                msg.push_str(&format!("\n\tstderr:\n\t{}", stderr));
-            }
-            // println!("msg: {}", msg);
-            return Err(msg);
-        }
-        // println!("stdout: {}", stdout);
-        Ok(stdout)
-    }
-
     fn execution_print(&self, line: &str, is_stderr: bool) -> Result<(), String> {
         if is_stderr {
             error!("{}", line);
@@ -113,7 +59,20 @@ impl SshSession {
         Ok(())
     }
 
-    pub fn execute_stream(&self, cmd: &str, use_sudo: bool) -> Result<(), String> {
+    pub fn exec(&self, cmd: &str, use_sudo: bool) -> Result<String, String> {
+        self.exec_with_stream(cmd, use_sudo, false)
+    }
+
+    pub fn exec_with_log(&self, cmd: &str, use_sudo: bool) -> Result<String, String> {
+        self.exec_with_stream(cmd, use_sudo, true)
+    }
+
+    fn exec_with_stream(
+        &self,
+        cmd: &str,
+        use_sudo: bool,
+        print_log: bool,
+    ) -> Result<String, String> {
         debug!("Streaming command: {} (sudo: {})", cmd, use_sudo);
         let mut channel = self
             .session
@@ -122,27 +81,54 @@ impl SshSession {
 
         let full_cmd = if use_sudo {
             let escaped = cmd.replace("'", "'\\''");
-            format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, escaped)
+            format!("sudo -S bash -c '{}'", escaped)
         } else {
             cmd.to_string()
         };
+
+        // println!("full_cmd: {}", full_cmd);
+        if use_sudo {
+            channel
+                .request_pty("xterm", None, None)
+                .map_err(|e| format!("Failed to request pty for sudo. \n\t{}", e))?;
+        }
 
         channel
             .exec(&full_cmd)
             .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
 
+        // Input password
+        if use_sudo {
+            let mut prompt_buf = [0u8; 1024];
+            channel
+                .read(&mut prompt_buf)
+                .map_err(|e| format!("Failed to read sudo prompt: {}", e))?;
+            let pw_with_newline = format!("{}\n", self.password);
+            channel
+                .write_all(pw_with_newline.as_bytes())
+                .map_err(|e| format!("Failed to send sudo password. \n\t{}", e))?;
+        }
+
+        // Read stdout
         let mut stdout_buf = String::new();
         let mut stderr_buf = String::new();
 
-        // Read stdout
         {
             let stdout = channel.stream(0);
             let stdout_reader = BufReader::new(stdout);
+            let mut first_line = true;
             for line in stdout_reader.lines() {
                 let line = line.map_err(|e| format!("Failed to read stdout. \n\t{}", e))?;
+                if first_line && use_sudo && line.trim().is_empty() {
+                    first_line = false;
+                    continue;
+                }
+                // println!("line: ------------{}--------", line);
                 stdout_buf.push_str(&line);
                 stdout_buf.push('\n');
-                self.execution_print(&line, false)?;
+                if print_log {
+                    self.execution_print(&line, false)?;
+                }
             }
         }
 
@@ -154,7 +140,9 @@ impl SshSession {
                 let line = line.map_err(|e| format!("Failed to read stderr. \n\t{}", e))?;
                 stderr_buf.push_str(&line);
                 stderr_buf.push('\n');
-                self.execution_print(&line, true)?;
+                if print_log {
+                    self.execution_print(&line, true)?;
+                }
             }
         }
 
@@ -177,8 +165,11 @@ impl SshSession {
             }
             return Err(msg);
         }
-
-        Ok(())
+        if stdout_buf.ends_with('\n') {
+            stdout_buf.pop();
+        }
+        // println!("stdout_buf: ------------{}--------", stdout_buf);
+        Ok(stdout_buf)
     }
 
     // This method does not create remote_dir; you should ensure the directory exists and is writable.
@@ -232,8 +223,9 @@ impl SshSession {
             if use_sudo && self.user != "root" && !direct_write_if_sudo {
                 let temp_dir = remote_temp_dir.as_ref().unwrap();
                 // Move the content in temp_dir to the remote_dir
+                // println!("move_and_delete_temp_dir - temp_dir: {}", temp_dir);
+                // println!("move_and_delete_temp_dir - remote_dir: {}", remote_dir);
                 // thread::sleep(Duration::from_secs(30));
-                // println!("move_and_delete_temp_dir - remote_dir: {}",remote_dir);
                 self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
             }
             if print_log {
@@ -261,9 +253,10 @@ impl SshSession {
                         new_file_name,
                     )?;
                     // Move the content in temp_dir to the remote_dir
-                    // thread::sleep(Duration::from_secs(15));
-                    println!("move_and_delete_temp_dir - temp_dir: {}", temp_dir);
-                    println!("move_and_delete_temp_dir - remote_dir: {}", remote_dir);
+                    // println!("move_and_delete_temp_dir - temp_dir: {}", temp_dir);
+                    // println!("move_and_delete_temp_dir - remote_dir: {}", remote_dir);
+                    // thread::sleep(Duration::from_secs(30));
+
                     self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
                 } else {
                     self.do_upload(
@@ -295,9 +288,9 @@ impl SshSession {
     ) -> Result<(), String> {
         // Move hidden files if any exist
         let hidden_exists = self.file_or_dir_exists(&format!("{}/.[!.]*", temp_dir), use_sudo)?;
-        println!("hidden_exists: {}", hidden_exists);
+        // println!("hidden_exists: {}", hidden_exists);
         if hidden_exists {
-            self.execute(
+            self.exec(
                 &format!("mv \"{0}\"/.[!.]* \"{1}\"/", temp_dir, remote_dir),
                 use_sudo,
             )?;
@@ -305,16 +298,16 @@ impl SshSession {
 
         // Move normal files if any exist
         let normal_exists = self.file_or_dir_exists(&format!("{0}/*", temp_dir), use_sudo)?;
-        println!("normal_exists: {}", normal_exists);
+        // println!("normal_exists: {}", normal_exists);
         if normal_exists {
-            self.execute(
+            self.exec(
                 &format!("mv \"{0}\"/* \"{1}\"/", temp_dir, remote_dir),
                 use_sudo,
             )?;
         }
-        thread::sleep(Duration::from_secs(30));
+        // thread::sleep(Duration::from_secs(30));
         // Remove the temporary directory
-        self.execute(&format!("rm -rf \"{}\"", temp_dir), use_sudo)?;
+        self.exec(&format!("rm -rf \"{}\"", temp_dir), use_sudo)?;
 
         Ok(())
     }
@@ -337,7 +330,7 @@ impl SshSession {
                     return Err("Operation aborted by user".into());
                 }
 
-                self.execute(
+                self.exec(
                     &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
                     use_sudo,
                 )
@@ -362,7 +355,7 @@ impl SshSession {
             //     remote_temp_sbxctl_folder_exists
             // );
             if remote_temp_sbxctl_folder_exists {
-                self.execute(
+                self.exec(
                     &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
                     use_sudo,
                 )?;
@@ -381,7 +374,7 @@ impl SshSession {
         //     path, full_cmd, use_sudo
         // );
 
-        let result = self.execute(&full_cmd, use_sudo);
+        let result = self.exec(&full_cmd, use_sudo);
 
         match result {
             Ok(_) => {
@@ -700,7 +693,7 @@ impl SshSession {
             }
 
             // Execute deletion
-            self.execute(&format!("rm -rf \"{}\"", remote_path), use_sudo)
+            self.exec(&format!("rm -rf \"{}\"", remote_path), use_sudo)
                 .map_err(|e| {
                     format!(
                         "Failed to remove existing remote {} '{}'. \n\t{}",
@@ -727,7 +720,7 @@ impl SshSession {
 
         debug!("Checking if remote directory '{}' is writable", remote_dir);
         let check_cmd = format!("test -w \"{}\"; echo $?", remote_dir);
-        let output = self.execute(&check_cmd, use_sudo).map_err(|e| {
+        let output = self.exec(&check_cmd, use_sudo).map_err(|e| {
             format!(
                 "Failed to check write permission for '{}'. \n\t{}",
                 remote_dir, e
@@ -755,7 +748,7 @@ impl SshSession {
             format!("mkdir -p \"{}\"; chmod 700 \"{}\"", remote_dir, remote_dir)
         };
 
-        self.execute(&cmd, use_sudo).map_err(|e| {
+        self.exec(&cmd, use_sudo).map_err(|e| {
             format!(
                 "Failed to create remote directory '{}'. \n\t{}",
                 remote_dir, e

@@ -1,21 +1,30 @@
 use std::collections::HashMap;
-use std::path::{Path};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use log::error;
+
+use crate::common::ssh::SshSession;
 use crate::domain::cmd_params::UploadCmdConfig;
 use crate::utils::ssh_utils::{connect_ssh, connect_ssh_thread, resolve_remote_path};
 use crate::{log_info_with_lock, log_warn_with_lock};
 
-pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
-    let session = connect_ssh(
-        config.host.clone(),
-        config.user.clone(),
-        config.ssh_port,
-        config.password.clone(),
-    );
-    // Ensure global temp dir exists before starting uploads
-    session.check_global_remote_temp_dir(config.use_sudo, config.silent)?;
+pub fn run(config: &UploadCmdConfig, session: &SshSession) -> Result<(), String> {
+    let assets_root_path=Path::new(&config.assets_root);
+    if !Path::new(&config.properties_file).exists() {
+        return Err(format!(
+            "Properties file not found: '{}'",
+            config.properties_file
+        ));
+    }
+    if !assets_root_path.exists() {
+        return Err(format!(
+            "Assets root directory not found: '{}'",
+            config.assets_root
+        ));
+    }
+
     let mut mappings = HashMap::new();
     if let Err(e) = session.load_properties(config.properties_file.as_str(), &mut mappings) {
         return Err(format!(
@@ -24,7 +33,7 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
         ));
     }
 
-    let assets_path = Path::new(&config.assets_root);
+    let assets_path = assets_root_path;
     let threads = Arc::new(Mutex::new(Vec::new()));
 
     for (local_item, remote_dir) in mappings {
@@ -49,7 +58,7 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
         // Check if remote directory is writable
         session.validate_remote_dir(&remote_dir_resolved, config.use_sudo)?;
         session.create_remote_dir(&remote_dir_resolved, config.use_sudo)?;
-        
+
         let local_file_or_dir_clone = local_file_or_dir.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
         let config_clone = config.clone();
@@ -71,7 +80,7 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
                     config_clone.use_rsync,
                     config_clone.silent,
                     false,
-                    true
+                    true,
                 )
                 .map_err(|e| {
                     format!(
@@ -94,9 +103,6 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
             errors.push(e);
         }
     }
-
-    // after all uploads done, clean up global temp dir
-    session.delete_global_temp_dir(config.use_sudo)?;
 
     if !errors.is_empty() {
         return Err(errors.join("\n\n\t"));

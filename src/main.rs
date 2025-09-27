@@ -10,6 +10,7 @@ mod domain;
 mod handlers;
 mod utils;
 
+use crate::utils::ssh_utils::connect_ssh;
 use crate::{
     domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig},
     handlers::command_handler::{merge_execute, merge_patch, merge_upload},
@@ -219,32 +220,68 @@ fn main() {
     match cli.command {
         Commands::Upload { .. } => {
             let config: UploadCmdConfig = merge_upload(&cli.command, yaml_config);
-
-            if !Path::new(&config.properties_file).exists() {
-                error!("Properties file not found: '{}'", config.properties_file);
+            let session = connect_ssh(
+                config.host.clone(),
+                config.user.clone(),
+                config.ssh_port,
+                config.password.clone(),
+            );
+            // Ensure global temp dir exists before starting uploads
+            if let Err(e) = session.check_global_remote_temp_dir(config.use_sudo, config.silent) {
+                error!("{}", e);
                 exit(1);
             }
-            if !Path::new(&config.assets_root).exists() {
-                error!("Assets root directory not found: '{}'", config.assets_root);
-                exit(1);
+            let result = commands::upload::run(&config, &session);
+            if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
+                error!("{}", e);
             }
-            if let Err(e) = commands::upload::run(&config) {
-                log_error_with_lock!("Upload failed. \n\t{}", e);
+            if let Err(e) = result {
+                error!("Patch failed. \n\t{}", e);
                 exit(1);
             }
         }
 
         Commands::Execute { .. } => {
             let config: ExecuteCmdConfig = merge_execute(&cli.command, yaml_config);
-            if let Err(e) = commands::execute::run(&config) {
-                error!("Execute failed. \n\t{}", e);
+            let session = connect_ssh(
+                config.host.clone(),
+                config.user.clone(),
+                config.ssh_port,
+                config.password.clone(),
+            );
+            // Ensure global temp dir exists before starting uploads
+            if let Err(e) = session.check_global_remote_temp_dir(config.use_sudo, config.silent) {
+                error!("{}", e);
+                exit(1);
+            }
+            let result = commands::execute::run(&config, &session);
+            if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
+                error!("{}", e);
+            }
+            if let Err(e) = result {
+                error!("Patch failed. \n\t{}", e);
                 exit(1);
             }
         }
 
         Commands::Patch { .. } => {
             let config: PatchCmdConfig = merge_patch(&cli.command, yaml_config);
-            if let Err(e) = commands::patch::run(&config) {
+            let session = connect_ssh(
+                config.host.clone(),
+                config.user.clone(),
+                config.ssh_port,
+                config.password.clone(),
+            );
+            // Ensure global temp dir exists before starting uploads
+            if let Err(e) = session.check_global_remote_temp_dir(config.use_sudo, config.silent) {
+                error!("{}", e);
+                exit(1);
+            }
+            let result = commands::patch::run(&config, &session);
+            if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
+                error!("{}", e);
+            }
+            if let Err(e) = result {
                 error!("Patch failed. \n\t{}", e);
                 exit(1);
             }

@@ -22,7 +22,7 @@ pub fn resolve_remote_path(
     path: &str,
 ) -> Result<String, String> {
     session
-        .execute(&format!("echo {}", path), use_sudo)
+        .exec(&format!("echo {}", path), use_sudo)
         .map(|s| s.trim_end().to_string()) // Trim trailing whitespace and newlines
 }
 

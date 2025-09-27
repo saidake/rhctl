@@ -1,18 +1,13 @@
 use log::info;
 use std::path::{Path, PathBuf};
 
+use crate::common::ssh::SshSession;
 use crate::domain::cmd_params::PatchCmdConfig;
 use crate::utils::file_utils::{log_local_file_info, split_unix_path};
 use crate::utils::log_utils::ask_user;
 use crate::utils::ssh_utils::{connect_ssh, resolve_remote_path};
 
-pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
-    let session = connect_ssh(
-        config.host.clone(),
-        config.user.clone(),
-        config.ssh_port,
-        config.password.clone(),
-    );
+pub fn run(config: &PatchCmdConfig, session: &SshSession) -> Result<(), String> {
     let local_path = PathBuf::from(&config.local_patch);
     if !config.recover && !local_path.exists() {
         return Err(format!(
@@ -39,12 +34,12 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
             return Ok(());
         }
         info!("Restoring '{}' from '{}'", resolved_file, resolved_backup);
-        session.execute(
+        session.exec(
             &format!("cp {} {} -f", resolved_backup, resolved_file),
             config.use_sudo,
         )?;
         info!("Recovery completed. Remote file info:");
-        session.execute_stream(&format!("ls -al {}", resolved_file), config.use_sudo)?;
+        session.exec_with_log(&format!("ls -al {}", resolved_file), config.use_sudo)?;
         return Ok(());
     }
 
@@ -80,14 +75,14 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         true,
     )?;
     info!("Upload completed. Printing uploaded file info:");
-    session.execute_stream(&format!("ls -al {}", resolved_upload), config.use_sudo)?;
+    session.exec_with_log(&format!("ls -al {}", resolved_upload), config.use_sudo)?;
 
     info!("==================================== Backup the server file");
     if !session.file_or_dir_exists(&resolved_file, config.use_sudo)? {
         return Err(format!("Remote file '{}' does not exist", resolved_file));
     }
     info!("Remote file info before backup:");
-    session.execute_stream(&format!("ls -al {}", resolved_file), config.use_sudo)?;
+    session.exec_with_log(&format!("ls -al {}", resolved_file), config.use_sudo)?;
     if !config.silent
         && !ask_user(&format!(
             "Backup '{}' to '{}'?",
@@ -97,16 +92,15 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         return Ok(());
     }
     info!("Backing up '{}' to '{}'", resolved_file, resolved_backup);
-    session.execute(
+    session.exec(
         &format!("cp {} {} -f", resolved_file, resolved_backup),
         config.use_sudo,
     )?;
     info!("Backup completed. Printing backup file info:");
-    session.execute_stream(&format!("ls -al {}", resolved_backup), config.use_sudo)?;
+    session.exec_with_log(&format!("ls -al {}", resolved_backup), config.use_sudo)?;
     info!("==================================== Overwrite the server file");
     info!("Uploaded file info:");
-    let ls_upload_before =
-        session.execute(&format!("ls -al {}", resolved_upload), config.use_sudo)?;
+    let ls_upload_before = session.exec(&format!("ls -al {}", resolved_upload), config.use_sudo)?;
     for line in ls_upload_before.lines() {
         info!("{}", line);
     }
@@ -119,12 +113,12 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         return Ok(());
     }
     info!("Applying patch to '{}'", resolved_file);
-    session.execute(
+    session.exec(
         &format!("cp {} {} -f", resolved_upload, resolved_file),
         config.use_sudo,
     )?;
     info!("Overwrite completed. Final file info:");
-    session.execute_stream(&format!("ls -al {}", resolved_file), config.use_sudo)?;
+    session.exec_with_log(&format!("ls -al {}", resolved_file), config.use_sudo)?;
     info!("Patch complete");
     Ok(())
 }
