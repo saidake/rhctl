@@ -2,11 +2,10 @@ use std::fs::File;
 use std::io::Read; // Added Read import
 use std::path::Path;
 
-use log::{debug, error, info};
+use log::{debug, info};
 
 use crate::common::ssh::SshSession;
 use crate::domain::cmd_params::ExecuteCmdConfig;
-use crate::utils::ssh_utils::connect_ssh;
 
 pub fn run(config: &ExecuteCmdConfig, session: &SshSession) -> Result<(), String> {
     let script_path = Path::new(&config.script);

@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use log::Level;
 use log::{debug, error};
 use std::io::Write;
-use std::{path::Path, process::exit};
+use std::process::exit;
 mod commands;
 mod common;
 mod domain;

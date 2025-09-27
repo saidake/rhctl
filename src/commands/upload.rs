@@ -3,11 +3,10 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use log::error;
 
 use crate::common::ssh::SshSession;
 use crate::domain::cmd_params::UploadCmdConfig;
-use crate::utils::ssh_utils::{connect_ssh, connect_ssh_thread, resolve_remote_path};
+use crate::utils::ssh_utils::{connect_ssh_thread, resolve_remote_path};
 use crate::{log_info_with_lock, log_warn_with_lock};
 
 pub fn run(config: &UploadCmdConfig, session: &SshSession) -> Result<(), String> {

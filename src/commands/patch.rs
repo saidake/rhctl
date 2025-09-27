@@ -5,7 +5,7 @@ use crate::common::ssh::SshSession;
 use crate::domain::cmd_params::PatchCmdConfig;
 use crate::utils::file_utils::{log_local_file_info, split_unix_path};
 use crate::utils::log_utils::ask_user;
-use crate::utils::ssh_utils::{connect_ssh, resolve_remote_path};
+use crate::utils::ssh_utils::resolve_remote_path;
 
 pub fn run(config: &PatchCmdConfig, session: &SshSession) -> Result<(), String> {
     let local_path = PathBuf::from(&config.local_patch);

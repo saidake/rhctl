@@ -1,5 +1,5 @@
 use crate::common::ssh::SshSession;
-use log::{debug, error, info, warn};
+use log::{error, info};
 
 pub fn connect_ssh(host: String, user: String, ssh_port: u16, password: String) -> SshSession {
     info!("Connecting via SSH to {}@{}:{}", user, host, ssh_port);

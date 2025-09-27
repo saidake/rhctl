@@ -4,14 +4,13 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
-use std::time::Duration;
-use std::{fs, thread};
+use std::fs;
 
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
 use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
 use crate::utils::log_utils::ask_user;
-use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock, remote};
-use log::{debug, error, info};
+use crate::{log_debug_with_lock, log_info_with_lock, remote};
+use log::{debug, error};
 
 #[derive(Clone)]
 pub struct SshSession {
