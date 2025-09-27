@@ -4,9 +4,8 @@ use std::path::Path;
 
 use log::{debug, error, info};
 
-use crate::common::utils::{connect_ssh, generate_temp_dir};
 use crate::domain::cmd_params::ExecuteCmdConfig;
-use crate::remote;
+use crate::utils::ssh_utils::connect_ssh;
 
 pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
     let session = connect_ssh(
@@ -29,17 +28,20 @@ pub fn run(config: &ExecuteCmdConfig) -> Result<(), String> {
 
     if config.use_sudo {
         session.check_global_remote_temp_dir(config.use_sudo, config.silent)?;
-        let temp_remote_dir = generate_temp_dir("exec");
-        debug!(
+        let temp_remote_dir=session.create_remote_temp_dir("exec",config.use_sudo)?;
+        info!(
             "Uploading script '{}' to temporary path '{}'",
             config.script, temp_remote_dir
         );
-        session.upload_file_or_dir_into_temp_dir(
+        session.upload_file_or_dir_contents_into_dir(
             script_path,
             &temp_remote_dir,
+            None,
             config.use_sudo,
             config.use_rsync,
             config.silent,
+            true,
+            false
         )?;
         let remote_script = format!("{}/{}", temp_remote_dir, script_name);
         info!(

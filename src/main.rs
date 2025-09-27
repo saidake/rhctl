@@ -1,16 +1,19 @@
-use clap::{Parser, Subcommand};
-use log::{debug, error};
-use std::{path::Path, process::exit};
 use ansi_term::Colour;
+use clap::{Parser, Subcommand};
 use log::Level;
+use log::{debug, error};
 use std::io::Write;
+use std::{path::Path, process::exit};
 mod commands;
 mod common;
 mod domain;
 mod handlers;
+mod utils;
 
 use crate::{
-    common::utils::load_yaml_config, domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig}, handlers::command_handler::{merge_execute, merge_patch, merge_upload}
+    domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig},
+    handlers::command_handler::{merge_execute, merge_patch, merge_upload},
+    utils::file_utils::load_yaml_config,
 };
 
 #[derive(Parser)]
@@ -184,8 +187,8 @@ fn main() {
         .format(|buf, record| {
             let level_str = match record.level() {
                 Level::Error => Colour::Red.paint("ERROR"),
-                Level::Warn  => Colour::Yellow.paint("WARN"),
-                Level::Info  => Colour::Green.paint("INFO"),
+                Level::Warn => Colour::Yellow.paint("WARN"),
+                Level::Info => Colour::Green.paint("INFO"),
                 Level::Debug => Colour::Blue.paint("DEBUG"),
                 Level::Trace => Colour::Purple.paint("TRACE"),
             };

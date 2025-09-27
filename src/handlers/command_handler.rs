@@ -1,8 +1,8 @@
 use log::error;
 
-use crate::common::utils::prompt_password_or_exit;
 use crate::domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig};
 use crate::domain::yml_config::YmlConfig;
+use crate::utils::log_utils::prompt_password_or_exit;
 use crate::Commands;
 
 // Helper function to get a required field, exiting if not provided

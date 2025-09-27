@@ -5,14 +5,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 
-use crate::common::utils::{ask_user, connect_ssh, connect_ssh_thread, resolve_remote_path};
-use crate::domain::cmd_params::UploadCmdConfig;
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
+use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
+use crate::utils::log_utils::ask_user;
 use crate::{log_debug_with_lock, log_info_with_lock, log_warn_with_lock, remote};
 use log::{debug, error, info};
 
@@ -116,12 +112,7 @@ impl SshSession {
         Ok(())
     }
 
-    pub fn execute_stream(
-        &self,
-        cmd: &str,
-        use_sudo: bool,
-    ) -> Result<(), String>
-    {
+    pub fn execute_stream(&self, cmd: &str, use_sudo: bool) -> Result<(), String> {
         debug!("Streaming command: {} (sudo: {})", cmd, use_sudo);
         let mut channel = self
             .session
@@ -188,85 +179,22 @@ impl SshSession {
         Ok(())
     }
 
-    pub fn upload_file_or_dir_into_temp_dir(
-        &self,
-        local_file_or_dir: &Path,
-        temp_dir: &str,
-        use_sudo: bool,
-        use_rsync: bool,
-        silent: bool,
-    ) -> Result<(), String> {
-        // Create a temp directory for the current user
-        self.create_remote_dir(temp_dir, use_sudo)?;
-        // Create remote directory with appropriate permissions
-        if local_file_or_dir.is_dir() {
-            for entry in std::fs::read_dir(local_file_or_dir).map_err(|e| {
-                format!(
-                    "Failed to read local directory '{}'. \n\t{}",
-                    local_file_or_dir.display(),
-                    e
-                )
-            })? {
-                let entry =
-                    entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
-                let sub_path = entry.path();
-                let base_name = sub_path
-                    .file_name()
-                    .ok_or("Invalid file name")?
-                    .to_str()
-                    .ok_or("Invalid file name encoding")?
-                    .trim_end();
-                let remote_sub = format!("{}/{}", temp_dir, base_name);
-
-                // Check if remote file or directory exists
-
-                if !self.ask_safe_to_transfer(&remote_sub, use_sudo, silent)? {
-                    continue;
-                }
-                self.do_upload(use_sudo, use_rsync, &sub_path, &temp_dir)?;
-            }
-            log_debug_with_lock!(
-                "Successfully uploaded the contents of the folder '{}' into '{}'",
-                local_file_or_dir.display(),
-                temp_dir
-            );
-        } else {
-            let base_name = local_file_or_dir
-                .file_name()
-                .ok_or("Invalid file name")?
-                .to_str()
-                .ok_or("Invalid file name encoding")?
-                .trim_end();
-            let remote_file = format!("{}/{}", temp_dir, base_name);
-
-            if self.ask_safe_to_transfer(&remote_file, use_sudo, silent)? {
-                self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &temp_dir)?;
-            }
-            log_debug_with_lock!(
-                "Successfully uploaded the file '{}' into '{}'",
-                local_file_or_dir.display(),
-                temp_dir
-            );
-        }
-
-        Ok(())
-    }
-
-    pub fn upload_file_or_dir_into_dir(
+    // This method does not create remote_dir; you should ensure the directory exists and is writable.
+    pub fn upload_file_or_dir_contents_into_dir(
         &self,
         local_file_or_dir: &Path,
         remote_dir: &str,
+        new_file_name: Option<&str>,
         use_sudo: bool,
         use_rsync: bool,
         silent: bool,
+        direct_write_if_sudo: bool,
+        print_log: bool,
     ) -> Result<(), String> {
         // Create a temp directory for the current user
         let mut remote_temp_dir: Option<String> = None;
-        if use_sudo && self.user != "root" {
-            let temp_dir = super::utils::generate_temp_dir("upload");
-            log_debug_with_lock!("Uploading to temporary path '{}' with sudo", temp_dir);
-            self.create_remote_dir(temp_dir.as_str(), use_sudo)?;
-            remote_temp_dir = Some(temp_dir);
+        if use_sudo && self.user != "root" && !direct_write_if_sudo {
+            remote_temp_dir = Some(self.create_remote_temp_dir("upload", use_sudo)?);
         }
 
         // Create remote directory with appropriate permissions
@@ -281,21 +209,15 @@ impl SshSession {
                 let entry =
                     entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
                 let sub_path = entry.path();
-                let base_name = sub_path
-                    .file_name()
-                    .ok_or("Invalid file name")?
-                    .to_str()
-                    .ok_or("Invalid file name encoding")?
-                    .trim_end();
+                let base_name = get_local_path_base_name(&sub_path)?;
                 let remote_sub = format!("{}/{}", remote_dir, base_name);
 
                 // Check if remote file or directory exists
-
                 if !self.ask_safe_to_transfer(&remote_sub, use_sudo, silent)? {
                     continue;
                 }
                 // thread::sleep(Duration::from_secs(500000));
-                if use_sudo && self.user != "root" {
+                if use_sudo && self.user != "root" && !direct_write_if_sudo {
                     // println!("sub_path: {}", sub_path.display());
 
                     let temp_dir = remote_temp_dir.as_ref().unwrap();
@@ -305,28 +227,27 @@ impl SshSession {
                     self.do_upload(use_sudo, use_rsync, &sub_path, &remote_dir)?;
                 }
             }
-            if use_sudo && self.user != "root" {
+            if use_sudo && self.user != "root" && !direct_write_if_sudo {
                 let temp_dir = remote_temp_dir.as_ref().unwrap();
                 // Move the content in temp_dir to the remote_dir
                 // thread::sleep(Duration::from_secs(30));
                 self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
             }
-            log_info_with_lock!(
-                "Successfully uploaded the contents of the folder '{}' into '{}'",
-                local_file_or_dir.display(),
-                remote_dir
-            );
+            if print_log {
+                log_info_with_lock!(
+                    "Successfully uploaded the contents of the folder '{}' into '{}'",
+                    local_file_or_dir.display(),
+                    remote_dir
+                );
+            }
         } else {
-            let base_name = local_file_or_dir
-                .file_name()
-                .ok_or("Invalid file name")?
-                .to_str()
-                .ok_or("Invalid file name encoding")?
-                .trim_end();
-            let remote_file = format!("{}/{}", remote_dir, base_name);
-
+            let remote_file = format!(
+                "{}/{}",
+                remote_dir,
+                new_file_name.unwrap_or(get_local_path_base_name(&local_file_or_dir)?.as_str())
+            );
             if self.ask_safe_to_transfer(&remote_file, use_sudo, silent)? {
-                if use_sudo && self.user != "root" {
+                if use_sudo && self.user != "root" && !direct_write_if_sudo {
                     let temp_dir = remote_temp_dir.as_ref().unwrap();
                     // println!("do_upload_with_scp_recursive");
                     self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &temp_dir)?;
@@ -337,11 +258,13 @@ impl SshSession {
                     self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &remote_dir)?;
                 }
             }
-            log_info_with_lock!(
-                "Successfully uploaded the file '{}' into '{}'",
-                local_file_or_dir.display(),
-                remote_dir
-            );
+            if print_log {
+                log_info_with_lock!(
+                    "Successfully uploaded the file '{}' into '{}'",
+                    local_file_or_dir.display(),
+                    remote_dir
+                );
+            }
         }
 
         Ok(())
@@ -474,50 +397,8 @@ impl SshSession {
         self.check_path(path, "-d", use_sudo)
     }
 
-    pub fn check_remote_dir_writable(
-        &self,
-        remote_dir: &str,
-        use_sudo: bool,
-    ) -> Result<(), String> {
-        debug!("Ensuring remote directory '{}' exists", remote_dir);
-
-        let check_file_cmd = format!("[ -f \"{}\" ] && echo FILE || echo OK", remote_dir);
-        let check_output = self
-            .execute(&check_file_cmd, use_sudo)
-            .map_err(|e| format!("Failed to check path type for '{}'. \n\t{}", remote_dir, e))?;
-        if check_output.trim() == "FILE" {
-            return Err(format!(
-                "Path '{}' exists and is a file, not a directory",
-                remote_dir
-            ));
-        }
-
-        let mkdir_cmd = format!("mkdir -p \"{}\"", remote_dir);
-        self.execute(&mkdir_cmd, use_sudo)
-            .map_err(|e| format!("Failed to create directory '{}'. \n\t{}", remote_dir, e))?;
-
-        debug!("Checking if remote directory '{}' is writable", remote_dir);
-
-        let check_cmd = format!("test -w \"{}\"; echo $?", remote_dir);
-        let output = self.execute(&check_cmd, use_sudo).map_err(|e| {
-            format!(
-                "Failed to check write permission for '{}'. \n\t{}",
-                remote_dir, e
-            )
-        })?;
-        if output.trim() != "0" {
-            return Err(format!("Directory '{}' is not writable", remote_dir));
-        }
-
-        Ok(())
-    }
-
     // Upload a local file or directory to a remote directory via SCP recursively.
-    // If the remote path does not exist, it will be created.
-    // Example:
-    //    local_path = /test/testdir
-    //    remote_dir = /tmp
-    // Result: /tmp/testdir created on remote with all contents.
+    // An error occurs if the file’s parent directory does not exist.
     fn do_upload_with_scp_recursive(
         &self,
         local_file_or_dir: &Path,
@@ -644,6 +525,7 @@ impl SshSession {
         // thread::sleep(Duration::from_secs(1500000000));
         Ok(())
     }
+
     fn command_exists(&self, cmd: &str) -> bool {
         std::process::Command::new("which")
             .arg(cmd)
@@ -805,6 +687,32 @@ impl SshSession {
         Ok(true) // Path does not exist
     }
 
+    pub fn validate_remote_dir(&self, remote_dir: &str, use_sudo: bool) -> Result<(), String> {
+        debug!("Ensuring remote directory '{}' exists", remote_dir);
+        if self.file_exists(remote_dir, use_sudo)? {
+            return Err(format!(
+                "Path '{}' exists and is a file, not a directory",
+                remote_dir
+            ));
+        }
+
+        debug!("Checking if remote directory '{}' is writable", remote_dir);
+        let check_cmd = format!("test -w \"{}\"; echo $?", remote_dir);
+        let output = self.execute(&check_cmd, use_sudo).map_err(|e| {
+            format!(
+                "Failed to check write permission for '{}'. \n\t{}",
+                remote_dir, e
+            )
+        })?;
+        if output.trim() != "0" {
+            return Err(format!("Directory '{}' is not writable", remote_dir));
+        }
+
+        Ok(())
+    }
+
+    // Creates a remote directory if it doesn't exist.
+    // If the directory already exists, no error occurs.
     pub fn create_remote_dir(&self, remote_dir: &str, use_sudo: bool) -> Result<String, String> {
         let cmd = if use_sudo {
             format!(
@@ -821,5 +729,11 @@ impl SshSession {
                 remote_dir, e
             )
         })
+    }
+
+    pub fn create_remote_temp_dir(&self, prefix: &str, use_sudo: bool) -> Result<String, String> {
+        let temp_dir = generate_remote_temp_dir(prefix);
+        log_debug_with_lock!("Uploading to temporary path '{}' with sudo", temp_dir);
+        self.create_remote_dir(temp_dir.as_str(), use_sudo)
     }
 }

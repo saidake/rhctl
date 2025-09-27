@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::common::utils::{connect_ssh, connect_ssh_thread, resolve_remote_path};
 use crate::domain::cmd_params::UploadCmdConfig;
+use crate::utils::ssh_utils::{connect_ssh, connect_ssh_thread, resolve_remote_path};
 use crate::{log_info_with_lock, log_warn_with_lock};
 
 pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
@@ -47,7 +47,9 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
         }
 
         // Check if remote directory is writable
-        session.check_remote_dir_writable(&remote_dir_resolved, config.use_sudo)?;
+        session.validate_remote_dir(&remote_dir_resolved, config.use_sudo)?;
+        session.create_remote_dir(&remote_dir_resolved, config.use_sudo)?;
+        
         let local_file_or_dir_clone = local_file_or_dir.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
         let config_clone = config.clone();
@@ -61,12 +63,15 @@ pub fn run(config: &UploadCmdConfig) -> Result<(), String> {
                 config_clone.password.clone(),
             );
             session_thread
-                .upload_file_or_dir_into_dir(
+                .upload_file_or_dir_contents_into_dir(
                     &local_file_or_dir_clone,
                     &remote_dir_clone,
+                    None,
                     config_clone.use_sudo,
                     config_clone.use_rsync,
                     config_clone.silent,
+                    false,
+                    true
                 )
                 .map_err(|e| {
                     format!(
