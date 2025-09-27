@@ -1,10 +1,11 @@
 use ssh2::Session;
 use std::collections::HashMap;
-use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
+use std::time::Duration;
+use std::{fs, thread};
 
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
 use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
@@ -54,13 +55,13 @@ impl SshSession {
             .session
             .channel_session()
             .map_err(|e| format!("Failed to open SSH channel. \n\t{}", e))?;
-
         let full_cmd = if use_sudo {
-            format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, cmd)
+            let escaped = cmd.replace("'", "'\\''");
+            format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, escaped)
         } else {
             cmd.to_string()
         };
-
+        // println!("full_cmd: {}", full_cmd);
         channel
             .exec(&full_cmd)
             .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
@@ -120,7 +121,8 @@ impl SshSession {
             .map_err(|e| format!("Failed to open SSH channel. \n\t{}", e))?;
 
         let full_cmd = if use_sudo {
-            format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, cmd)
+            let escaped = cmd.replace("'", "'\\''");
+            format!("echo '{}' | sudo -S -p '' bash -c '{}'", self.password, escaped)
         } else {
             cmd.to_string()
         };
@@ -222,15 +224,16 @@ impl SshSession {
 
                     let temp_dir = remote_temp_dir.as_ref().unwrap();
                     // println!("do_upload_with_scp_recursive");
-                    self.do_upload(use_sudo, use_rsync, &sub_path, &temp_dir)?;
+                    self.do_upload(use_sudo, use_rsync, &sub_path, &temp_dir, new_file_name)?;
                 } else {
-                    self.do_upload(use_sudo, use_rsync, &sub_path, &remote_dir)?;
+                    self.do_upload(use_sudo, use_rsync, &sub_path, &remote_dir, new_file_name)?;
                 }
             }
             if use_sudo && self.user != "root" && !direct_write_if_sudo {
                 let temp_dir = remote_temp_dir.as_ref().unwrap();
                 // Move the content in temp_dir to the remote_dir
                 // thread::sleep(Duration::from_secs(30));
+                // println!("move_and_delete_temp_dir - remote_dir: {}",remote_dir);
                 self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
             }
             if print_log {
@@ -250,19 +253,33 @@ impl SshSession {
                 if use_sudo && self.user != "root" && !direct_write_if_sudo {
                     let temp_dir = remote_temp_dir.as_ref().unwrap();
                     // println!("do_upload_with_scp_recursive");
-                    self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &temp_dir)?;
+                    self.do_upload(
+                        use_sudo,
+                        use_rsync,
+                        &local_file_or_dir,
+                        &temp_dir,
+                        new_file_name,
+                    )?;
                     // Move the content in temp_dir to the remote_dir
                     // thread::sleep(Duration::from_secs(15));
+                    println!("move_and_delete_temp_dir - temp_dir: {}", temp_dir);
+                    println!("move_and_delete_temp_dir - remote_dir: {}", remote_dir);
                     self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
                 } else {
-                    self.do_upload(use_sudo, use_rsync, &local_file_or_dir, &remote_dir)?;
+                    self.do_upload(
+                        use_sudo,
+                        use_rsync,
+                        &local_file_or_dir,
+                        &remote_dir,
+                        new_file_name,
+                    )?;
                 }
             }
             if print_log {
                 log_info_with_lock!(
-                    "Successfully uploaded the file '{}' into '{}'",
+                    "Successfully uploaded the file '{}' to '{}'",
                     local_file_or_dir.display(),
-                    remote_dir
+                    remote_file
                 );
             }
         }
@@ -278,6 +295,7 @@ impl SshSession {
     ) -> Result<(), String> {
         // Move hidden files if any exist
         let hidden_exists = self.file_or_dir_exists(&format!("{}/.[!.]*", temp_dir), use_sudo)?;
+        println!("hidden_exists: {}", hidden_exists);
         if hidden_exists {
             self.execute(
                 &format!("mv \"{0}\"/.[!.]* \"{1}\"/", temp_dir, remote_dir),
@@ -287,13 +305,14 @@ impl SshSession {
 
         // Move normal files if any exist
         let normal_exists = self.file_or_dir_exists(&format!("{0}/*", temp_dir), use_sudo)?;
+        println!("normal_exists: {}", normal_exists);
         if normal_exists {
             self.execute(
                 &format!("mv \"{0}\"/* \"{1}\"/", temp_dir, remote_dir),
                 use_sudo,
             )?;
         }
-
+        thread::sleep(Duration::from_secs(30));
         // Remove the temporary directory
         self.execute(&format!("rm -rf \"{}\"", temp_dir), use_sudo)?;
 
@@ -356,7 +375,7 @@ impl SshSession {
     fn check_path(&self, path: &str, flag: &str, use_sudo: bool) -> Result<bool, String> {
         debug!("Checking if '{}' exists with flag '{}'", path, flag);
 
-        let full_cmd = format!("test {} \"{}\"", flag, path);
+        let full_cmd = format!("sh -c 'test {} {}'", flag, path);
         // println!(
         //     "path: {}, full_cmd: {}, use_sudo: {}",
         //     path, full_cmd, use_sudo
@@ -404,6 +423,7 @@ impl SshSession {
         local_file_or_dir: &Path,
         remote_dir: &str,
         use_sudo: bool,
+        new_base_name: Option<&str>,
     ) -> Result<(), String> {
         // println!("local_file_or_dir: {}", local_file_or_dir.display());
         // println!("remote_dir: {}", remote_dir);
@@ -415,11 +435,9 @@ impl SshSession {
             ));
         }
 
-        let base_name = local_file_or_dir
-            .file_name()
-            .ok_or("Invalid file or directory name")?
-            .to_string_lossy();
-
+        let base_name = new_base_name
+            .map(|s| s.to_string())
+            .unwrap_or(get_local_path_base_name(&local_file_or_dir)?);
         // Build the remote target path
         let remote_target = format!("{}/{}", remote_dir, base_name);
         // println!(
@@ -445,7 +463,7 @@ impl SshSession {
                 let sub_path = entry.path();
 
                 // Recursive call
-                self.do_upload_with_scp_recursive(&sub_path, &remote_target, use_sudo)?;
+                self.do_upload_with_scp_recursive(&sub_path, &remote_target, use_sudo, None)?;
             }
         } else {
             // Local path is a file → upload
@@ -542,6 +560,7 @@ impl SshSession {
         use_rsync: bool,
         local_file_or_dir: &Path,
         remote_dir: &str,
+        new_file_name: Option<&str>,
     ) -> Result<(), String> {
         log_debug_with_lock!(
             "Attempting to upload '{}' to '{}'",
@@ -553,6 +572,11 @@ impl SshSession {
             log_debug_with_lock!("Using rsync for upload");
             if !self.password.is_empty() {
                 if self.command_exists("sshpass") {
+                    let remote_target = if let Some(name) = new_file_name {
+                        format!("{}/{}", remote_dir, name)
+                    } else {
+                        remote_dir.to_string()
+                    };
                     let mut sshpass_cmd = std::process::Command::new("sshpass");
                     sshpass_cmd
                         .arg("-p")
@@ -566,7 +590,7 @@ impl SshSession {
                                 .to_str()
                                 .ok_or("Invalid local path encoding")?,
                         )
-                        .arg(format!("{}@{}:{}", self.user, self.host, remote_dir))
+                        .arg(format!("{}@{}:{}", self.user, self.host, remote_target))
                         .stdout(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null());
 
@@ -591,7 +615,12 @@ impl SshSession {
                 local_file_or_dir.display(),
                 remote_dir
             );
-            self.do_upload_with_scp_recursive(local_file_or_dir, remote_dir, use_sudo)?;
+            self.do_upload_with_scp_recursive(
+                local_file_or_dir,
+                remote_dir,
+                use_sudo,
+                new_file_name,
+            )?;
             debug!("SCP upload to '{}' completed", remote_dir);
         }
 
@@ -713,7 +742,10 @@ impl SshSession {
 
     // Creates a remote directory if it doesn't exist.
     // If the directory already exists, no error occurs.
-    pub fn create_remote_dir(&self, remote_dir: &str, use_sudo: bool) -> Result<String, String> {
+    pub fn create_remote_dir(&self, remote_dir: &str, use_sudo: bool) -> Result<(), String> {
+        if self.dir_exists(remote_dir, use_sudo)? {
+            return Ok(());
+        }
         let cmd = if use_sudo {
             format!(
                 "mkdir -p \"{}\"; chown {} \"{}\"; chmod 700 \"{}\"",
@@ -728,12 +760,14 @@ impl SshSession {
                 "Failed to create remote directory '{}'. \n\t{}",
                 remote_dir, e
             )
-        })
+        })?;
+        Ok(())
     }
 
     pub fn create_remote_temp_dir(&self, prefix: &str, use_sudo: bool) -> Result<String, String> {
         let temp_dir = generate_remote_temp_dir(prefix);
         log_debug_with_lock!("Uploading to temporary path '{}' with sudo", temp_dir);
-        self.create_remote_dir(temp_dir.as_str(), use_sudo)
+        self.create_remote_dir(temp_dir.as_str(), use_sudo)?;
+        Ok(temp_dir)
     }
 }

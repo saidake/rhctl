@@ -185,14 +185,15 @@ fn main() {
     // Initialize logging
     env_logger::builder()
         .format(|buf, record| {
-            let level_str = match record.level() {
-                Level::Error => Colour::Red.paint("ERROR"),
-                Level::Warn => Colour::Yellow.paint("WARN"),
-                Level::Info => Colour::Green.paint("INFO"),
-                Level::Debug => Colour::Blue.paint("DEBUG"),
-                Level::Trace => Colour::Purple.paint("TRACE"),
+            let level_text = format!("{:<6}", record.level().to_string());
+            let level_colored = match record.level() {
+                Level::Error => Colour::Red.paint(&level_text),
+                Level::Warn => Colour::Yellow.paint(&level_text),
+                Level::Info => Colour::Green.paint(&level_text),
+                Level::Debug => Colour::Blue.paint(&level_text),
+                Level::Trace => Colour::Purple.paint(&level_text),
             };
-            writeln!(buf, "[{}] {}", level_str, record.args())
+            writeln!(buf, "[{}] {}", level_colored, record.args())
         })
         .filter_level(match log_level {
             "debug" => log::LevelFilter::Debug,

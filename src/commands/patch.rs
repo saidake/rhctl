@@ -66,6 +66,7 @@ pub fn run(config: &PatchCmdConfig) -> Result<(), String> {
         resolved_upload
     );
     let (basename, parent) = split_unix_path(&resolved_upload)?;
+    // println!("parent: {}",parent);
     session.validate_remote_dir(&parent, config.use_sudo)?;
     session.create_remote_dir(&parent, config.use_sudo)?;
     session.upload_file_or_dir_contents_into_dir(

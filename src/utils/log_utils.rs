@@ -3,7 +3,6 @@ use log::{debug, error, info, warn};
 use rpassword::prompt_password;
 use std::io::{self, Write};
 
-
 /// Core logging function with lock
 pub fn log_with_lock(level: &str, message: &str) {
     let _lock = GLOBAL_LOG_LOCK.lock().unwrap();
@@ -13,30 +12,6 @@ pub fn log_with_lock(level: &str, message: &str) {
         "WARN" => warn!("{}", message),
         "DEBUG" => debug!("{}", message),
         _ => println!("[{}] {}", level, message),
-    }
-}
-
-/// Ask user with a prompt, return true if input is 'y' or 'Y'
-/// User must press Enter
-pub fn ask_user(prompt: &str) -> bool {
-    let _lock = GLOBAL_LOG_LOCK.lock().unwrap(); // Ensure ordered input
-
-    print!("{} [y/N]: ", prompt);
-    io::stdout().flush().unwrap();
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-
-    matches!(input.trim().to_lowercase().as_str(), "y")
-}
-
-pub fn prompt_password_or_exit() -> String {
-    match prompt_password("Enter SSH password: ") {
-        Ok(pwd) if !pwd.is_empty() => pwd,
-        _ => {
-            eprintln!("Password is required.");
-            std::process::exit(1);
-        }
     }
 }
 
@@ -76,7 +51,8 @@ macro_rules! log_debug_with_lock {
 macro_rules! remote {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
-        println!("[{}] {}", ansi_term::Colour::Purple.paint("REMOTE"), msg);
+        let label = format!("{:<6}", "REMOTE");
+        println!("[{}] {}", ansi_term::Colour::Purple.paint(&label), msg);
     }};
 }
 
@@ -84,7 +60,40 @@ macro_rules! remote {
 macro_rules! local {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
-        println!("[{}] {}", ansi_term::Colour::Purple.paint("LOCAL"), msg);
+        let label = format!("{:<6}", "LOCAL");
+        println!("[{}] {}", ansi_term::Colour::Purple.paint(&label), msg);
     }};
 }
 
+#[macro_export]
+macro_rules! ask {
+    ($($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        let label = format!("{:<6}", "ASK");
+        print!("[{}] {}", ansi_term::Colour::Cyan.paint(&label), msg);
+    }};
+}
+
+/// Ask user with a prompt, return true if input is 'y' or 'Y'
+/// User must press Enter
+pub fn ask_user(prompt: &str) -> bool {
+    let _lock = GLOBAL_LOG_LOCK.lock().unwrap(); // Ensure ordered input
+
+    ask!("{} [y/N]: ", prompt);
+    io::stdout().flush().unwrap();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+
+    matches!(input.trim().to_lowercase().as_str(), "y")
+}
+
+pub fn prompt_password_or_exit() -> String {
+    match prompt_password("Enter SSH password: ") {
+        Ok(pwd) if !pwd.is_empty() => pwd,
+        _ => {
+            error!("Password is required.");
+            std::process::exit(1);
+        }
+    }
+}
