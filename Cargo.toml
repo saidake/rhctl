@@ -1,6 +1,6 @@
 [package]
 name = "sbxctl"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 description = "High-performance Rust CLI for remote SSH operations"
 authors = ["Craig Brown <craigbrowndev@gmail.com>"]
@@ -8,8 +8,8 @@ license = "MIT"
 repository = "https://github.com/saidake/sbxctl"
 homepage = "https://github.com/saidake/sbxctl"
 readme = "README.md"
-keywords = ["ssh", "cli", "upload", "execute", "patch"]
-categories = ["command-line-utilities"]
+keywords = ["ssh", "cli", "remote", "automation", "deployment", "patch", "file-transfer", "system-administration"]
+categories = ["command-line-utilities", "system-utilities", "network-programming"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }

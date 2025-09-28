@@ -1,11 +1,10 @@
-use crate::domain::constants::GLOBAL_LOG_LOCK;
+use crate::domain::constants::{ USER_ABORTED_MESSAGE};
 use log::{debug, error, info, warn};
 use rpassword::prompt_password;
 use std::io::{self, Write};
 
 /// Core logging function with lock
 pub fn log_with_lock(level: &str, message: &str) {
-    let _lock = GLOBAL_LOG_LOCK.lock().unwrap();
     match level {
         "INFO" => info!("{}", message),
         "ERROR" => error!("{}", message),
@@ -76,16 +75,20 @@ macro_rules! ask {
 
 /// Ask user with a prompt, return true if input is 'y' or 'Y'
 /// User must press Enter
-pub fn ask_user(prompt: &str) -> bool {
-    let _lock = GLOBAL_LOG_LOCK.lock().unwrap(); // Ensure ordered input
-
+pub fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
+    if silent {
+        return Ok(()); 
+    }
     ask!("{} [y/N]: ", prompt);
     io::stdout().flush().unwrap();
 
     let mut input = String::new();
     io::stdin().read_line(&mut input).unwrap();
 
-    matches!(input.trim().to_lowercase().as_str(), "y")
+    if input.trim().to_lowercase() != "y" {
+        return Err(USER_ABORTED_MESSAGE.to_string());
+    }
+    Ok(())
 }
 
 pub fn prompt_password_or_exit() -> String {

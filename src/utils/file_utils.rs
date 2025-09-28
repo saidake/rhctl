@@ -1,6 +1,7 @@
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
 use crate::domain::yml_config::YmlConfig;
 use crate::local;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Read;
@@ -79,4 +80,18 @@ pub fn get_local_path_base_name(path: &Path) -> Result<String, String> {
         .and_then(|s| s.to_str())
         .map(|s| s.trim_end().to_string())
         .ok_or_else(|| format!("Could not get base name: {}", path.display()))
+}
+
+
+
+pub fn substitute_vars(input: &str, vars: &HashMap<String, String>) -> Result<String, String> {
+    let mut result = input.to_string();
+    for (key, value) in vars {
+        let placeholder = format!("${{{}}}", key);
+        if result.contains(&placeholder) && value.is_empty() {
+            return Err(format!("Variable '{}' is empty in path '{}'", key, input));
+        }
+        result = result.replace(&placeholder, value);
+    }
+    Ok(result)
 }

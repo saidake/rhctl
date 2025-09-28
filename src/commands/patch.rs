@@ -8,16 +8,16 @@ use crate::utils::log_utils::ask_user;
 use crate::utils::ssh_utils::resolve_remote_path;
 
 pub fn run(config: &PatchCmdConfig, session: &SshSession) -> Result<(), String> {
-    let local_path = PathBuf::from(&config.local_patch);
+    let local_path = PathBuf::from(&config.local_path);
     if !config.recover && !local_path.exists() {
         return Err(format!(
             "Local patch file '{}' does not exist",
-            config.local_patch
+            config.local_path
         ));
     }
 
     let resolved_upload = resolve_remote_path(&session, config.use_sudo, &config.remote_upload)?;
-    let resolved_file = resolve_remote_path(&session, config.use_sudo, &config.remote_file)?;
+    let resolved_file = resolve_remote_path(&session, config.use_sudo, &config.remote_path)?;
     let resolved_backup = resolve_remote_path(&session, config.use_sudo, &config.remote_backup)?;
 
     if resolved_upload.is_empty() || resolved_file.is_empty() || resolved_backup.is_empty() {
@@ -25,14 +25,10 @@ pub fn run(config: &PatchCmdConfig, session: &SshSession) -> Result<(), String> 
     }
 
     if config.recover {
-        if !config.silent
-            && !ask_user(&format!(
-                "Restore '{}' from '{}'?",
-                resolved_file, resolved_backup
-            ))
-        {
-            return Ok(());
-        }
+        ask_user(
+            &format!("Restore '{}' from '{}'?", resolved_file, resolved_backup),
+            config.silent,
+        )?;
         info!("Restoring '{}' from '{}'", resolved_file, resolved_backup);
         session.exec(
             &format!("cp {} {} -f", resolved_backup, resolved_file),
@@ -46,15 +42,15 @@ pub fn run(config: &PatchCmdConfig, session: &SshSession) -> Result<(), String> 
     info!("==================================== Upload the local file");
     info!("Local file info:");
     log_local_file_info(&local_path)?;
-    if !config.silent
-        && !ask_user(&format!(
+    ask_user(
+        &format!(
             "Upload '{}' to '{}'?",
             local_path.display(),
             resolved_upload
-        ))
-    {
-        return Ok(());
-    }
+        ),
+        config.silent,
+    )?;
+
     info!(
         "Uploading '{}' to '{}'",
         local_path.display(),
@@ -83,14 +79,10 @@ pub fn run(config: &PatchCmdConfig, session: &SshSession) -> Result<(), String> 
     }
     info!("Remote file info before backup:");
     session.exec_with_log(&format!("ls -al {}", resolved_file), config.use_sudo)?;
-    if !config.silent
-        && !ask_user(&format!(
-            "Backup '{}' to '{}'?",
-            resolved_file, resolved_backup
-        ))
-    {
-        return Ok(());
-    }
+    ask_user(
+        &format!("Backup '{}' to '{}'?", resolved_file, resolved_backup),
+        config.silent,
+    )?;
     info!("Backing up '{}' to '{}'", resolved_file, resolved_backup);
     session.exec(
         &format!("cp {} {} -f", resolved_file, resolved_backup),
@@ -104,14 +96,10 @@ pub fn run(config: &PatchCmdConfig, session: &SshSession) -> Result<(), String> 
     for line in ls_upload_before.lines() {
         info!("{}", line);
     }
-    if !config.silent
-        && !ask_user(&format!(
-            "Overwrite '{}' with '{}'?",
-            resolved_file, resolved_upload
-        ))
-    {
-        return Ok(());
-    }
+    ask_user(
+        &format!("Overwrite '{}' with '{}'?", resolved_file, resolved_upload),
+        config.silent,
+    )?;
     info!("Applying patch to '{}'", resolved_file);
     session.exec(
         &format!("cp {} {} -f", resolved_upload, resolved_file),

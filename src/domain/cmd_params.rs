@@ -14,7 +14,6 @@ pub struct UploadCmdConfig {
     #[serde(default)]
     pub silent: bool,
 
-    pub assets_root: String,
     pub properties_file: String,
 }
 
@@ -34,9 +33,9 @@ pub struct PatchCmdConfig {
     #[serde(default)]
     pub recover: bool,
 
-    pub local_patch: String,
+    pub local_path: String,
     pub remote_upload: String,
-    pub remote_file: String,
+    pub remote_path: String,
     pub remote_backup: String,
 }
 

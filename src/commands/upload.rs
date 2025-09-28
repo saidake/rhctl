@@ -9,39 +9,30 @@ use crate::domain::cmd_params::UploadCmdConfig;
 use crate::utils::ssh_utils::{connect_ssh_thread, resolve_remote_path};
 use crate::{log_info_with_lock, log_warn_with_lock};
 
-pub fn run(config: &UploadCmdConfig, session: &SshSession) -> Result<(), String> {
-    let assets_root_path=Path::new(&config.assets_root);
+pub fn run(config: &UploadCmdConfig, session: &SshSession, vars: &HashMap<String, String>) -> Result<(), String> {
     if !Path::new(&config.properties_file).exists() {
         return Err(format!(
             "Properties file not found: '{}'",
             config.properties_file
         ));
     }
-    if !assets_root_path.exists() {
-        return Err(format!(
-            "Assets root directory not found: '{}'",
-            config.assets_root
-        ));
-    }
 
     let mut mappings = HashMap::new();
-    if let Err(e) = session.load_properties(config.properties_file.as_str(), &mut mappings) {
+    if let Err(e) = session.load_properties(config.properties_file.as_str(), &mut mappings, vars) {
         return Err(format!(
             "Failed to load properties file '{}'. \n\t{}",
             config.properties_file, e
         ));
     }
 
-    let assets_path = assets_root_path;
     let threads = Arc::new(Mutex::new(Vec::new()));
 
     for (local_item, remote_dir) in mappings {
-        let local_file_or_dir = assets_path.join(&local_item);
+        let local_file_or_dir = Path::new(&local_item).to_path_buf();
         if !local_file_or_dir.exists() {
             log_warn_with_lock!(
-                "Local item '{}' not found in assets directory '{}'. Skipping.",
-                local_item,
-                config.assets_root
+                "Local item '{}' not found. Skipping.",
+                local_item
             );
             continue;
         }

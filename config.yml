@@ -1,22 +1,55 @@
-common:
-  host: "192.168.75.128"
-  user: "test99"
-  ssh-port: 22
-  password: "testpwd"
-  use-sudo: false
-  use-rsync: false
-  silent: false
 
-upload:
-  assets-root: "AAA/assets"
-  properties-file: "AAA/config/path-mapping.properties"
+servers:
+  - name: "server1"
+    host: "192.168.75.128"
+    user: "test99"
+    ssh-port: 22
+    password: "testpwd"
+  - name: "server2"
+    host: "192.168.75.129"
+    user: "test100"
+    ssh-port: 22
+    password: "anotherpwd"
+vars:
+  ASSETS_ROOT: "AAA/assets"
 
-patch:
-  local-patch: "AAA/assets/example-patch.txt"
-  remote-upload: "/tmp/example-patch.txt.upload"
-  remote-file: "~/examples/example-patch-remote.txt"
-  remote-backup: "/tmp/example-patch-remote.txt.bak"
+groups:
+  dev: ["server1", "server2"]
+  prod: ["server3", "server4"]
 
-execute:
-  remote-path: "~"
-  script: "AAA/assets/example-bash.sh"
+configs:   
+  - name: "dev-deploy"   
+    
+    # Common config
+    use-sudo: false    
+    use-rsync: false
+    silent: false
+    log-level: info
+    
+    upload:
+      - properties-file: "AAA/config/path-mapping.properties"
+
+        # You can specify the current config for some servers or groups.
+        target-servers: ["server1", "server2"] 
+        # target-groups: ["dev"]
+        
+        # You can overwrite common config in this command.
+        # use-sudo: false
+        # use-rsync: false
+        # silent: false
+
+    patch:
+      - local-path: "AAA/assets/example-patch.txt"
+        remote-upload: "/tmp/example-patch.txt.upload"
+        remote-path: "~/examples/example-patch-remote.txt"
+        remote-backup: "/tmp/example-patch-remote.txt.bak"
+        target-servers: ["server1"]  
+        # target-groups: ["dev"]
+
+    execute:
+      - remote-path: "~"
+        scripts: 
+          - "AAA/assets/example-bash.sh"
+        target-servers: ["server1"]  
+        # target-groups: ["dev"]
+

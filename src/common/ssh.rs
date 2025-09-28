@@ -1,13 +1,13 @@
 use ssh2::Session;
 use std::collections::HashMap;
+use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
-use std::fs;
 
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
-use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
+use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name, substitute_vars};
 use crate::utils::log_utils::ask_user;
 use crate::{log_debug_with_lock, log_info_with_lock, remote};
 use log::{debug, error};
@@ -205,9 +205,7 @@ impl SshSession {
                 let remote_sub = format!("{}/{}", remote_dir, base_name);
 
                 // Check if remote file or directory exists
-                if !self.ask_safe_to_transfer(&remote_sub, use_sudo, silent)? {
-                    continue;
-                }
+                self.ask_safe_to_transfer(&remote_sub, use_sudo, silent)?;
                 // thread::sleep(Duration::from_secs(500000));
                 if use_sudo && self.user != "root" && !direct_write_if_sudo {
                     // println!("sub_path: {}", sub_path.display());
@@ -240,32 +238,31 @@ impl SshSession {
                 remote_dir,
                 new_file_name.unwrap_or(get_local_path_base_name(&local_file_or_dir)?.as_str())
             );
-            if self.ask_safe_to_transfer(&remote_file, use_sudo, silent)? {
-                if use_sudo && self.user != "root" && !direct_write_if_sudo {
-                    let temp_dir = remote_temp_dir.as_ref().unwrap();
-                    // println!("do_upload_with_scp_recursive");
-                    self.do_upload(
-                        use_sudo,
-                        use_rsync,
-                        &local_file_or_dir,
-                        &temp_dir,
-                        new_file_name,
-                    )?;
-                    // Move the content in temp_dir to the remote_dir
-                    // println!("move_and_delete_temp_dir - temp_dir: {}", temp_dir);
-                    // println!("move_and_delete_temp_dir - remote_dir: {}", remote_dir);
-                    // thread::sleep(Duration::from_secs(30));
+            self.ask_safe_to_transfer(&remote_file, use_sudo, silent)?;
+            if use_sudo && self.user != "root" && !direct_write_if_sudo {
+                let temp_dir = remote_temp_dir.as_ref().unwrap();
+                // println!("do_upload_with_scp_recursive");
+                self.do_upload(
+                    use_sudo,
+                    use_rsync,
+                    &local_file_or_dir,
+                    &temp_dir,
+                    new_file_name,
+                )?;
+                // Move the content in temp_dir to the remote_dir
+                // println!("move_and_delete_temp_dir - temp_dir: {}", temp_dir);
+                // println!("move_and_delete_temp_dir - remote_dir: {}", remote_dir);
+                // thread::sleep(Duration::from_secs(30));
 
-                    self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
-                } else {
-                    self.do_upload(
-                        use_sudo,
-                        use_rsync,
-                        &local_file_or_dir,
-                        &remote_dir,
-                        new_file_name,
-                    )?;
-                }
+                self.move_and_delete_temp_dir(temp_dir, remote_dir, use_sudo)?;
+            } else {
+                self.do_upload(
+                    use_sudo,
+                    use_rsync,
+                    &local_file_or_dir,
+                    &remote_dir,
+                    new_file_name,
+                )?;
             }
             if print_log {
                 log_info_with_lock!(
@@ -320,14 +317,10 @@ impl SshSession {
             let exists = self.file_or_dir_exists(REMOTE_TEMP_SBXCTL_FOLDER, use_sudo)?;
             // println!("exists: {}",exists);
             if exists {
-                if !silent
-                    && !ask_user(format!(
+                ask_user(format!(
                         "Remote path '{}' already exists. Transfering will DELETE it and use it as a temp folder. Continue?",
                         REMOTE_TEMP_SBXCTL_FOLDER
-                    ).as_str())
-                {
-                    return Err("Operation aborted by user".into());
-                }
+                    ).as_str(),silent)?;
 
                 self.exec(
                     &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
@@ -619,12 +612,14 @@ impl SshSession {
         Ok(())
     }
 
-    pub fn load_properties(
+   pub fn load_properties(
         &self,
         file: &str,
         mappings: &mut HashMap<String, String>,
+        vars: &HashMap<String, String>,
     ) -> Result<(), String> {
-        let f = File::open(file).map_err(|e| format!("Error opening file. \n\t{}", e))?;
+        let file = substitute_vars(file, vars)?;
+        let f = File::open(&file).map_err(|e| format!("Error opening file '{}'. \n\t{}", file, e))?;
         for (line_num, line) in BufReader::new(f).lines().enumerate() {
             let line =
                 line.map_err(|e| format!("Error reading line {}. \n\t{}", line_num + 1, e))?;
@@ -640,9 +635,8 @@ impl SshSession {
                     line
                 ));
             }
-            let local_file_or_dir = parts[0].trim();
-            let target_path = parts[1].trim();
-            // println!("target_path: '{}'",target_path);
+            let local_file_or_dir = substitute_vars(parts[0].trim(), vars)?;
+            let target_path = substitute_vars(parts[1].trim(), vars)?;
             if local_file_or_dir.is_empty() || target_path.is_empty() {
                 return Err(format!(
                     "Empty local or target path at line {}: '{}'",
@@ -650,10 +644,11 @@ impl SshSession {
                     line
                 ));
             }
-            mappings.insert(local_file_or_dir.to_string(), target_path.to_string());
+            mappings.insert(local_file_or_dir, target_path);
         }
         Ok(())
     }
+
 
     /// Check if a remote path exists (file or directory), ask user for overwrite if needed,
     /// and delete it if confirmed.
@@ -663,7 +658,7 @@ impl SshSession {
         remote_path: &str,
         use_sudo: bool,
         silent: bool,
-    ) -> Result<bool, String> {
+    ) -> Result<(), String> {
         // Check if remote path is a file or directory
         let is_file = self.file_exists(remote_path, use_sudo)?;
         let is_dir = self.dir_exists(remote_path, use_sudo)?;
@@ -687,10 +682,7 @@ impl SshSession {
             };
 
             // Ask user unless in silent mode
-            if !silent && !ask_user(&prompt) {
-                return Ok(false); // User chose not to delete
-            }
-
+            ask_user(&prompt, silent)?;
             // Execute deletion
             self.exec(&format!("rm -rf \"{}\"", remote_path), use_sudo)
                 .map_err(|e| {
@@ -702,10 +694,10 @@ impl SshSession {
                     )
                 })?;
             // println!("delete remote_path: {}", remote_path);
-            return Ok(true); // Deleted successfully
+            return Ok(()); // Deleted successfully
         }
 
-        Ok(true) // Path does not exist
+        Ok(()) // Path does not exist
     }
 
     pub fn validate_remote_dir(&self, remote_dir: &str, use_sudo: bool) -> Result<(), String> {
