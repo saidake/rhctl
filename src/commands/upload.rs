@@ -9,22 +9,13 @@ use crate::domain::cmd_params::UploadCmdConfig;
 use crate::utils::ssh_utils::{connect_ssh_thread, resolve_remote_path};
 use crate::{log_info_with_lock, log_warn_with_lock};
 
-pub fn run(config: &UploadCmdConfig, session: &SshSession, vars: &HashMap<String, String>) -> Result<(), String> {
+pub fn run(config: &UploadCmdConfig, session: &SshSession, mappings: &HashMap<String, String>) -> Result<(), String> {
     if !Path::new(&config.properties_file).exists() {
         return Err(format!(
             "Properties file not found: '{}'",
             config.properties_file
         ));
     }
-
-    let mut mappings = HashMap::new();
-    if let Err(e) = session.load_properties(config.properties_file.as_str(), &mut mappings, vars) {
-        return Err(format!(
-            "Failed to load properties file '{}'. \n\t{}",
-            config.properties_file, e
-        ));
-    }
-
     let threads = Arc::new(Mutex::new(Vec::new()));
 
     for (local_item, remote_dir) in mappings {

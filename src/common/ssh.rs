@@ -612,42 +612,6 @@ impl SshSession {
         Ok(())
     }
 
-   pub fn load_properties(
-        &self,
-        file: &str,
-        mappings: &mut HashMap<String, String>,
-        vars: &HashMap<String, String>,
-    ) -> Result<(), String> {
-        let file = substitute_vars(file, vars)?;
-        let f = File::open(&file).map_err(|e| format!("Error opening file '{}'. \n\t{}", file, e))?;
-        for (line_num, line) in BufReader::new(f).lines().enumerate() {
-            let line =
-                line.map_err(|e| format!("Error reading line {}. \n\t{}", line_num + 1, e))?;
-            let line = line.trim_end_matches(|c| c == '\n' || c == '\r' || c == ' ' || c == '\t');
-            if line.trim().is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let parts: Vec<&str> = line.splitn(2, '=').collect();
-            if parts.len() != 2 {
-                return Err(format!(
-                    "Invalid format at line {}: '{}'",
-                    line_num + 1,
-                    line
-                ));
-            }
-            let local_file_or_dir = substitute_vars(parts[0].trim(), vars)?;
-            let target_path = substitute_vars(parts[1].trim(), vars)?;
-            if local_file_or_dir.is_empty() || target_path.is_empty() {
-                return Err(format!(
-                    "Empty local or target path at line {}: '{}'",
-                    line_num + 1,
-                    line
-                ));
-            }
-            mappings.insert(local_file_or_dir, target_path);
-        }
-        Ok(())
-    }
 
 
     /// Check if a remote path exists (file or directory), ask user for overwrite if needed,

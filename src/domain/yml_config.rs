@@ -18,7 +18,6 @@ pub struct UploadConfig {
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
 
-    pub assets_root: String,
     pub properties_file: String,
 
     #[serde(default)]

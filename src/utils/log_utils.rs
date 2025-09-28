@@ -1,7 +1,10 @@
-use crate::domain::constants::{ USER_ABORTED_MESSAGE};
+use crate::domain::constants::USER_ABORTED_MESSAGE;
 use log::{debug, error, info, warn};
 use rpassword::prompt_password;
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    process::exit,
+};
 
 /// Core logging function with lock
 pub fn log_with_lock(level: &str, message: &str) {
@@ -77,7 +80,7 @@ macro_rules! ask {
 /// User must press Enter
 pub fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
     if silent {
-        return Ok(()); 
+        return Ok(());
     }
     ask!("{} [y/N]: ", prompt);
     io::stdout().flush().unwrap();
@@ -89,6 +92,22 @@ pub fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
         return Err(USER_ABORTED_MESSAGE.to_string());
     }
     Ok(())
+}
+
+pub fn ask_user_and_abort(prompt: &str, silent: bool) {
+    if silent {
+        return;
+    }
+    ask!("{} [y/N]: ", prompt);
+    io::stdout().flush().unwrap();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+
+    if input.trim().to_lowercase() != "y" {
+        error!("{}", USER_ABORTED_MESSAGE);
+        exit(1);
+    }
 }
 
 pub fn prompt_password_or_exit() -> String {

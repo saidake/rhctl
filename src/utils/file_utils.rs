@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn load_yaml_config(path: &str) -> Result<YmlConfig, String> {
@@ -82,16 +83,91 @@ pub fn get_local_path_base_name(path: &Path) -> Result<String, String> {
         .ok_or_else(|| format!("Could not get base name: {}", path.display()))
 }
 
-
-
-pub fn substitute_vars(input: &str, vars: &HashMap<String, String>) -> Result<String, String> {
-    let mut result = input.to_string();
-    for (key, value) in vars {
-        let placeholder = format!("${{{}}}", key);
-        if result.contains(&placeholder) && value.is_empty() {
-            return Err(format!("Variable '{}' is empty in path '{}'", key, input));
+pub fn load_properties(
+    file: &str,
+    mappings: &mut HashMap<String, String>,
+    vars: &HashMap<String, String>,
+) -> Result<(), String> {
+    let file = substitute_vars(file, vars)?;
+    let f = File::open(&file).map_err(|e| format!("Error opening file '{}'. \n\t{}", file, e))?;
+    for (line_num, line) in BufReader::new(f).lines().enumerate() {
+        let line = line.map_err(|e| format!("Error reading line {}. \n\t{}", line_num + 1, e))?;
+        let line = line.trim_end_matches(|c| c == '\n' || c == '\r' || c == ' ' || c == '\t');
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
         }
-        result = result.replace(&placeholder, value);
+        let parts: Vec<&str> = line.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid format at line {}: '{}'",
+                line_num + 1,
+                line
+            ));
+        }
+        let local_file_or_dir = substitute_vars(parts[0].trim(), vars)?;
+        let target_path = substitute_vars(parts[1].trim(), vars)?;
+        if local_file_or_dir.is_empty() || target_path.is_empty() {
+            return Err(format!(
+                "Empty local or target path at line {}: '{}'",
+                line_num + 1,
+                line
+            ));
+        }
+        mappings.insert(local_file_or_dir, target_path);
     }
-    Ok(result)
+    Ok(())
+}
+
+pub fn substitute_vars(input_path: &str, vars: &HashMap<String, String>) -> Result<String, String> {
+    if input_path.trim().is_empty() {
+        return Err("Input path is empty".to_string());
+    }
+    // println!("vars: {:?}", vars);
+    let mut result = String::new();
+    let mut rest = input_path;
+
+    while let Some(start) = rest.find("${") {
+        result.push_str(&rest[..start]);
+        rest = &rest[start + 2..];
+
+        if let Some(end) = rest.find('}') {
+            let key = &rest[..end];
+            match vars.get(key) {
+                Some(value) => {
+                    if value.is_empty() {
+                        return Err(format!(
+                            "Variable '{}' is empty in path '{}'",
+                            key, input_path
+                        ));
+                    }
+                    result.push_str(value);
+                }
+                None => {
+                    return Err(format!(
+                        "Variable '{}' not provided in path '{}'",
+                        key, input_path
+                    ));
+                }
+            }
+            rest = &rest[end + 1..];
+        } else {
+            return Err(format!(
+                "Unclosed variable placeholder in path '{}'",
+                input_path
+            ));
+        }
+    }
+
+    result.push_str(rest);
+
+    // Invalid characters check (macOS / Linux only)
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let forbidden: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
+        if result.chars().any(|c| forbidden.contains(&c)) {
+            return Err(format!("Path '{}' contains invalid characters.", result));
+        }
+    }
+
+    Ok(result) // 返回 String
 }

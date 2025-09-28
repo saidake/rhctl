@@ -17,7 +17,8 @@ use crate::handlers::command_handler::{
     parse_execute_configs, parse_patch_configs, parse_upload_configs,
 };
 use crate::handlers::validation_handler::validate_cli_args;
-use crate::utils::file_utils::substitute_vars;
+use crate::utils::file_utils::{load_properties, substitute_vars};
+use crate::utils::log_utils::ask_user_and_abort;
 use crate::utils::ssh_utils::connect_ssh;
 use crate::{
     domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig},
@@ -33,6 +34,7 @@ use crate::{
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
     #[arg(long, help = "Path to YAML configuration file")]
     config: Option<String>,
 
@@ -117,7 +119,7 @@ enum Commands {
         #[arg(long, help = "Log level (debug, info, warn, error)")]
         log_level: Option<String>,
 
-        #[arg(help = "Local bash script file")]
+        #[arg(long, help = "Local bash script file")]
         script: String,
 
         #[arg(long, default_value = "~", help = "Remote working path")]
@@ -189,7 +191,7 @@ fn main() {
 
     // Convert CLI vars to HashMap
     let cli_vars: HashMap<String, String> = cli.var.iter().cloned().collect();
-    
+
     // Determine log level
     let log_level = cli_vars
         .get("LOG_LEVEL")
@@ -256,13 +258,33 @@ fn main() {
                 exit(1);
             });
 
+        if !cli_vars.is_empty() {
+            ask_user_and_abort(
+                "CLI --var arguments are ignored when using YAML config. Using vars from YAML instead, Continue?",
+                false,
+            );
+        }
         // Parse all command configs with vars
-        let upload_configs = parse_upload_configs(&named_config, yml_config, &cli_vars);
-        let execute_configs = parse_execute_configs(&named_config, yml_config, &cli_vars);
-        let patch_configs = parse_patch_configs(&named_config, yml_config, &cli_vars);
+        let upload_configs = parse_upload_configs(&named_config, yml_config);
+        let execute_configs = parse_execute_configs(&named_config, yml_config);
+        let patch_configs = parse_patch_configs(&named_config, yml_config);
 
         // Spawn threads for upload commands
         for (config, vars) in upload_configs {
+            let mut mappings = HashMap::new();
+            if let Err(e) =
+                load_properties(config.properties_file.as_str(), &mut mappings, &yml_config.vars)
+            {
+                error!(
+                    "{}",
+                    format!(
+                        "Failed to load properties file '{}'. \n\t{}",
+                        config.properties_file, e
+                    )
+                );
+                exit(1);
+            }
+
             let handle = thread::spawn(move || {
                 let session = connect_ssh(
                     config.host.clone(),
@@ -291,7 +313,7 @@ fn main() {
         }
 
         // Spawn threads for execute commands
-        for (config, vars) in execute_configs {
+        for (config, _) in execute_configs {
             let handle = thread::spawn(move || {
                 let session = connect_ssh(
                     config.host.clone(),
@@ -320,7 +342,7 @@ fn main() {
         }
 
         // Spawn threads for patch commands
-        for (config, vars) in patch_configs {
+        for (config, _) in patch_configs {
             let handle = thread::spawn(move || {
                 let session = connect_ssh(
                     config.host.clone(),
@@ -376,7 +398,19 @@ fn main() {
                         },
                     ),
                 };
-                let vars = cli_vars.clone();
+                let mut mappings = HashMap::new();
+                if let Err(e) =
+                    load_properties(config.properties_file.as_str(), &mut mappings, &cli_vars)
+                {
+                    error!(
+                        "{}",
+                        format!(
+                            "Failed to load properties file '{}'. \n\t{}",
+                            config.properties_file, e
+                        )
+                    );
+                    exit(1);
+                }
                 let handle = thread::spawn(move || {
                     let session = connect_ssh(
                         config.host.clone(),
@@ -390,7 +424,7 @@ fn main() {
                         error!("{}", e);
                         exit(1);
                     }
-                    let result = commands::upload::run(&config, &session, &vars);
+                    let result = commands::upload::run(&config, &session, &mappings);
                     if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
                         error!("{}", e);
                     }
@@ -437,7 +471,6 @@ fn main() {
                         exit(1);
                     }),
                 };
-                let vars = cli_vars.clone();
                 let handle = thread::spawn(move || {
                     let session = connect_ssh(
                         config.host.clone(),
@@ -506,7 +539,6 @@ fn main() {
                         exit(1);
                     }),
                 };
-                let vars = cli_vars.clone();
                 let handle = thread::spawn(move || {
                     let session = connect_ssh(
                         config.host.clone(),

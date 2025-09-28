@@ -7,7 +7,7 @@ use crate::domain::yml_config::{
     ExecuteConfig, NamedConfig, PatchConfig, ServerConfig, UploadConfig, YmlConfig,
 };
 use crate::utils::file_utils::substitute_vars;
-use crate::utils::log_utils::{ask_user, prompt_password_or_exit};
+use crate::utils::log_utils::{ask_user, ask_user_and_abort, prompt_password_or_exit};
 
 trait TargetConfig {
     fn target_servers(&self) -> &Vec<String>;
@@ -43,19 +43,11 @@ impl TargetConfig for ExecuteConfig {
 
 pub fn parse_upload_configs(
     named_config: &NamedConfig,
-    yml_config: &YmlConfig,
-    cli_vars: &HashMap<String, String>,
+    yml_config: &YmlConfig
 ) -> Vec<(UploadCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
     let vars = &yml_config.vars;
-
-    if !cli_vars.is_empty() {
-        ask_user(
-            "CLI --var arguments are ignored when using YAML config. Using vars from YAML instead, Continue?",
-            false,
-        );
-    }
 
     for upload in &named_config.upload {
         for server in &servers {
@@ -87,18 +79,11 @@ pub fn parse_upload_configs(
 
 pub fn parse_execute_configs(
     named_config: &NamedConfig,
-    yml_config: &YmlConfig,
-    cli_vars: &HashMap<String, String>,
+    yml_config: &YmlConfig
 ) -> Vec<(ExecuteCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
     let vars = &yml_config.vars;
-
-    if !cli_vars.is_empty() {
-        error!(
-            "CLI --var arguments are ignored when using YAML config. Using vars from YAML instead."
-        );
-    }
 
     for execute in &named_config.execute {
         for script in &execute.scripts {
@@ -144,18 +129,11 @@ pub fn parse_execute_configs(
 
 pub fn parse_patch_configs(
     named_config: &NamedConfig,
-    yml_config: &YmlConfig,
-    cli_vars: &HashMap<String, String>,
+    yml_config: &YmlConfig
 ) -> Vec<(PatchCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
     let vars = &yml_config.vars;
-
-    if !cli_vars.is_empty() {
-        error!(
-            "CLI --var arguments are ignored when using YAML config. Using vars from YAML instead."
-        );
-    }
 
     for patch in &named_config.patch {
         for server in &servers {
@@ -168,7 +146,7 @@ pub fn parse_patch_configs(
                         .password
                         .clone()
                         .unwrap_or_else(|| prompt_password_or_exit()),
-                        
+
                     use_sudo: patch.use_sudo.or(named_config.use_sudo).unwrap_or(false),
                     use_rsync: patch.use_rsync.or(named_config.use_rsync).unwrap_or(false),
                     silent: patch.silent.or(named_config.silent).unwrap_or(false),

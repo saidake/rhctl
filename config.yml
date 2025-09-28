@@ -6,16 +6,16 @@ servers:
     ssh-port: 22
     password: "testpwd"
   - name: "server2"
-    host: "192.168.75.129"
-    user: "test100"
+    host: "192.168.75.128"
+    user: "test99"
     ssh-port: 22
-    password: "anotherpwd"
+    password: "testpwd"
 vars:
-  ASSETS_ROOT: "AAA/assets"
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/sbxctl/AAA/assets"
 
 groups:
-  dev: ["server1", "server2"]
-  prod: ["server3", "server4"]
+  dev: ["server1"]
+  uat: ["server1"]
 
 configs:   
   - name: "dev-deploy"   
@@ -30,7 +30,7 @@ configs:
       - properties-file: "AAA/config/path-mapping.properties"
 
         # You can specify the current config for some servers or groups.
-        target-servers: ["server1", "server2"] 
+        target-servers: ["server1"] 
         # target-groups: ["dev"]
         
         # You can overwrite common config in this command.
