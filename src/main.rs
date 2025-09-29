@@ -12,6 +12,7 @@ mod common;
 mod domain;
 mod handlers;
 mod utils;
+mod config;
 
 use crate::handlers::command_handler::{
     parse_execute_configs, parse_patch_configs, parse_upload_configs,
