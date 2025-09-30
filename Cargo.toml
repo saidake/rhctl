@@ -23,6 +23,7 @@ env_logger = "0.11"
 ansi_term = "0.12.1"
 tokio = { version = "1.41", features = ["full"] }
 crossbeam-queue = "0.3"
+dashmap = "5"
 
 [build-dependencies]
 # If needed for build scripts

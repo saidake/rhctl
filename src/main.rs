@@ -9,11 +9,12 @@ use std::thread;
 
 mod commands;
 mod common;
+mod config;
 mod domain;
 mod handlers;
 mod utils;
-mod config;
 
+use crate::common::ssh_pool::{PoolOptions, SessionPool};
 use crate::handlers::command_handler::{
     parse_execute_configs, parse_patch_configs, parse_upload_configs,
 };
@@ -242,7 +243,8 @@ fn main() {
 
     // Thread handles for parallel execution
     let threads = Arc::new(Mutex::new(Vec::new()));
-
+    let options = PoolOptions::new();
+    let ssh_session_pool = Arc::new(SessionPool::new(options));
     if let Some(config_name) = &cli.config_name {
         // YAML config mode
         let yml_config = yaml_config.as_ref().unwrap_or_else(|| {
@@ -273,9 +275,11 @@ fn main() {
         // Spawn threads for upload commands
         for (config, vars) in upload_configs {
             let mut mappings = HashMap::new();
-            if let Err(e) =
-                load_properties(config.properties_file.as_str(), &mut mappings, &yml_config.vars)
-            {
+            if let Err(e) = load_properties(
+                config.properties_file.as_str(),
+                &mut mappings,
+                &yml_config.vars,
+            ) {
                 error!(
                     "{}",
                     format!(

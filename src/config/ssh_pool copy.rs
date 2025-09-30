@@ -1,5 +1,8 @@
 use crossbeam_queue::ArrayQueue;
+use dashmap::DashMap;
 use ssh2::Session;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::io::Read;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
@@ -8,7 +11,6 @@ use tokio::net::TcpStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task;
 
-// Connection options for SSH
 #[derive(Clone, Debug)]
 pub struct ConnectOptions {
     pub host: String,
@@ -36,7 +38,6 @@ impl ConnectOptions {
             .map_err(|_| Error::new(ErrorKind::TimedOut, "Connection timed out"))?
             .map_err(|e| Error::new(ErrorKind::Other, e))?;
 
-        // Clone username and password to avoid borrowing self in the closure
         let username = self.username.clone();
         let password = self.password.clone();
 
@@ -55,7 +56,6 @@ impl ConnectOptions {
     }
 }
 
-// Pool options for configuring the pool
 #[derive(Clone, Debug)]
 pub struct PoolOptions {
     pub max_connections: u32,
@@ -73,36 +73,15 @@ impl PoolOptions {
             idle_timeout: Some(Duration::from_secs(600)),
         }
     }
-
-    pub fn max_connections(mut self, max: u32) -> Self {
-        self.max_connections = max;
-        self
-    }
-
-    pub fn min_connections(mut self, min: u32) -> Self {
-        self.min_connections = min;
-        self
-    }
-
-    pub fn acquire_timeout(mut self, timeout: Duration) -> Self {
-        self.acquire_timeout = timeout;
-        self
-    }
-
-    pub fn idle_timeout(mut self, timeout: Option<Duration>) -> Self {
-        self.idle_timeout = timeout;
-        self
-    }
 }
 
-// Internal pool state
 struct PoolInner {
     connect_options: Arc<ConnectOptions>,
     idle_conns: ArrayQueue<Idle>,
     semaphore: Arc<Semaphore>,
     size: std::sync::atomic::AtomicU32,
     num_idle: std::sync::atomic::AtomicUsize,
-    options: PoolOptions, // Added to store PoolOptions
+    options: PoolOptions,
 }
 
 impl PoolInner {
@@ -117,74 +96,32 @@ impl PoolInner {
             options,
         }
     }
-    fn clone(&self) -> Self {
-        Self {
-            connect_options: Arc::clone(&self.connect_options),
-            idle_conns: ArrayQueue::new(self.idle_conns.capacity()), 
-            semaphore: Arc::clone(&self.semaphore),
-            size: std::sync::atomic::AtomicU32::new(self.size()),
-            num_idle: std::sync::atomic::AtomicUsize::new(self.num_idle()),
-            options: self.options.clone(),
-        }
-    }
-    fn size(&self) -> u32 {
-        self.size.load(std::sync::atomic::Ordering::Acquire)
-    }
 
-    fn num_idle(&self) -> usize {
-        self.num_idle.load(std::sync::atomic::Ordering::Acquire)
-    }
+    async fn acquire(&self) -> Result<Floating<Live>, Error> {
+        let permit = tokio::time::timeout(
+            self.options.acquire_timeout,
+            self.semaphore.clone().acquire_owned(),
+        )
+        .await
+        .map_err(|_| Error::new(ErrorKind::TimedOut, "Pool acquire timed out"))?
+        .map_err(|_| Error::new(ErrorKind::Other, "Pool closed"))?;
 
-    fn try_acquire(&self) -> Option<Floating<Idle>> {
-        let permit = self.semaphore.clone().try_acquire_owned().ok()?; // Clone Arc<Semaphore>
-        self.pop_idle(permit).ok()
-    }
-
-    fn pop_idle(
-        &self,
-        permit: OwnedSemaphorePermit,
-    ) -> Result<Floating<Idle>, OwnedSemaphorePermit> {
         if let Some(idle) = self.idle_conns.pop() {
             self.num_idle
                 .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-            Ok(Floating::from_idle(idle, Arc::new(self.clone()), permit))
-        } else {
-            Err(permit)
-        }
-    }
-
-    fn release(&self, floating: Floating<Live>) {
-        let Floating { inner: idle, guard } = floating.into_idle();
-        if self.idle_conns.push(idle).is_err() {
-            panic!("Idle queue overflow");
-        }
-        guard.release_permit();
-        self.num_idle
-            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-    }
-
-    async fn acquire(&self) -> Result<Floating<Live>, Error> {
-        let permit = tokio::time::timeout(self.options.acquire_timeout, self.semaphore.clone().acquire_owned())
-            .await
-            .map_err(|_| Error::new(ErrorKind::TimedOut, "Pool acquire timed out"))?
-            .map_err(|_| Error::new(ErrorKind::Other, "Pool closed"))?;
-
-        match self.pop_idle(permit) {
-            Ok(conn) => {
-                if let Some(timeout) = self.options.idle_timeout {
-                    if conn.inner.idle_since.elapsed() > timeout {
-                        let guard = conn.close().await;
-                        return self.connect(guard).await;
-                    }
+            let conn = Floating::from_idle(idle, Arc::new(self.clone()), permit);
+            if let Some(timeout) = self.options.idle_timeout {
+                if conn.inner.idle_since.elapsed() > timeout {
+                    let guard = conn.close().await;
+                    return self.connect(guard).await;
                 }
-                Ok(conn.into_live())
             }
-            Err(permit) => {
-                let guard = self.try_increment_size(permit).map_err(|_| {
-                    Error::new(ErrorKind::Other, "Cannot increment size")
-                })?;
-                self.connect(guard).await
-            }
+            Ok(conn.into_live())
+        } else {
+            let guard = self.try_increment_size(permit).map_err(|_| {
+                Error::new(ErrorKind::Other, "Cannot increment size")
+            })?;
+            self.connect(guard).await
         }
     }
 
@@ -195,10 +132,7 @@ impl PoolInner {
         let result = self.size.fetch_update(
             std::sync::atomic::Ordering::AcqRel,
             std::sync::atomic::Ordering::Acquire,
-            |size| {
-                size.checked_add(1)
-                    .filter(|&s| s <= self.options.max_connections)
-            },
+            |size| size.checked_add(1).filter(|&s| s <= self.options.max_connections),
         );
         match result {
             Ok(_) => Ok(DecrementSizeGuard::from_permit(
@@ -214,29 +148,25 @@ impl PoolInner {
         Ok(Floating::new_live(sess, guard))
     }
 
-    async fn try_min_connections(&self) -> Result<(), Error> {
-        while self.size() < self.options.min_connections {
-            let permit = self
-                .semaphore
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| Error::new(ErrorKind::Other, "No permit"))?;
-            let guard = self
-                .try_increment_size(permit)
-                .map_err(|_| Error::new(ErrorKind::Other, "Cannot increment"))?;
-            let conn = self.connect(guard).await?;
-            self.release(conn);
+    fn release(&self, floating: Floating<Live>) {
+        let Floating { inner: idle, guard } = floating.into_idle();
+        if self.idle_conns.push(idle).is_err() {
+            // drop if overflow
+            return;
         }
-        Ok(())
+        guard.release_permit();
+        self.num_idle
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     }
 }
 
-// Connection structs
+#[derive(Clone)]
 struct Live {
     raw: Session,
     created_at: std::time::Instant,
 }
 
+#[derive(Clone)]
 struct Idle {
     live: Live,
     idle_since: std::time::Instant,
@@ -355,7 +285,6 @@ impl Floating<Idle> {
     }
 }
 
-// Public pool connection
 pub struct PoolConnection {
     live: Option<Live>,
     pool: Arc<PoolInner>,
@@ -383,62 +312,104 @@ impl Drop for PoolConnection {
     }
 }
 
-// Public pool struct
 #[derive(Clone)]
 pub struct Pool(Arc<PoolInner>);
 
 impl Pool {
-    pub async fn connect_with(
-        options: PoolOptions,
-        conn_options: ConnectOptions,
-    ) -> Result<Self, Error> {
-        let pool = Self(Arc::new(PoolInner::new(options, conn_options)));
-        if pool.0.options.min_connections > 0 {
-            pool.0.try_min_connections().await?;
-        }
-        Ok(pool)
-    }
-
-    pub fn connect_lazy_with(options: PoolOptions, conn_options: ConnectOptions) -> Self {
-        Self(Arc::new(PoolInner::new(options, conn_options)))
-    }
-
     pub async fn acquire(&self) -> Result<PoolConnection, Error> {
         self.0.acquire().await.map(|conn| conn.reattach())
     }
+
+    pub fn new(options: PoolOptions, conn_options: ConnectOptions) -> Self {
+        Self(Arc::new(PoolInner::new(options, conn_options)))
+    }
 }
 
-// Execute a command using the pool
-pub async fn execute_command(pool: &Pool, command: &str) -> Result<String, Error> {
-    let mut conn = pool.acquire().await?;
-    let cmd = command.to_string();
-    let output = task::spawn_blocking(move || {
-        let mut channel = conn
-            .channel_session()
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
-        channel
-            .exec(&cmd)
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
-        let mut output = String::new();
-        channel
-            .read_to_string(&mut output)
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
-        channel
-            .wait_close()
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
-        if channel
-            .exit_status()
-            .map_err(|e| Error::new(ErrorKind::Other, e))?
-            != 0
-        {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("Command `{}` failed", cmd),
-            ));
+#[derive(Clone, Eq, PartialEq, Hash)]
+struct SessionKey {
+    host: String,
+    port: u16,
+    username: String,
+}
+
+impl SessionKey {
+    fn new(host: &str, port: u16, username: &str) -> Self {
+        Self {
+            host: host.to_string(),
+            port,
+            username: username.to_string(),
         }
+    }
+}
+
+pub struct SessionPool {
+    pools: DashMap<u64, Pool>,
+    options: PoolOptions,
+}
+
+impl SessionPool {
+    pub fn new(options: PoolOptions) -> Self {
+        Self {
+            pools: DashMap::new(),
+            options,
+        }
+    }
+
+    fn make_key(&self, host: &str, port: u16, username: &str) -> u64 {
+        let key = SessionKey::new(host, port, username);
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    async fn get_or_create_pool(
+        &self,
+        host: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+    ) -> Pool {
+        let key = self.make_key(host, port, username);
+        if let Some(p) = self.pools.get(&key) {
+            return p.clone();
+        }
+        let conn_opt = ConnectOptions::new(host, port, username, password);
+        let pool = Pool::new(self.options.clone(), conn_opt);
+        self.pools.insert(key, pool.clone());
+        pool
+    }
+
+    // execute command on specific host/user/port
+    pub async fn execute_command(
+        &self,
+        host: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+        command: &str,
+    ) -> Result<String, Error> {
+        let pool = self.get_or_create_pool(host, port, username, password).await;
+        let mut conn = pool.acquire().await?;
+        let cmd = command.to_string();
+        let output = task::spawn_blocking(move || {
+            let mut channel = conn
+                .channel_session()
+                .map_err(|e| Error::new(ErrorKind::Other, e))?;
+            channel
+                .exec(&cmd)
+                .map_err(|e| Error::new(ErrorKind::Other, e))?;
+            let mut output = String::new();
+            channel
+                .read_to_string(&mut output)
+                .map_err(|e| Error::new(ErrorKind::Other, e))?;
+            channel
+                .wait_close()
+                .map_err(|e| Error::new(ErrorKind::Other, e))?;
+            Ok(output)
+        })
+        .await
+        .map_err(|e| Error::new(ErrorKind::Other, e))??;
+
         Ok(output)
-    })
-    .await
-    .map_err(|e| Error::new(ErrorKind::Other, e))??;
-    Ok(output)
+    }
 }
