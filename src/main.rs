@@ -6,6 +6,7 @@ use std::io::Write;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 mod commands;
 mod common;
@@ -14,7 +15,7 @@ mod domain;
 mod handlers;
 mod utils;
 
-use crate::common::ssh_pool::{PoolOptions, SessionPool};
+use crate::common::ssh_pool::{PoolOptions, ServerPool};
 use crate::handlers::command_handler::{
     parse_execute_configs, parse_patch_configs, parse_upload_configs,
 };
@@ -27,6 +28,10 @@ use crate::{
     utils::file_utils::load_yaml_config,
     utils::log_utils::prompt_password_or_exit,
 };
+
+fn parse_duration(s: &str) -> Result<Duration, String> {
+    humantime::parse_duration(s).map_err(|e| format!("Invalid duration '{}': {}", s, e))
+}
 
 #[derive(Parser)]
 #[command(name = "sbxctl")]
@@ -63,8 +68,13 @@ enum Commands {
         #[arg(long, help = "Remote password")]
         password: Option<String>,
 
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        connect_timeout: Option<Duration>,
+
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
+
 
         #[arg(
             long,
@@ -100,6 +110,10 @@ enum Commands {
 
         #[arg(long, help = "Remote password")]
         password: Option<String>,
+        
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        connect_timeout: Option<Duration>,
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
@@ -141,6 +155,10 @@ enum Commands {
 
         #[arg(long, help = "Remote password")]
         password: Option<String>,
+        
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        connect_timeout: Option<Duration>,
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
@@ -243,8 +261,14 @@ fn main() {
 
     // Thread handles for parallel execution
     let threads = Arc::new(Mutex::new(Vec::new()));
-    let options = PoolOptions::new();
-    let ssh_session_pool = Arc::new(SessionPool::new(options));
+    let options = PoolOptions {
+        max_connections: 10,
+        min_connections: 0,
+        acquire_timeout: Duration::from_secs(30),
+        idle_timeout: Some(Duration::from_secs(600)), // 10min default
+        max_channel_per_session: 5,
+    };
+    let global_server_pool = Arc::new(ServerPool::new(options));
     if let Some(config_name) = &cli.config_name {
         // YAML config mode
         let yml_config = yaml_config.as_ref().unwrap_or_else(|| {
@@ -297,7 +321,8 @@ fn main() {
                     config.ssh_port,
                     config.password.clone(),
                 );
-                if let Err(e) = session.check_global_remote_temp_dir(config.use_sudo, config.silent)
+                if let Err(e) =
+                    session.check_global_remote_temp_dir(config.use_sudo, config.silent)
                 {
                     error!("{}", e);
                     exit(1);
@@ -382,6 +407,7 @@ fn main() {
                 ssh_port,
                 user,
                 password,
+                connect_timeout,
                 use_sudo,
                 use_rsync,
                 silent,
@@ -393,6 +419,7 @@ fn main() {
                     user,
                     ssh_port: ssh_port.unwrap_or(22),
                     password: password.unwrap_or_else(|| prompt_password_or_exit()),
+                    connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
                     use_sudo,
                     use_rsync,
                     silent,
@@ -448,6 +475,7 @@ fn main() {
                 ssh_port,
                 user,
                 password,
+                connect_timeout,
                 use_sudo,
                 use_rsync,
                 silent,
@@ -460,6 +488,7 @@ fn main() {
                     user,
                     ssh_port: ssh_port.unwrap_or(22),
                     password: password.unwrap_or_else(|| prompt_password_or_exit()),
+                    connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
                     use_sudo,
                     use_rsync,
                     silent,
@@ -508,6 +537,7 @@ fn main() {
                 ssh_port,
                 user,
                 password,
+                connect_timeout,
                 use_sudo,
                 use_rsync,
                 silent,
@@ -523,6 +553,7 @@ fn main() {
                     user,
                     ssh_port: ssh_port.unwrap_or(22),
                     password: password.unwrap_or_else(|| prompt_password_or_exit()),
+                    connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
                     use_sudo,
                     use_rsync,
                     silent,

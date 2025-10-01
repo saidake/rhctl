@@ -1,5 +1,7 @@
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
+
+
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -7,14 +9,16 @@ pub struct ServerConfig {
     pub name: String, // server must have a name now
     pub host: String,
     pub user: String,
-    pub ssh_port: u16,
+    pub ssh_port: Option<u16>,
     pub password: Option<String>,
+    #[serde(default, with = "humantime_serde")]
+    pub connect_timeout: Option<Duration>, 
 }
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct UploadConfig {
-    pub use_rsync: Option<bool>, 
+    pub use_rsync: Option<bool>,
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
 
@@ -29,7 +33,7 @@ pub struct UploadConfig {
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct PatchConfig {
-    pub use_rsync: Option<bool>, 
+    pub use_rsync: Option<bool>,
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
 
@@ -50,7 +54,7 @@ pub struct PatchConfig {
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct ExecuteConfig {
-    pub use_rsync: Option<bool>, 
+    pub use_rsync: Option<bool>,
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
 

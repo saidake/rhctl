@@ -1,6 +1,7 @@
 use log::error;
 use std::collections::HashMap;
 use std::process::exit;
+use std::time::Duration;
 
 use crate::domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig};
 use crate::domain::yml_config::{
@@ -43,7 +44,7 @@ impl TargetConfig for ExecuteConfig {
 
 pub fn parse_upload_configs(
     named_config: &NamedConfig,
-    yml_config: &YmlConfig
+    yml_config: &YmlConfig,
 ) -> Vec<(UploadCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
@@ -55,11 +56,12 @@ pub fn parse_upload_configs(
                 UploadCmdConfig {
                     host: server.host.clone(),
                     user: server.user.clone(),
-                    ssh_port: server.ssh_port,
+                    ssh_port: server.ssh_port.unwrap_or(22),
                     password: server
                         .password
                         .clone()
                         .unwrap_or_else(|| prompt_password_or_exit()),
+                    connect_timeout: server.connect_timeout.unwrap_or(Duration::from_secs(60)),
                     use_sudo: upload.use_sudo.or(named_config.use_sudo).unwrap_or(false),
                     use_rsync: upload.use_rsync.or(named_config.use_rsync).unwrap_or(false),
                     silent: upload.silent.or(named_config.silent).unwrap_or(false),
@@ -79,7 +81,7 @@ pub fn parse_upload_configs(
 
 pub fn parse_execute_configs(
     named_config: &NamedConfig,
-    yml_config: &YmlConfig
+    yml_config: &YmlConfig,
 ) -> Vec<(ExecuteCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
@@ -92,11 +94,12 @@ pub fn parse_execute_configs(
                     ExecuteCmdConfig {
                         host: server.host.clone(),
                         user: server.user.clone(),
-                        ssh_port: server.ssh_port,
+                        ssh_port: server.ssh_port.unwrap_or(22),
                         password: server
                             .password
                             .clone()
                             .unwrap_or_else(|| prompt_password_or_exit()),
+                        connect_timeout: server.connect_timeout.unwrap_or(Duration::from_secs(60)),
                         use_sudo: execute.use_sudo.or(named_config.use_sudo).unwrap_or(false),
                         use_rsync: execute
                             .use_rsync
@@ -129,7 +132,7 @@ pub fn parse_execute_configs(
 
 pub fn parse_patch_configs(
     named_config: &NamedConfig,
-    yml_config: &YmlConfig
+    yml_config: &YmlConfig,
 ) -> Vec<(PatchCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
@@ -141,12 +144,12 @@ pub fn parse_patch_configs(
                 PatchCmdConfig {
                     host: server.host.clone(),
                     user: server.user.clone(),
-                    ssh_port: server.ssh_port,
+                    ssh_port: server.ssh_port.unwrap_or(22),
                     password: server
                         .password
                         .clone()
                         .unwrap_or_else(|| prompt_password_or_exit()),
-
+                    connect_timeout: server.connect_timeout.unwrap_or(Duration::from_secs(60)),
                     use_sudo: patch.use_sudo.or(named_config.use_sudo).unwrap_or(false),
                     use_rsync: patch.use_rsync.or(named_config.use_rsync).unwrap_or(false),
                     silent: patch.silent.or(named_config.silent).unwrap_or(false),

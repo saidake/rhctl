@@ -24,6 +24,8 @@ ansi_term = "0.12.1"
 tokio = { version = "1.41", features = ["full"] }
 crossbeam-queue = "0.3"
 dashmap = "5"
+humantime-serde = "1.1.1"
+humantime = "2"
 
 [build-dependencies]
 # If needed for build scripts

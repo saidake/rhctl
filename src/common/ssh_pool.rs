@@ -10,7 +10,6 @@ use tokio::net::TcpStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task;
 
-// =================== ConnectOptions ===================
 #[derive(Clone, Debug)]
 pub struct ConnectOptions {
     pub host: String,
@@ -56,7 +55,6 @@ impl ConnectOptions {
     }
 }
 
-// =================== PoolOptions ===================
 #[derive(Clone, Debug)]
 pub struct PoolOptions {
     pub max_connections: u32,       // max sessions per server
@@ -78,7 +76,6 @@ impl PoolOptions {
     }
 }
 
-// =================== Live / Idle ===================
 #[derive(Clone)]
 struct Live {
     raw: Session,
@@ -91,7 +88,6 @@ struct Idle {
     idle_since: Instant,
 }
 
-// =================== SessionWrapper ===================
 // Wrap session to manage channel count and idle timestamp
 struct SessionWrapper {
     live: Live,
@@ -122,16 +118,15 @@ impl SessionWrapper {
     }
 }
 
-// =================== ServerPool ===================
 // Manage multiple sessions for one host/user/port
-struct ServerPool {
+struct SessionPool {
     connect_options: ConnectOptions,
     sessions: Mutex<Vec<Arc<SessionWrapper>>>,
     options: PoolOptions,
     semaphore: Arc<Semaphore>, // total session limit
 }
 
-impl ServerPool {
+impl SessionPool {
     fn new(connect_options: ConnectOptions, options: PoolOptions) -> Self {
         Self {
             connect_options,
@@ -179,9 +174,8 @@ impl ServerPool {
     }
 }
 
-// =================== SessionPool ===================
-pub struct SessionPool {
-    servers: DashMap<u64, Arc<ServerPool>>,
+pub struct ServerPool {
+    servers: DashMap<u64, Arc<SessionPool>>,
     options: PoolOptions,
 }
 
@@ -202,7 +196,7 @@ impl SessionKey {
     }
 }
 
-impl SessionPool {
+impl ServerPool {
     pub fn new(options: PoolOptions) -> Self {
         Self {
             servers: DashMap::new(),
@@ -218,7 +212,7 @@ impl SessionPool {
     }
 
     fn cleanup_idle_sessions(&self) {
-        let timeout = self.options.idle_timeout.unwrap_or(Duration::from_secs(600));
+        // let timeout = self.options.idle_timeout.unwrap_or(Duration::from_secs(600));
         for pool in self.servers.iter() {
             pool.value().cleanup_idle();
         }
@@ -230,14 +224,14 @@ impl SessionPool {
         port: u16,
         username: &str,
         password: &str,
-    ) -> Arc<ServerPool> {
+    ) -> Arc<SessionPool> {
         let key = self.make_key(host, port, username);
         if let Some(pool) = self.servers.get(&key) {
             return pool.clone();
         }
 
         let connect_opts = ConnectOptions::new(host, port, username, password);
-        let server_pool = Arc::new(ServerPool::new(connect_opts, self.options.clone()));
+        let server_pool = Arc::new(SessionPool::new(connect_opts, self.options.clone()));
         self.servers.insert(key, server_pool.clone());
         server_pool
     }

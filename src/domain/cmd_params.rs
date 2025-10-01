@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default)]
@@ -6,6 +8,7 @@ pub struct UploadCmdConfig {
     pub user: String,
     pub ssh_port: u16,
     pub password: String,
+    pub connect_timeout: Duration,
 
     #[serde(default)]
     pub use_rsync: bool,
@@ -23,6 +26,7 @@ pub struct PatchCmdConfig {
     pub user: String,
     pub ssh_port: u16,
     pub password: String,
+    pub connect_timeout: Duration,
 
     #[serde(default)]
     pub use_rsync: bool,
@@ -45,6 +49,7 @@ pub struct ExecuteCmdConfig {
     pub user: String,
     pub ssh_port: u16,
     pub password: String,
+    pub connect_timeout: Duration,
 
     #[serde(default)]
     pub use_rsync: bool,
