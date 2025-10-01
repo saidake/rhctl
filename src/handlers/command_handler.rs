@@ -3,42 +3,128 @@ use std::collections::HashMap;
 use std::process::exit;
 use std::time::Duration;
 
+use crate::Cli;
+use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig};
 use crate::domain::yml_config::{
-    ExecuteConfig, NamedConfig, PatchConfig, ServerConfig, UploadConfig, YmlConfig,
+    ExecuteConfig, NamedConfig, PatchConfig, ServerConfig, TargetConfig, UploadConfig, YmlConfig
 };
 use crate::utils::file_utils::substitute_vars;
 use crate::utils::log_utils::{ask_user, ask_user_and_abort, prompt_password_or_exit};
 
-trait TargetConfig {
-    fn target_servers(&self) -> &Vec<String>;
-    fn target_groups(&self) -> &Vec<String>;
+// Root level
+pub fn parse_patch_config_from_cmd(
+    host: String,
+    user: String,
+    ssh_port: Option<u16>,
+    password: Option<String>,
+    connect_timeout: Option<Duration>,
+    use_sudo: bool,
+    use_rsync: bool,
+    silent: bool,
+    recover: bool,
+    local_path: String,
+    remote_upload: String,
+    remote_path: String,
+    remote_backup: String,
+    cli_vars: &HashMap<String, String>,
+) -> PatchCmdConfig {
+    let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
+    PatchCmdConfig {
+        host,
+        user,
+        ssh_port: ssh_port.unwrap_or(22),
+        password: password.unwrap_or_else(|| prompt_password_or_exit()),
+        server_key,
+        connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
+        use_sudo,
+        use_rsync,
+        silent,
+        recover,
+        local_path: substitute_vars(&local_path, &cli_vars).unwrap_or_else(|e| {
+            error!("{}", e);
+            exit(1);
+        }),
+        remote_upload: substitute_vars(&remote_upload, &cli_vars).unwrap_or_else(|e| {
+            error!("{}", e);
+            exit(1);
+        }),
+        remote_path: substitute_vars(&remote_path, &cli_vars).unwrap_or_else(|e| {
+            error!("{}", e);
+            exit(1);
+        }),
+        remote_backup: substitute_vars(&remote_backup, &cli_vars).unwrap_or_else(|e| {
+            error!("{}", e);
+            exit(1);
+        }),
+    }
 }
 
-impl TargetConfig for UploadConfig {
-    fn target_servers(&self) -> &Vec<String> {
-        &self.target_servers
-    }
-    fn target_groups(&self) -> &Vec<String> {
-        &self.target_groups
+// Root level
+pub fn parse_execute_config_from_cmd(
+    host: String,
+    user: String,
+    ssh_port: Option<u16>,
+    password: Option<String>,
+    connect_timeout: Option<Duration>,
+    use_sudo: bool,
+    use_rsync: bool,
+    silent: bool,
+    script: String,
+    remote_path: Option<String>,
+    cli_vars: &HashMap<String, String>,
+) -> ExecuteCmdConfig {
+    let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
+    ExecuteCmdConfig {
+        host,
+        user,
+        ssh_port: ssh_port.unwrap_or(22),
+        password: password.unwrap_or_else(|| prompt_password_or_exit()),
+        server_key,
+        connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
+        use_sudo,
+        use_rsync,
+        silent,
+        script: substitute_vars(&script, &cli_vars).unwrap_or_else(|e| {
+            error!("{}", e);
+            exit(1);
+        }),
+        remote_path: substitute_vars(&remote_path.unwrap_or_else(|| "~".to_string()), &cli_vars)
+            .unwrap_or_else(|e| {
+                error!("{}", e);
+                exit(1);
+            }),
     }
 }
 
-impl TargetConfig for PatchConfig {
-    fn target_servers(&self) -> &Vec<String> {
-        &self.target_servers
-    }
-    fn target_groups(&self) -> &Vec<String> {
-        &self.target_groups
-    }
-}
-
-impl TargetConfig for ExecuteConfig {
-    fn target_servers(&self) -> &Vec<String> {
-        &self.target_servers
-    }
-    fn target_groups(&self) -> &Vec<String> {
-        &self.target_groups
+// Root level
+pub fn parse_upload_config_from_cmd(
+    host: String,
+    user: String,
+    ssh_port: Option<u16>,
+    password: Option<String>,
+    connect_timeout: Option<Duration>,
+    use_sudo: bool,
+    use_rsync: bool,
+    silent: bool,
+    properties_file: String,
+    cli_vars: &HashMap<String, String>,
+) -> UploadCmdConfig {
+    let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
+    UploadCmdConfig {
+        host,
+        user,
+        ssh_port: ssh_port.unwrap_or(22),
+        password: password.unwrap_or_else(|| prompt_password_or_exit()),
+        server_key,
+        connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
+        use_sudo,
+        use_rsync,
+        silent,
+        properties_file: substitute_vars(&properties_file, &cli_vars).unwrap_or_else(|e| {
+            error!("{}", e);
+            exit(1);
+        }),
     }
 }
 
@@ -61,6 +147,11 @@ pub fn parse_upload_configs(
                         .password
                         .clone()
                         .unwrap_or_else(|| prompt_password_or_exit()),
+                    server_key: ServerPool::generate_server_key(
+                        &server.host,
+                        server.ssh_port.unwrap_or(22),
+                        &server.user,
+                    ),
                     connect_timeout: server.connect_timeout.unwrap_or(Duration::from_secs(60)),
                     use_sudo: upload.use_sudo.or(named_config.use_sudo).unwrap_or(false),
                     use_rsync: upload.use_rsync.or(named_config.use_rsync).unwrap_or(false),
@@ -99,6 +190,11 @@ pub fn parse_execute_configs(
                             .password
                             .clone()
                             .unwrap_or_else(|| prompt_password_or_exit()),
+                        server_key: ServerPool::generate_server_key(
+                            &server.host,
+                            server.ssh_port.unwrap_or(22),
+                            &server.user,
+                        ),
                         connect_timeout: server.connect_timeout.unwrap_or(Duration::from_secs(60)),
                         use_sudo: execute.use_sudo.or(named_config.use_sudo).unwrap_or(false),
                         use_rsync: execute
@@ -149,6 +245,11 @@ pub fn parse_patch_configs(
                         .password
                         .clone()
                         .unwrap_or_else(|| prompt_password_or_exit()),
+                    server_key: ServerPool::generate_server_key(
+                        &server.host,
+                        server.ssh_port.unwrap_or(22),
+                        &server.user,
+                    ),
                     connect_timeout: server.connect_timeout.unwrap_or(Duration::from_secs(60)),
                     use_sudo: patch.use_sudo.or(named_config.use_sudo).unwrap_or(false),
                     use_rsync: patch.use_rsync.or(named_config.use_rsync).unwrap_or(false),

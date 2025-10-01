@@ -10,6 +10,8 @@ use tokio::net::TcpStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task;
 
+use crate::domain::cmd_params::ServerMetadata;
+
 #[derive(Clone, Debug)]
 pub struct ConnectOptions {
     pub host: String,
@@ -43,7 +45,8 @@ impl ConnectOptions {
         let sess = task::spawn_blocking(move || {
             let mut sess = Session::new().map_err(|e| Error::new(ErrorKind::Other, e))?;
             sess.set_tcp_stream(stream);
-            sess.handshake().map_err(|e| Error::new(ErrorKind::Other, e))?;
+            sess.handshake()
+                .map_err(|e| Error::new(ErrorKind::Other, e))?;
             sess.userauth_password(&username, &password)
                 .map_err(|e| Error::new(ErrorKind::Other, e))?;
             Ok::<Session, Error>(sess)
@@ -57,11 +60,11 @@ impl ConnectOptions {
 
 #[derive(Clone, Debug)]
 pub struct PoolOptions {
-    pub max_connections: u32,       // max sessions per server
+    pub max_connections: u32, // max sessions per server
     pub min_connections: u32,
     pub acquire_timeout: Duration,
     pub idle_timeout: Option<Duration>, // session idle timeout
-    pub max_channel_per_session: u32,  // max concurrent channel per session
+    pub max_channel_per_session: u32,   // max concurrent channel per session
 }
 
 impl PoolOptions {
@@ -91,7 +94,7 @@ struct Idle {
 // Wrap session to manage channel count and idle timestamp
 struct SessionWrapper {
     live: Live,
-    semaphore: Arc<Semaphore>, // control channel concurrency
+    semaphore: Arc<Semaphore>,  // control channel concurrency
     idle_since: Mutex<Instant>, // track idle time
 }
 
@@ -160,7 +163,10 @@ impl SessionPool {
             raw: sess,
             created_at: Instant::now(),
         };
-        let wrapper = Arc::new(SessionWrapper::new(live, self.options.max_channel_per_session));
+        let wrapper = Arc::new(SessionWrapper::new(
+            live,
+            self.options.max_channel_per_session,
+        ));
         sessions_guard.push(wrapper.clone());
         drop(permit); // session already counted by semaphore
         Ok(wrapper)
@@ -179,36 +185,12 @@ pub struct ServerPool {
     options: PoolOptions,
 }
 
-#[derive(Hash)]
-struct SessionKey {
-    host: String,
-    port: u16,
-    username: String,
-}
-
-impl SessionKey {
-    fn new(host: &str, port: u16, username: &str) -> Self {
-        Self {
-            host: host.to_string(),
-            port,
-            username: username.to_string(),
-        }
-    }
-}
-
 impl ServerPool {
     pub fn new(options: PoolOptions) -> Self {
         Self {
             servers: DashMap::new(),
             options,
         }
-    }
-
-    fn make_key(&self, host: &str, port: u16, username: &str) -> u64 {
-        let key = SessionKey::new(host, port, username);
-        let mut hasher = DefaultHasher::new();
-        key.hash(&mut hasher);
-        hasher.finish()
     }
 
     fn cleanup_idle_sessions(&self) {
@@ -218,61 +200,80 @@ impl ServerPool {
         }
     }
 
-    async fn get_server_pool(
-        &self,
-        host: &str,
-        port: u16,
-        username: &str,
-        password: &str,
-    ) -> Arc<SessionPool> {
-        let key = self.make_key(host, port, username);
-        if let Some(pool) = self.servers.get(&key) {
+    pub fn generate_server_key(host: &str, port: u16, username: &str) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        host.hash(&mut hasher);
+        port.hash(&mut hasher);
+        username.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    async fn get_server_pool<T: ServerMetadata>(&self, server_key: T) -> Arc<SessionPool> {
+        if let Some(pool) = self.servers.get(&server_key.get_server_key()) {
             return pool.clone();
         }
 
-        let connect_opts = ConnectOptions::new(host, port, username, password);
+        let connect_opts = ConnectOptions::new(
+            server_key.get_host(),
+            server_key.get_ssh_port(),
+            server_key.get_user(),
+            server_key.get_password(),
+        );
         let server_pool = Arc::new(SessionPool::new(connect_opts, self.options.clone()));
-        self.servers.insert(key, server_pool.clone());
+        self.servers
+            .insert(server_key.get_server_key(), server_pool.clone());
         server_pool
     }
 
-    // =================== Execute Command ===================
-    pub async fn execute_command(
-        &self,
-        host: &str,
-        port: u16,
-        username: &str,
-        password: &str,
-        command: &str,
-    ) -> Result<String, Error> {
-        let server_pool = self.get_server_pool(host, port, username, password).await;
-        let session_wrapper = server_pool.get_session().await?;
-        let permit = session_wrapper.acquire_channel().await;
+    // Behavior functions
+    // pub async fn execute_command(
+    //     &self,
+    //     host: &str,
+    //     port: u16,
+    //     username: &str,
+    //     password: &str,
+    //     command: &str,
+    // ) -> Result<String, Error> {
+    //     let server_pool = self.get_server_pool(host, port, username, password).await;
+    //     let session_wrapper = server_pool.get_session().await?;
+    //     let permit = session_wrapper.acquire_channel().await;
 
-        let session_wrapper = session_wrapper.clone(); // Arc<SessionWrapper>
-        let cmd = command.to_string();
+    //     let session_wrapper = session_wrapper.clone(); // Arc<SessionWrapper>
+    //     let cmd = command.to_string();
 
-        // run command in blocking thread
-        let output = task::spawn_blocking(move || -> Result<String, Error> {
-            let mut channel = session_wrapper.live.raw.channel_session().map_err(|e| Error::new(ErrorKind::Other, e))?;
-            channel.exec(&cmd).map_err(|e| Error::new(ErrorKind::Other, e))?;
-            let mut out = String::new();
-            channel.read_to_string(&mut out).map_err(|e| Error::new(ErrorKind::Other, e))?;
-            channel.wait_close().map_err(|e| Error::new(ErrorKind::Other, e))?;
-            Ok(out)
-        })
-        .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))??;
+    //     // run command in blocking thread
+    //     let output = task::spawn_blocking(move || -> Result<String, Error> {
+    //         let mut channel = session_wrapper
+    //             .live
+    //             .raw
+    //             .channel_session()
+    //             .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    //         channel
+    //             .exec(&cmd)
+    //             .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    //         let mut out = String::new();
+    //         channel
+    //             .read_to_string(&mut out)
+    //             .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    //         channel
+    //             .wait_close()
+    //             .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    //         Ok(out)
+    //     })
+    //     .await
+    //     .map_err(|e| Error::new(ErrorKind::Other, e))??;
 
-        drop(permit); // release channel slot
-        Ok(output)
-    }
+    //     drop(permit); // release channel slot
+    //     Ok(output)
+    // }
 
-    // =================== Start background idle cleanup thread ===================
+    // Start background idle cleanup thread
     pub fn start_idle_cleanup(self: Arc<Self>, interval: Duration) {
-        thread::spawn(move || loop {
-            thread::sleep(interval);
-            self.cleanup_idle_sessions();
+        thread::spawn(move || {
+            loop {
+                thread::sleep(interval);
+                self.cleanup_idle_sessions();
+            }
         });
     }
 }

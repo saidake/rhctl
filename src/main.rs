@@ -17,7 +17,7 @@ mod utils;
 
 use crate::common::ssh_pool::{PoolOptions, ServerPool};
 use crate::handlers::command_handler::{
-    parse_execute_configs, parse_patch_configs, parse_upload_configs,
+    parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd, parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs
 };
 use crate::handlers::validation_handler::validate_cli_args;
 use crate::utils::file_utils::{load_properties, substitute_vars};
@@ -414,22 +414,9 @@ fn main() {
                 properties_file,
                 ..
             } => {
-                let config = UploadCmdConfig {
-                    host,
-                    user,
-                    ssh_port: ssh_port.unwrap_or(22),
-                    password: password.unwrap_or_else(|| prompt_password_or_exit()),
-                    connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
-                    use_sudo,
-                    use_rsync,
-                    silent,
-                    properties_file: substitute_vars(&properties_file, &cli_vars).unwrap_or_else(
-                        |e| {
-                            error!("{}", e);
-                            exit(1);
-                        },
-                    ),
-                };
+                let config = 
+                parse_upload_config_from_cmd(host, user, ssh_port, password, connect_timeout, 
+                    use_sudo, use_rsync, silent, properties_file, &cli_vars);
                 let mut mappings = HashMap::new();
                 if let Err(e) =
                     load_properties(config.properties_file.as_str(), &mut mappings, &cli_vars)
@@ -483,28 +470,9 @@ fn main() {
                 remote_path,
                 ..
             } => {
-                let config = ExecuteCmdConfig {
-                    host,
-                    user,
-                    ssh_port: ssh_port.unwrap_or(22),
-                    password: password.unwrap_or_else(|| prompt_password_or_exit()),
-                    connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
-                    use_sudo,
-                    use_rsync,
-                    silent,
-                    script: substitute_vars(&script, &cli_vars).unwrap_or_else(|e| {
-                        error!("{}", e);
-                        exit(1);
-                    }),
-                    remote_path: substitute_vars(
-                        &remote_path.unwrap_or_else(|| "~".to_string()),
-                        &cli_vars,
-                    )
-                    .unwrap_or_else(|e| {
-                        error!("{}", e);
-                        exit(1);
-                    }),
-                };
+                let config = parse_execute_config_from_cmd(
+                    host, user, ssh_port, password, connect_timeout, 
+                    use_sudo, use_rsync, silent, script, remote_path, &cli_vars);
                 let handle = thread::spawn(move || {
                     let session = connect_ssh(
                         config.host.clone(),
@@ -548,33 +516,10 @@ fn main() {
                 recover,
                 ..
             } => {
-                let config = PatchCmdConfig {
-                    host,
-                    user,
-                    ssh_port: ssh_port.unwrap_or(22),
-                    password: password.unwrap_or_else(|| prompt_password_or_exit()),
-                    connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
-                    use_sudo,
-                    use_rsync,
-                    silent,
-                    recover,
-                    local_path: substitute_vars(&local_path, &cli_vars).unwrap_or_else(|e| {
-                        error!("{}", e);
-                        exit(1);
-                    }),
-                    remote_upload: substitute_vars(&remote_upload, &cli_vars).unwrap_or_else(|e| {
-                        error!("{}", e);
-                        exit(1);
-                    }),
-                    remote_path: substitute_vars(&remote_path, &cli_vars).unwrap_or_else(|e| {
-                        error!("{}", e);
-                        exit(1);
-                    }),
-                    remote_backup: substitute_vars(&remote_backup, &cli_vars).unwrap_or_else(|e| {
-                        error!("{}", e);
-                        exit(1);
-                    }),
-                };
+                let config = parse_patch_config_from_cmd(
+                    host, user, ssh_port, password, connect_timeout, 
+                    use_sudo, use_rsync, silent, recover, 
+                    local_path, remote_upload, remote_path, remote_backup, &cli_vars);
                 let handle = thread::spawn(move || {
                     let session = connect_ssh(
                         config.host.clone(),

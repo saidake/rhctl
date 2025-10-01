@@ -2,6 +2,37 @@ use serde::Deserialize;
 use std::{collections::HashMap, time::Duration};
 
 
+pub trait TargetConfig {
+    fn target_servers(&self) -> &Vec<String>;
+    fn target_groups(&self) -> &Vec<String>;
+}
+
+impl TargetConfig for UploadConfig {
+    fn target_servers(&self) -> &Vec<String> {
+        &self.target_servers
+    }
+    fn target_groups(&self) -> &Vec<String> {
+        &self.target_groups
+    }
+}
+
+impl TargetConfig for PatchConfig {
+    fn target_servers(&self) -> &Vec<String> {
+        &self.target_servers
+    }
+    fn target_groups(&self) -> &Vec<String> {
+        &self.target_groups
+    }
+}
+
+impl TargetConfig for ExecuteConfig {
+    fn target_servers(&self) -> &Vec<String> {
+        &self.target_servers
+    }
+    fn target_groups(&self) -> &Vec<String> {
+        &self.target_groups
+    }
+}
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
