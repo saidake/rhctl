@@ -5,8 +5,7 @@ use log::{Level, error};
 use std::collections::HashMap;
 use std::io::Write;
 use std::process::exit;
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::sync::{Arc};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
@@ -23,12 +22,10 @@ use crate::handlers::command_handler::{
     parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
 };
 use crate::handlers::validation_handler::validate_cli_args;
-use crate::utils::file_utils::{load_properties, substitute_vars};
+use crate::utils::file_utils::{load_properties};
 use crate::utils::log_utils::ask_user_and_abort;
 use crate::{
-    domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig},
     utils::file_utils::load_yaml_config,
-    utils::log_utils::prompt_password_or_exit,
 };
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
@@ -257,7 +254,7 @@ async fn main() {
         .map(|path| load_yaml_config(path))
         .transpose()
         .unwrap_or_else(|err| {
-            error!("{}", err);
+            log_error!("{}", err);
             exit(1);
         });
 
@@ -272,11 +269,11 @@ async fn main() {
         max_channel_per_session: 5,
     };
     let global_server_pool = Arc::new(ServerPool::new(options));
-
+    global_server_pool.clone().start_idle_cleanup(Duration::from_secs(10));
     if let Some(config_name) = &cli.config_name {
         // YAML config mode
         let yml_config = yaml_config.as_ref().unwrap_or_else(|| {
-            error!("YAML config required when --config-name is provided");
+            log_error!("YAML config required when --config-name is provided");
             exit(1);
         });
 
@@ -285,7 +282,7 @@ async fn main() {
             .as_ref()
             .and_then(|configs| configs.iter().find(|c| c.name == *config_name))
             .unwrap_or_else(|| {
-                error!("Config '{}' not found in YAML file", config_name);
+                log_error!("Config '{}' not found in YAML file", config_name);
                 exit(1);
             });
 
@@ -312,7 +309,7 @@ async fn main() {
                 &mut mappings,
                 &yml_config.vars,
             ) {
-                error!(
+                log_error!(
                     "{}",
                     format!(
                         "Failed to load properties file '{}'. \n\t{}",
@@ -327,15 +324,15 @@ async fn main() {
                     .check_global_remote_temp_dir(config.use_sudo, config.silent)
                     .await
                 {
-                    error!("{}", e);
+                    log_error!("{}", e);
                     exit(1);
                 }
                 let result = commands::upload::run(&config, &server_handle, &vars).await;
                 if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                    error!("{}", e);
+                    log_error!("{}", e);
                 }
                 if let Err(e) = result {
-                    error!(
+                    log_error!(
                         "Upload failed for {}@{}: \n\t{}",
                         config.user, config.host, e
                     );
@@ -356,15 +353,15 @@ async fn main() {
                     .check_global_remote_temp_dir(config.use_sudo, config.silent)
                     .await
                 {
-                    error!("{}", e);
+                    log_error!("{}", e);
                     exit(1);
                 }
                 let result = commands::execute::run(&config, &server_handle).await;
                 if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                    error!("{}", e);
+                    log_error!("{}", e);
                 }
                 if let Err(e) = result {
-                    error!(
+                    log_error!(
                         "Execute failed for {}@{}: \n\t{}",
                         config.user, config.host, e
                     );
@@ -385,15 +382,15 @@ async fn main() {
                     .check_global_remote_temp_dir(config.use_sudo, config.silent)
                     .await
                 {
-                    error!("{}", e);
+                    log_error!("{}", e);
                     exit(1);
                 }
                 let result = commands::patch::run(&config, &server_handle).await;
                 if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                    error!("{}", e);
+                    log_error!("{}", e);
                 }
                 if let Err(e) = result {
-                    error!(
+                    log_error!(
                         "Patch failed for {}@{}: \n\t{}",
                         config.user, config.host, e
                     );
@@ -433,7 +430,7 @@ async fn main() {
                 if let Err(e) =
                     load_properties(config.properties_file.as_str(), &mut mappings, &cli_vars)
                 {
-                    error!(
+                    log_error!(
                         "{}",
                         format!(
                             "Failed to load properties file '{}'. \n\t{}",
@@ -451,15 +448,15 @@ async fn main() {
                         .check_global_remote_temp_dir(config.use_sudo, config.silent)
                         .await
                     {
-                        error!("{}", e);
+                        log_error!("{}", e);
                         exit(1);
                     }
                     let result = commands::upload::run(&config, &server_handle, &mappings).await;
                     if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                        error!("{}", e);
+                        log_error!("{}", e);
                     }
                     if let Err(e) = result {
-                        error!(
+                        log_error!(
                             "Upload failed for {}@{}: \n\t{}",
                             config.user, config.host, e
                         );
@@ -503,15 +500,15 @@ async fn main() {
                         .check_global_remote_temp_dir(config.use_sudo, config.silent)
                         .await
                     {
-                        error!("{}", e);
+                        log_error!("{}", e);
                         exit(1);
                     }
                     let result = commands::execute::run(&config, &server_handle).await;
                     if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                        error!("{}", e);
+                        log_error!("{}", e);
                     }
                     if let Err(e) = result {
-                        error!(
+                        log_error!(
                             "Execute failed for {}@{}: \n\t{}",
                             config.user, config.host, e
                         );
@@ -561,15 +558,15 @@ async fn main() {
                         .check_global_remote_temp_dir(config.use_sudo, config.silent)
                         .await
                     {
-                        error!("{}", e);
+                        log_error!("{}", e);
                         exit(1);
                     }
                     let result = commands::patch::run(&config, &server_handle).await;
                     if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                        error!("{}", e);
+                        log_error!("{}", e);
                     }
                     if let Err(e) = result {
-                        error!(
+                        log_error!(
                             "Patch failed for {}@{}: \n\t{}",
                             config.user, config.host, e
                         );
@@ -590,7 +587,7 @@ async fn main() {
         }
     }
     if !errors.is_empty() {
-        error!("Errors occurred:\n{}", errors.join("\n"));
+        log_error!("Errors occurred:\n{}", errors.join("\n"));
         exit(1);
     }
 }

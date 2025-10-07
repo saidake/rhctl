@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::process::exit;
 use std::time::Duration;
 
-use crate::Cli;
+use crate::{log_error, Cli};
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig};
 use crate::domain::yml_config::{
@@ -42,19 +42,19 @@ pub fn parse_patch_config_from_cmd(
         silent,
         recover,
         local_path: substitute_vars(&local_path, &cli_vars).unwrap_or_else(|e| {
-            error!("{}", e);
+            log_error!("{}", e);
             exit(1);
         }),
         remote_upload: substitute_vars(&remote_upload, &cli_vars).unwrap_or_else(|e| {
-            error!("{}", e);
+            log_error!("{}", e);
             exit(1);
         }),
         remote_path: substitute_vars(&remote_path, &cli_vars).unwrap_or_else(|e| {
-            error!("{}", e);
+            log_error!("{}", e);
             exit(1);
         }),
         remote_backup: substitute_vars(&remote_backup, &cli_vars).unwrap_or_else(|e| {
-            error!("{}", e);
+            log_error!("{}", e);
             exit(1);
         }),
     }
@@ -86,12 +86,12 @@ pub fn parse_execute_config_from_cmd(
         use_rsync,
         silent,
         script: substitute_vars(&script, &cli_vars).unwrap_or_else(|e| {
-            error!("{}", e);
+            log_error!("{}", e);
             exit(1);
         }),
         remote_path: substitute_vars(&remote_path.unwrap_or_else(|| "~".to_string()), &cli_vars)
             .unwrap_or_else(|e| {
-                error!("{}", e);
+                log_error!("{}", e);
                 exit(1);
             }),
     }
@@ -122,7 +122,7 @@ pub fn parse_upload_config_from_cmd(
         use_rsync,
         silent,
         properties_file: substitute_vars(&properties_file, &cli_vars).unwrap_or_else(|e| {
-            error!("{}", e);
+            log_error!("{}", e);
             exit(1);
         }),
     }
@@ -158,7 +158,7 @@ pub fn parse_upload_configs(
                     silent: upload.silent.or(named_config.silent).unwrap_or(false),
                     properties_file: substitute_vars(&upload.properties_file, vars).unwrap_or_else(
                         |e| {
-                            error!("{}", e);
+                            log_error!("{}", e);
                             exit(1);
                         },
                     ),
@@ -203,7 +203,7 @@ pub fn parse_execute_configs(
                             .unwrap_or(false),
                         silent: execute.silent.or(named_config.silent).unwrap_or(false),
                         script: substitute_vars(script, vars).unwrap_or_else(|e| {
-                            error!("{}", e);
+                            log_error!("{}", e);
                             exit(1);
                         }),
                         remote_path: substitute_vars(
@@ -214,7 +214,7 @@ pub fn parse_execute_configs(
                             vars,
                         )
                         .unwrap_or_else(|e| {
-                            error!("{}", e);
+                            log_error!("{}", e);
                             exit(1);
                         }),
                     },
@@ -257,22 +257,22 @@ pub fn parse_patch_configs(
 
                     recover: patch.recover,
                     local_path: substitute_vars(&patch.local_path, vars).unwrap_or_else(|e| {
-                        error!("{}", e);
+                        log_error!("{}", e);
                         exit(1);
                     }),
                     remote_upload: substitute_vars(&patch.remote_upload, vars).unwrap_or_else(
                         |e| {
-                            error!("{}", e);
+                            log_error!("{}", e);
                             exit(1);
                         },
                     ),
                     remote_path: substitute_vars(&patch.remote_path, vars).unwrap_or_else(|e| {
-                        error!("{}", e);
+                        log_error!("{}", e);
                         exit(1);
                     }),
                     remote_backup: substitute_vars(&patch.remote_backup, vars).unwrap_or_else(
                         |e| {
-                            error!("{}", e);
+                            log_error!("{}", e);
                             exit(1);
                         },
                     ),
@@ -322,7 +322,7 @@ fn collect_servers<T: TargetConfig>(
                 servers.push(server.clone());
             }
         } else {
-            error!("Server '{}' not found in servers list", server_name);
+            log_error!("Server '{}' not found in servers list", server_name);
             exit(1);
         }
     }
@@ -339,7 +339,7 @@ fn collect_servers<T: TargetConfig>(
                             servers.push(server.clone());
                         }
                     } else {
-                        error!(
+                        log_error!(
                             "Server '{}' in group '{}' not found in servers list",
                             server_name, group_name
                         );
@@ -347,7 +347,7 @@ fn collect_servers<T: TargetConfig>(
                     }
                 }
             } else {
-                error!("Group '{}' not found in groups list", group_name);
+                log_error!("Group '{}' not found in groups list", group_name);
                 exit(1);
             }
         }

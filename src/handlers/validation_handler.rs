@@ -2,7 +2,7 @@ use std::process::exit;
 
 use log::error;
 
-use crate::{utils::log_utils::ask_user, Cli};
+use crate::{log_error, utils::log_utils::ask_user, Cli};
 
 // Root level
 pub fn validate_cli_args(cli: &Cli) {
@@ -16,7 +16,7 @@ pub fn validate_cli_args(cli: &Cli) {
                 ),
                 false,
             ) {
-                error!("{}", e);
+                log_error!("{}", e);
                 exit(1);
             }
         }
@@ -25,14 +25,14 @@ pub fn validate_cli_args(cli: &Cli) {
         }
         (Some(_), None, _) | (None, Some(_), _) => {
             // One of config path or config name missing: invalid
-            error!("Both --config and --config-name must be provided together.");
+            log_error!("Both --config and --config-name must be provided together.");
             exit(1);
         }
         (None, None, Some(_)) => {
             // Only subcommand provided: proceed
         }
         (None, None, None) => {
-            error!("You must provide either a subcommand or both --config and --config-name.");
+            log_error!("You must provide either a subcommand or both --config and --config-name.");
             exit(1);
         }
     }

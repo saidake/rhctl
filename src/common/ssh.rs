@@ -12,7 +12,7 @@ use crate::utils::file_utils::{
 };
 use crate::utils::log_utils::ask_user;
 use crate::utils::ssh_utils::execution_print;
-use crate::{log_debug_with_lock, log_info_with_lock, remote};
+use crate::{log_debug, log_info};
 use log::{debug, error};
 
 #[derive(Clone)]
@@ -44,7 +44,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
         let cmd: String = cmd.to_string();
         let mut channel_guard = self.global_server_pool.get_channel(&server_metadata).await?;
 
-        debug!("Streaming command: {} (sudo: {})", cmd, use_sudo);
+        log_debug!("Streaming command: {} (sudo: {})", cmd, use_sudo);
         let full_cmd = if use_sudo {
             let escaped = cmd.replace("'", "'\\''");
             format!("sudo -S bash -c '{}'", escaped)
@@ -119,7 +119,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
             .exit_status()
             .map_err(|e| format!("Failed to get exit status. \n\t{}", e))?;
 
-        debug!("Command exit status: {}", exit_status);
+        log_debug!("Command exit status: {}", exit_status);
 
         if exit_status != 0 {
             let mut msg = format!("Command '{}' failed with exit status {}.", cmd, exit_status);
@@ -194,7 +194,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
                     .await?;
             }
             if print_log {
-                log_info_with_lock!(
+                log_info!(
                     "Successfully uploaded the contents of the folder '{}' into '{}'",
                     local_file_or_dir.display(),
                     remote_dir
@@ -234,7 +234,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
                 ).await?;
             }
             if print_log {
-                log_info_with_lock!(
+                log_info!(
                     "Successfully uploaded the file '{}' to '{}'",
                     local_file_or_dir.display(),
                     remote_file
@@ -343,7 +343,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
 
     /// Check if a remote path exists with specific test flag (-e, -f, -d).
     async fn check_path(&self, path: &str, flag: &str, use_sudo: bool) -> Result<bool, String> {
-        debug!("Checking if '{}' exists with flag '{}'", path, flag);
+        log_debug!("Checking if '{}' exists with flag '{}'", path, flag);
 
         let full_cmd = format!("sh -c 'test {} {}'", flag, path);
         // println!(
@@ -355,13 +355,13 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
 
         match result {
             Ok(_) => {
-                debug!("Remote path '{}' exists (flag '{}'): true", path, flag);
+                log_debug!("Remote path '{}' exists (flag '{}'): true", path, flag);
                 Ok(true)
             }
             Err(e) => {
                 // If test returns 1 → path does not exist
                 if e.contains("exit status 1") {
-                    debug!("Remote path '{}' exists (flag '{}'): false", path, flag);
+                    log_debug!("Remote path '{}' exists (flag '{}'): false", path, flag);
                     Ok(false)
                 } else {
                     // Other errors (such as insufficient sudo permissions) return Err directly
@@ -454,7 +454,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
                 )
             })?;
 
-            debug!(
+            log_debug!(
                 "Uploading file '{}' ({} bytes) to '{}'",
                 local_file_or_dir.display(),
                 stat.len(),
@@ -529,14 +529,14 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
         remote_dir: &str,
         new_file_name: Option<&str>,
     ) -> Result<(), String> {
-        log_debug_with_lock!(
+        log_debug!(
             "Attempting to upload '{}' to '{}'",
             local_file_or_dir.display(),
             remote_dir
         );
 
         if use_rsync && self.command_exists("rsync") {
-            log_debug_with_lock!("Using rsync for upload");
+            log_debug!("Using rsync for upload");
             if !self.server_metadata.get_password().is_empty() {
                 if self.command_exists("sshpass") {
                     let remote_target = if let Some(name) = new_file_name {
@@ -582,7 +582,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
                 }
             }
         } else {
-            debug!(
+            log_debug!(
                 "Starting SCP upload from '{}' to '{}'",
                 local_file_or_dir.display(),
                 remote_dir
@@ -593,7 +593,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
                 use_sudo,
                 new_file_name,
             ).await?;
-            debug!("SCP upload to '{}' completed", remote_dir);
+            log_debug!("SCP upload to '{}' completed", remote_dir);
         }
 
         Ok(())
@@ -651,7 +651,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
     }
 
     pub async fn validate_remote_dir(&self, remote_dir: &str, use_sudo: bool) -> Result<(), String> {
-        debug!("Ensuring remote directory '{}' exists", remote_dir);
+        log_debug!("Ensuring remote directory '{}' exists", remote_dir);
         if self.file_exists(remote_dir, use_sudo).await? {
             return Err(format!(
                 "Path '{}' exists and is a file, not a directory",
@@ -659,7 +659,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
             ));
         }
 
-        debug!("Checking if remote directory '{}' is writable", remote_dir);
+        log_debug!("Checking if remote directory '{}' is writable", remote_dir);
         let check_cmd = format!("test -w \"{}\"; echo $?", remote_dir);
         let output = self.exec(&check_cmd, use_sudo).await.map_err(|e| {
             format!(
@@ -703,7 +703,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
 
     pub async fn create_remote_temp_dir(&self, prefix: &str, use_sudo: bool) -> Result<String, String> {
         let temp_dir = generate_remote_temp_dir(prefix);
-        log_debug_with_lock!("Uploading to temporary path '{}' with sudo", temp_dir);
+        log_debug!("Uploading to temporary path '{}' with sudo", temp_dir);
         self.create_remote_dir(temp_dir.as_str(), use_sudo).await?;
         Ok(temp_dir)
     }

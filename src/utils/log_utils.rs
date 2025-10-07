@@ -19,7 +19,7 @@ pub fn log_with_lock(level: &str, message: &str) {
 
 /// Macro for info log
 #[macro_export]
-macro_rules! log_info_with_lock {
+macro_rules! log_info {
     ($($arg:tt)*) => {
         $crate::utils::log_utils::log_with_lock("INFO", &format!($($arg)*));
     };
@@ -27,7 +27,7 @@ macro_rules! log_info_with_lock {
 
 /// Macro for error log
 #[macro_export]
-macro_rules! log_error_with_lock {
+macro_rules! log_error {
     ($($arg:tt)*) => {
         $crate::utils::log_utils::log_with_lock("ERROR", &format!($($arg)*));
     };
@@ -35,7 +35,7 @@ macro_rules! log_error_with_lock {
 
 /// Macro for warn log
 #[macro_export]
-macro_rules! log_warn_with_lock {
+macro_rules! log_warn {
     ($($arg:tt)*) => {
         $crate::utils::log_utils::log_with_lock("WARN", &format!($($arg)*));
     };
@@ -43,14 +43,14 @@ macro_rules! log_warn_with_lock {
 
 /// Macro for debug log
 #[macro_export]
-macro_rules! log_debug_with_lock {
+macro_rules! log_debug {
     ($($arg:tt)*) => {
         $crate::utils::log_utils::log_with_lock("DEBUG", &format!($($arg)*));
     };
 }
 
 #[macro_export]
-macro_rules! remote {
+macro_rules! log_remote {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
         let label = format!("{:<6}", "REMOTE");
@@ -59,7 +59,7 @@ macro_rules! remote {
 }
 
 #[macro_export]
-macro_rules! local {
+macro_rules! log_local {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
         let label = format!("{:<6}", "LOCAL");
@@ -68,7 +68,7 @@ macro_rules! local {
 }
 
 #[macro_export]
-macro_rules! ask {
+macro_rules! log_ask {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
         let label = format!("{:<6}", "ASK");
@@ -82,7 +82,7 @@ pub fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
     if silent {
         return Ok(());
     }
-    ask!("{} [y/N]: ", prompt);
+    log_ask!("{} [y/N]: ", prompt);
     io::stdout().flush().unwrap();
 
     let mut input = String::new();
@@ -98,23 +98,16 @@ pub fn ask_user_and_abort(prompt: &str, silent: bool) {
     if silent {
         return;
     }
-    ask!("{} [y/N]: ", prompt);
-    io::stdout().flush().unwrap();
 
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-
-    if input.trim().to_lowercase() != "y" {
-        error!("{}", USER_ABORTED_MESSAGE);
+    if let Err(_) = ask_user(prompt, false) {
         exit(1);
     }
 }
-
 pub fn prompt_password_or_exit() -> String {
     match prompt_password("Enter SSH password: ") {
         Ok(pwd) if !pwd.is_empty() => pwd,
         _ => {
-            error!("Password is required.");
+            log_error!("Password is required.");
             std::process::exit(1);
         }
     }

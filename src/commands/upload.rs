@@ -6,7 +6,7 @@ use futures::future::join_all;
 
 use crate::common::ssh::ServerHandle;
 use crate::domain::cmd_params::UploadCmdConfig;
-use crate::{log_info_with_lock, log_warn_with_lock};
+use crate::{log_info, log_warn};
 
 pub async fn run(
     config: &UploadCmdConfig, 
@@ -24,7 +24,7 @@ pub async fn run(
     for (local_item, remote_dir) in mappings {
         let local_file_or_dir = Path::new(&local_item).to_path_buf();
         if !local_file_or_dir.exists() {
-            log_warn_with_lock!(
+            log_warn!(
                 "Local item '{}' not found. Skipping.",
                 local_item
             );
@@ -89,6 +89,6 @@ pub async fn run(
         return Err(errors.join("\n\n\t"));
     }
 
-    log_info_with_lock!("Upload complete.");
+    log_info!("Upload complete.");
     Ok(())
 }

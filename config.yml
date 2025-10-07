@@ -6,12 +6,12 @@ servers:
     ssh-port: 22
     password: "testpwd"
     connect_timeout: 60s  
-  - name: "server2"
-    host: "192.168.75.128"
-    user: "test99"
-    ssh-port: 22
-    password: "testpwd"
-    connect_timeout: 30s  
+  # - name: "server2"
+  #   host: "192.168.75.128"
+  #   user: "test99"
+  #   ssh-port: 22
+  #   password: "testpwd"
+  #   connect_timeout: 30s  
 vars:
   ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/sbxctl/AAA/assets"
 

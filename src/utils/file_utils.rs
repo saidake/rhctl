@@ -1,6 +1,6 @@
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
 use crate::domain::yml_config::YmlConfig;
-use crate::local;
+use crate::{ log_local};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
@@ -56,8 +56,8 @@ pub fn log_local_file_info(local_path: &Path) -> Result<(), String> {
     }
 
     for line in String::from_utf8_lossy(&ls_local.stdout).lines() {
-        // Replace `local!` with your actual logging macro
-        local!("{}", line);
+        // Replace `log_local` with your actual logging macro
+        log_local!("{}", line);
     }
 
     Ok(())
