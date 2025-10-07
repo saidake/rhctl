@@ -1,5 +1,6 @@
 use ansi_term::Colour;
 use clap::{Parser, Subcommand};
+use futures::future::join_all;
 use log::{Level, error};
 use std::collections::HashMap;
 use std::io::Write;
@@ -7,22 +8,23 @@ use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use tokio::task::JoinHandle;
 
 mod commands;
 mod common;
-mod config;
 mod domain;
 mod handlers;
 mod utils;
 
+use crate::common::ssh::ServerHandle;
 use crate::common::ssh_pool::{PoolOptions, ServerPool};
 use crate::handlers::command_handler::{
-    parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd, parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs
+    parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
+    parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
 };
 use crate::handlers::validation_handler::validate_cli_args;
 use crate::utils::file_utils::{load_properties, substitute_vars};
 use crate::utils::log_utils::ask_user_and_abort;
-use crate::utils::ssh_utils::connect_ssh;
 use crate::{
     domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig},
     utils::file_utils::load_yaml_config,
@@ -75,7 +77,6 @@ enum Commands {
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
 
-
         #[arg(
             long,
             default_value = "false",
@@ -110,7 +111,7 @@ enum Commands {
 
         #[arg(long, help = "Remote password")]
         password: Option<String>,
-        
+
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
         connect_timeout: Option<Duration>,
@@ -155,7 +156,7 @@ enum Commands {
 
         #[arg(long, help = "Remote password")]
         password: Option<String>,
-        
+
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
         connect_timeout: Option<Duration>,
@@ -206,7 +207,8 @@ fn parse_var(s: &str) -> Result<(String, String), String> {
     Ok((parts[0].to_string(), parts[1].to_string()))
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     // Convert CLI vars to HashMap
@@ -260,7 +262,8 @@ fn main() {
         });
 
     // Thread handles for parallel execution
-    let threads = Arc::new(Mutex::new(Vec::new()));
+    let mut tasks: Vec<JoinHandle<()>> = Vec::new();
+
     let options = PoolOptions {
         max_connections: 10,
         min_connections: 0,
@@ -269,6 +272,7 @@ fn main() {
         max_channel_per_session: 5,
     };
     let global_server_pool = Arc::new(ServerPool::new(options));
+
     if let Some(config_name) = &cli.config_name {
         // YAML config mode
         let yml_config = yaml_config.as_ref().unwrap_or_else(|| {
@@ -298,6 +302,10 @@ fn main() {
 
         // Spawn threads for upload commands
         for (config, vars) in upload_configs {
+            let server_handle = ServerHandle {
+                server_metadata: Arc::new(config.clone()),
+                global_server_pool: global_server_pool.clone(),
+            };
             let mut mappings = HashMap::new();
             if let Err(e) = load_properties(
                 config.properties_file.as_str(),
@@ -314,21 +322,16 @@ fn main() {
                 exit(1);
             }
 
-            let handle = thread::spawn(move || {
-                let session = connect_ssh(
-                    config.host.clone(),
-                    config.user.clone(),
-                    config.ssh_port,
-                    config.password.clone(),
-                );
-                if let Err(e) =
-                    session.check_global_remote_temp_dir(config.use_sudo, config.silent)
+            let handle = tokio::spawn(async move {
+                if let Err(e) = server_handle
+                    .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                    .await
                 {
                     error!("{}", e);
                     exit(1);
                 }
-                let result = commands::upload::run(&config, &session, &vars);
-                if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
+                let result = commands::upload::run(&config, &server_handle, &vars).await;
+                if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
                     error!("{}", e);
                 }
                 if let Err(e) = result {
@@ -339,25 +342,25 @@ fn main() {
                     exit(1);
                 }
             });
-            threads.lock().unwrap().push(handle);
+            tasks.push(handle);
         }
 
         // Spawn threads for execute commands
         for (config, _) in execute_configs {
-            let handle = thread::spawn(move || {
-                let session = connect_ssh(
-                    config.host.clone(),
-                    config.user.clone(),
-                    config.ssh_port,
-                    config.password.clone(),
-                );
-                if let Err(e) = session.check_global_remote_temp_dir(config.use_sudo, config.silent)
+            let server_handle = ServerHandle {
+                server_metadata: Arc::new(config.clone()),
+                global_server_pool: global_server_pool.clone(),
+            };
+            let handle = tokio::spawn(async move {
+                if let Err(e) = server_handle
+                    .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                    .await
                 {
                     error!("{}", e);
                     exit(1);
                 }
-                let result = commands::execute::run(&config, &session);
-                if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
+                let result = commands::execute::run(&config, &server_handle).await;
+                if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
                     error!("{}", e);
                 }
                 if let Err(e) = result {
@@ -368,25 +371,25 @@ fn main() {
                     exit(1);
                 }
             });
-            threads.lock().unwrap().push(handle);
+            tasks.push(handle);
         }
 
         // Spawn threads for patch commands
         for (config, _) in patch_configs {
-            let handle = thread::spawn(move || {
-                let session = connect_ssh(
-                    config.host.clone(),
-                    config.user.clone(),
-                    config.ssh_port,
-                    config.password.clone(),
-                );
-                if let Err(e) = session.check_global_remote_temp_dir(config.use_sudo, config.silent)
+            let server_handle = ServerHandle {
+                server_metadata: Arc::new(config.clone()),
+                global_server_pool: global_server_pool.clone(),
+            };
+            let handle = tokio::spawn(async move {
+                if let Err(e) = server_handle
+                    .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                    .await
                 {
                     error!("{}", e);
                     exit(1);
                 }
-                let result = commands::patch::run(&config, &session);
-                if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
+                let result = commands::patch::run(&config, &server_handle).await;
+                if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
                     error!("{}", e);
                 }
                 if let Err(e) = result {
@@ -397,7 +400,7 @@ fn main() {
                     exit(1);
                 }
             });
-            threads.lock().unwrap().push(handle);
+            tasks.push(handle);
         }
     } else if let Some(command) = cli.command {
         // CLI mode
@@ -414,9 +417,18 @@ fn main() {
                 properties_file,
                 ..
             } => {
-                let config = 
-                parse_upload_config_from_cmd(host, user, ssh_port, password, connect_timeout, 
-                    use_sudo, use_rsync, silent, properties_file, &cli_vars);
+                let config = parse_upload_config_from_cmd(
+                    host,
+                    user,
+                    ssh_port,
+                    password,
+                    connect_timeout,
+                    use_sudo,
+                    use_rsync,
+                    silent,
+                    properties_file,
+                    &cli_vars,
+                );
                 let mut mappings = HashMap::new();
                 if let Err(e) =
                     load_properties(config.properties_file.as_str(), &mut mappings, &cli_vars)
@@ -430,21 +442,20 @@ fn main() {
                     );
                     exit(1);
                 }
-                let handle = thread::spawn(move || {
-                    let session = connect_ssh(
-                        config.host.clone(),
-                        config.user.clone(),
-                        config.ssh_port,
-                        config.password.clone(),
-                    );
-                    if let Err(e) =
-                        session.check_global_remote_temp_dir(config.use_sudo, config.silent)
+                let server_handle = ServerHandle {
+                    server_metadata: Arc::new(config.clone()),
+                    global_server_pool: global_server_pool.clone(),
+                };
+                let handle = tokio::spawn(async move {
+                    if let Err(e) = server_handle
+                        .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                        .await
                     {
                         error!("{}", e);
                         exit(1);
                     }
-                    let result = commands::upload::run(&config, &session, &mappings);
-                    if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
+                    let result = commands::upload::run(&config, &server_handle, &mappings).await;
+                    if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
                         error!("{}", e);
                     }
                     if let Err(e) = result {
@@ -455,7 +466,7 @@ fn main() {
                         exit(1);
                     }
                 });
-                threads.lock().unwrap().push(handle);
+                tasks.push(handle);
             }
             Commands::Execute {
                 host,
@@ -471,23 +482,32 @@ fn main() {
                 ..
             } => {
                 let config = parse_execute_config_from_cmd(
-                    host, user, ssh_port, password, connect_timeout, 
-                    use_sudo, use_rsync, silent, script, remote_path, &cli_vars);
-                let handle = thread::spawn(move || {
-                    let session = connect_ssh(
-                        config.host.clone(),
-                        config.user.clone(),
-                        config.ssh_port,
-                        config.password.clone(),
-                    );
-                    if let Err(e) =
-                        session.check_global_remote_temp_dir(config.use_sudo, config.silent)
+                    host,
+                    user,
+                    ssh_port,
+                    password,
+                    connect_timeout,
+                    use_sudo,
+                    use_rsync,
+                    silent,
+                    script,
+                    remote_path,
+                    &cli_vars,
+                );
+                let server_handle = ServerHandle {
+                    server_metadata: Arc::new(config.clone()),
+                    global_server_pool: global_server_pool.clone(),
+                };
+                let handle = tokio::spawn(async move {
+                    if let Err(e) = server_handle
+                        .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                        .await
                     {
                         error!("{}", e);
                         exit(1);
                     }
-                    let result = commands::execute::run(&config, &session);
-                    if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
+                    let result = commands::execute::run(&config, &server_handle).await;
+                    if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
                         error!("{}", e);
                     }
                     if let Err(e) = result {
@@ -498,7 +518,7 @@ fn main() {
                         exit(1);
                     }
                 });
-                threads.lock().unwrap().push(handle);
+                tasks.push(handle);
             }
             Commands::Patch {
                 host,
@@ -517,24 +537,35 @@ fn main() {
                 ..
             } => {
                 let config = parse_patch_config_from_cmd(
-                    host, user, ssh_port, password, connect_timeout, 
-                    use_sudo, use_rsync, silent, recover, 
-                    local_path, remote_upload, remote_path, remote_backup, &cli_vars);
-                let handle = thread::spawn(move || {
-                    let session = connect_ssh(
-                        config.host.clone(),
-                        config.user.clone(),
-                        config.ssh_port,
-                        config.password.clone(),
-                    );
-                    if let Err(e) =
-                        session.check_global_remote_temp_dir(config.use_sudo, config.silent)
+                    host,
+                    user,
+                    ssh_port,
+                    password,
+                    connect_timeout,
+                    use_sudo,
+                    use_rsync,
+                    silent,
+                    recover,
+                    local_path,
+                    remote_upload,
+                    remote_path,
+                    remote_backup,
+                    &cli_vars,
+                );
+                let server_handle = ServerHandle {
+                    server_metadata: Arc::new(config.clone()),
+                    global_server_pool: global_server_pool.clone(),
+                };
+                let handle = tokio::spawn(async move {
+                    if let Err(e) = server_handle
+                        .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                        .await
                     {
                         error!("{}", e);
                         exit(1);
                     }
-                    let result = commands::patch::run(&config, &session);
-                    if let Err(e) = session.delete_global_temp_dir(config.use_sudo) {
+                    let result = commands::patch::run(&config, &server_handle).await;
+                    if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
                         error!("{}", e);
                     }
                     if let Err(e) = result {
@@ -545,20 +576,21 @@ fn main() {
                         exit(1);
                     }
                 });
-                threads.lock().unwrap().push(handle);
+                tasks.push(handle);
             }
         }
     }
 
-    // Collect thread results
+    // Collect results
+    let results = join_all(tasks).await;
     let mut errors = Vec::new();
-    for handle in threads.lock().unwrap().drain(..) {
-        if let Err(e) = handle.join() {
-            errors.push(format!("Thread failed: {:?}", e));
+    for result in results {
+        if let Err(e) = result {
+            errors.push(format!("Task failed: {:?}", e));
         }
     }
     if !errors.is_empty() {
-        error!("Errors occurred during execution:\n{}", errors.join("\n"));
+        error!("Errors occurred:\n{}", errors.join("\n"));
         exit(1);
     }
 }

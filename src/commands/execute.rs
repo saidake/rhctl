@@ -4,10 +4,10 @@ use std::path::Path;
 
 use log::{debug, info};
 
-use crate::common::ssh::SshSession;
+use crate::common::ssh::ServerHandle;
 use crate::domain::cmd_params::ExecuteCmdConfig;
 
-pub fn run(config: &ExecuteCmdConfig, session: &SshSession) -> Result<(), String> {
+pub async fn run(config: &ExecuteCmdConfig, session: &ServerHandle<ExecuteCmdConfig>) -> Result<(), String> {
     let script_path = Path::new(&config.script);
     if !script_path.exists() || !script_path.is_file() {
         return Err(format!(
@@ -21,7 +21,7 @@ pub fn run(config: &ExecuteCmdConfig, session: &SshSession) -> Result<(), String
         .ok_or_else(|| format!("Failed to get basename for '{}'", &config.script))?;
 
     if config.use_sudo {
-        let temp_remote_dir=session.create_remote_temp_dir("exec",config.use_sudo)?;
+        let temp_remote_dir=session.create_remote_temp_dir("exec",config.use_sudo).await?;
         debug!(
             "Uploading script '{}' to temporary path '{}'",
             config.script, temp_remote_dir
@@ -35,7 +35,7 @@ pub fn run(config: &ExecuteCmdConfig, session: &SshSession) -> Result<(), String
             config.silent,
             true,
             false
-        )?;
+        ).await?;
         let remote_script = format!("{}/{}", temp_remote_dir, script_name);
         info!(
             "Executing script {} in '{}' with sudo",
@@ -44,9 +44,9 @@ pub fn run(config: &ExecuteCmdConfig, session: &SshSession) -> Result<(), String
         session.exec_with_log(
             &format!("cd {} && bash {}", config.remote_path, remote_script),
             config.use_sudo
-        )?;
+        ).await?;
         debug!("Cleaning up temporary script '{}'", temp_remote_dir);
-        session.exec(&format!("rm -rf {}", temp_remote_dir), config.use_sudo)?;
+        session.exec(&format!("rm -rf {}", temp_remote_dir), config.use_sudo).await?;
     } else {
         let mut content = String::new();
         File::open(script_path)
@@ -60,7 +60,7 @@ pub fn run(config: &ExecuteCmdConfig, session: &SshSession) -> Result<(), String
                 config.remote_path, content
             ),
             false,
-        )?;
+        ).await?;
     }
 
     info!("Execution complete.");

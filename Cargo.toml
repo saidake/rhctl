@@ -26,6 +26,8 @@ crossbeam-queue = "0.3"
 dashmap = "5"
 humantime-serde = "1.1.1"
 humantime = "2"
+futures = "0.3"
+async-recursion = "1.0"
 
 [build-dependencies]
 # If needed for build scripts

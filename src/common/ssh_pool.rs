@@ -1,7 +1,9 @@
 use dashmap::DashMap;
+use ssh2::Channel;
 use ssh2::Session;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::io;
 use std::io::{Error, ErrorKind, Read};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -91,40 +93,73 @@ struct Idle {
     idle_since: Instant,
 }
 
-// Wrap session to manage channel count and idle timestamp
-struct SessionWrapper {
-    live: Live,
-    semaphore: Arc<Semaphore>,  // control channel concurrency
-    idle_since: Mutex<Instant>, // track idle time
+/// Wrapper for a channel that automatically releases resources when dropped
+pub struct ChannelGuard {
+    pub channel: Channel,
+    _permit: OwnedSemaphorePermit,    // RAII for channel slot
 }
 
-impl SessionWrapper {
-    fn new(live: Live, max_channel: u32) -> Self {
+impl<'a> Drop for ChannelGuard {
+    fn drop(&mut self) {
+        // Try closing channel gracefully
+        let _ = self.channel.send_eof();
+        let _ = self.channel.wait_eof();
+        let _ = self.channel.close();
+        let _ = self.channel.wait_close();
+        // OwnedSemaphorePermit is automatically released
+    }
+}
+
+#[derive(Clone)]
+pub struct LiveSessionWrapper {
+    live: Live,
+    semaphore: Arc<Semaphore>,
+    max_permits: usize,
+}
+
+impl LiveSessionWrapper {
+    pub fn new(live: Live, max_channel: u32) -> Self {
         Self {
             live,
             semaphore: Arc::new(Semaphore::new(max_channel as usize)),
-            idle_since: Mutex::new(Instant::now()),
+            max_permits: max_channel as usize,
         }
     }
 
-    async fn acquire_channel(&self) -> OwnedSemaphorePermit {
-        let permit = self.semaphore.clone().acquire_owned().await.unwrap();
-        // update idle timestamp
-        let mut idle = self.idle_since.lock().unwrap();
-        *idle = Instant::now();
-        permit
+    /// Synchronously acquire a channel, returns ChannelGuard
+    pub async fn get_channel_guard(&self) -> io::Result<ChannelGuard> {
+        let permit = self.semaphore.clone().acquire_owned().await.map_err(|_| {
+            io::Error::new(io::ErrorKind::Other, "Failed to acquire channel permit")
+        })?;
+
+        // Create ssh channel in blocking thread
+        let channel = tokio::task::spawn_blocking({
+            let session = self.live.raw.clone();
+            move || {
+                session.channel_session().map_err(|e| {
+                    io::Error::new(io::ErrorKind::Other, format!("Channel error: {}", e))
+                })
+            }
+        })
+        .await
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Join error: {}", e)))??;
+
+        Ok(ChannelGuard {
+            channel,
+            _permit: permit,
+        })
     }
 
-    fn is_idle_timeout(&self, timeout: Duration) -> bool {
-        let idle = self.idle_since.lock().unwrap();
-        idle.elapsed() > timeout
+    pub fn is_fully_idle(&self) -> bool {
+        self.semaphore.available_permits() == self.max_permits
     }
 }
 
 // Manage multiple sessions for one host/user/port
 struct SessionPool {
     connect_options: ConnectOptions,
-    sessions: Mutex<Vec<Arc<SessionWrapper>>>,
+    active_sessions: Mutex<Vec<Arc<LiveSessionWrapper>>>,
+    idle_sessions: Mutex<Vec<Idle>>,
     options: PoolOptions,
     semaphore: Arc<Semaphore>, // total session limit
 }
@@ -133,23 +168,40 @@ impl SessionPool {
     fn new(connect_options: ConnectOptions, options: PoolOptions) -> Self {
         Self {
             connect_options,
-            sessions: Mutex::new(vec![]),
+            active_sessions: Mutex::new(vec![]),
+            idle_sessions: Mutex::new(vec![]),
             options: options.clone(),
             semaphore: Arc::new(Semaphore::new(options.max_connections as usize)),
         }
     }
 
-    async fn get_session(&self) -> Result<Arc<SessionWrapper>, Error> {
-        // try reuse idle session with free channel
-        let mut sessions_guard = self.sessions.lock().unwrap();
-        for s in sessions_guard.iter() {
-            if s.semaphore.available_permits() > 0 {
-                return Ok(s.clone());
+    pub async fn get_session(&self) -> Result<Arc<LiveSessionWrapper>, Error> {
+        // First, try reuse idle sessions
+        {
+            let mut idle_guard = self.idle_sessions.lock().unwrap();
+            if let Some(idle) = idle_guard.pop() {
+                let wrapper = Arc::new(LiveSessionWrapper::new(
+                    idle.live,
+                    self.options.max_channel_per_session,
+                ));
+                let mut active_guard = self.active_sessions.lock().unwrap();
+                active_guard.push(wrapper.clone());
+                return Ok(wrapper);
             }
         }
 
-        // no available session, try create new session if limit allows
-        let permit = tokio::time::timeout(
+        // Then, try reuse active sessions with free channel
+        {
+            let active_guard = self.active_sessions.lock().unwrap();
+            for s in active_guard.iter() {
+                if s.semaphore.available_permits() > 0 {
+                    return Ok(s.clone());
+                }
+            }
+        }
+
+        // No available session, create new if under limit
+        let _permit = tokio::time::timeout(
             self.options.acquire_timeout,
             self.semaphore.clone().acquire_owned(),
         )
@@ -163,19 +215,35 @@ impl SessionPool {
             raw: sess,
             created_at: Instant::now(),
         };
-        let wrapper = Arc::new(SessionWrapper::new(
+        let wrapper = Arc::new(LiveSessionWrapper::new(
             live,
             self.options.max_channel_per_session,
         ));
-        sessions_guard.push(wrapper.clone());
-        drop(permit); // session already counted by semaphore
+        self.active_sessions.lock().unwrap().push(wrapper.clone());
         Ok(wrapper)
+    }
+
+    fn recycle_session(&self) {
+        let mut active_guard = self.active_sessions.lock().unwrap();
+        let mut idle_guard = self.idle_sessions.lock().unwrap();
+
+        active_guard.retain(|s| {
+            if s.is_fully_idle() {
+                idle_guard.push(Idle {
+                    live: s.live.clone(),
+                    idle_since: Instant::now(),
+                });
+                false // remove from active
+            } else {
+                true // keep in active
+            }
+        });
     }
 
     fn cleanup_idle(&self) {
         if let Some(timeout) = self.options.idle_timeout {
-            let mut sessions_guard = self.sessions.lock().unwrap();
-            sessions_guard.retain(|s| !s.is_idle_timeout(timeout));
+            let mut idle_guard = self.idle_sessions.lock().unwrap();
+            idle_guard.retain(|s| s.idle_since.elapsed() <= timeout);
         }
     }
 }
@@ -194,8 +262,8 @@ impl ServerPool {
     }
 
     fn cleanup_idle_sessions(&self) {
-        // let timeout = self.options.idle_timeout.unwrap_or(Duration::from_secs(600));
         for pool in self.servers.iter() {
+            pool.value().recycle_session();
             pool.value().cleanup_idle();
         }
     }
@@ -208,64 +276,85 @@ impl ServerPool {
         hasher.finish()
     }
 
-    async fn get_server_pool<T: ServerMetadata>(&self, server_key: T) -> Arc<SessionPool> {
-        if let Some(pool) = self.servers.get(&server_key.get_server_key()) {
+    pub async fn get_session_pool<T: ServerMetadata>(
+        &self,
+        server_metadata: &Arc<T>,
+    ) -> Arc<SessionPool> {
+        if let Some(pool) = self.servers.get(&server_metadata.get_server_key()) {
             return pool.clone();
         }
 
         let connect_opts = ConnectOptions::new(
-            server_key.get_host(),
-            server_key.get_ssh_port(),
-            server_key.get_user(),
-            server_key.get_password(),
+            server_metadata.get_host(),
+            server_metadata.get_ssh_port(),
+            server_metadata.get_user(),
+            server_metadata.get_password(),
         );
         let server_pool = Arc::new(SessionPool::new(connect_opts, self.options.clone()));
         self.servers
-            .insert(server_key.get_server_key(), server_pool.clone());
+            .insert(server_metadata.get_server_key(), server_pool.clone());
         server_pool
     }
 
-    // Behavior functions
-    // pub async fn execute_command(
+    // // Behavior functions
+    // pub async fn use_channel<T, F>(
     //     &self,
-    //     host: &str,
-    //     port: u16,
-    //     username: &str,
-    //     password: &str,
-    //     command: &str,
-    // ) -> Result<String, Error> {
-    //     let server_pool = self.get_server_pool(host, port, username, password).await;
-    //     let session_wrapper = server_pool.get_session().await?;
-    //     let permit = session_wrapper.acquire_channel().await;
+    //     server_metadata: &Arc<T>,
+    //     channel_fn: F, // <-- closure parameter
+    // ) -> Result<String, String>
+    // where
+    //     T: ServerMetadata,
+    //     F: FnOnce(&mut ssh2::Channel) -> Result<String, String> + Send + 'static,
+    // {
+    //     let server_pool = self.get_session_pool(server_metadata).await;
+    //     let live_session_wrapper = server_pool
+    //         .get_session()
+    //         .await
+    //         .map_err(|e| format!("Get session join error:\n\t{}", e))?;
 
-    //     let session_wrapper = session_wrapper.clone(); // Arc<SessionWrapper>
-    //     let cmd = command.to_string();
-
+    //     let permit = live_session_wrapper.acquire_channel().await;
+    //     let live_session_wrapper = live_session_wrapper.clone(); // Arc<LiveSessionWrapper>
     //     // run command in blocking thread
-    //     let output = task::spawn_blocking(move || -> Result<String, Error> {
-    //         let mut channel = session_wrapper
+    //     let output = task::spawn_blocking(move || -> Result<String, String> {
+    //         let mut channel = live_session_wrapper
     //             .live
     //             .raw
     //             .channel_session()
-    //             .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    //         channel
-    //             .exec(&cmd)
-    //             .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    //         let mut out = String::new();
-    //         channel
-    //             .read_to_string(&mut out)
-    //             .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    //         channel
-    //             .wait_close()
-    //             .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    //         Ok(out)
+    //             .map_err(|e| format!("Channel error:\n\t{}", e))?;
+    //         // call the injected function
+    //         (channel_fn)(&mut channel)
     //     })
     //     .await
-    //     .map_err(|e| Error::new(ErrorKind::Other, e))??;
+    //     .map_err(|e| format!("Join error:\n\t{}", e))?
+    //     .map_err(|e| format!("Channel operation error:\n\t{}", e))?;
 
     //     drop(permit); // release channel slot
     //     Ok(output)
     // }
+
+    // Behavior functions
+    pub async fn get_channel<T>(&self, server_metadata: &Arc<T>) -> Result<ChannelGuard, String>
+    where
+        T: ServerMetadata,
+    {
+        // get the session pool
+        let server_pool = self.get_session_pool(server_metadata).await;
+        let server_pool = Arc::clone(&server_pool); // clone Arc if needed
+
+        // get a live session
+        let live_session_wrapper = server_pool
+            .get_session()
+            .await
+            .map_err(|e| format!("Get session error:\n\t{}", e))?;
+
+        // get channel guard
+        let guard = live_session_wrapper
+            .get_channel_guard()
+            .await
+            .map_err(|e| format!("Get channel error:\n\t{}", e))?;
+
+        Ok(guard)
+    }
 
     // Start background idle cleanup thread
     pub fn start_idle_cleanup(self: Arc<Self>, interval: Duration) {

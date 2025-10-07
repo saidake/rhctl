@@ -1,22 +1,25 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::thread;
+use futures::future::join_all;
 
 
-use crate::common::ssh::SshSession;
+use crate::common::ssh::ServerHandle;
 use crate::domain::cmd_params::UploadCmdConfig;
-use crate::utils::ssh_utils::{connect_ssh_thread, resolve_remote_path};
 use crate::{log_info_with_lock, log_warn_with_lock};
 
-pub fn run(config: &UploadCmdConfig, session: &SshSession, mappings: &HashMap<String, String>) -> Result<(), String> {
+pub async fn run(
+    config: &UploadCmdConfig, 
+    server_handle: &ServerHandle<UploadCmdConfig>, 
+    mappings: &HashMap<String, String>
+) -> Result<(), String> {
     if !Path::new(&config.properties_file).exists() {
         return Err(format!(
             "Properties file not found: '{}'",
             config.properties_file
         ));
     }
-    let threads = Arc::new(Mutex::new(Vec::new()));
+    let mut tasks = Vec::new();
 
     for (local_item, remote_dir) in mappings {
         let local_file_or_dir = Path::new(&local_item).to_path_buf();
@@ -28,7 +31,8 @@ pub fn run(config: &UploadCmdConfig, session: &SshSession, mappings: &HashMap<St
             continue;
         }
 
-        let remote_dir_resolved = resolve_remote_path(&session, config.use_sudo, &remote_dir)?;
+        let remote_dir_resolved = 
+        server_handle.resolve_remote_path(config.use_sudo, &remote_dir).await?;
         if remote_dir_resolved.is_empty() {
             return Err(format!(
                 "Failed to resolve remote directory '{}'",
@@ -37,22 +41,18 @@ pub fn run(config: &UploadCmdConfig, session: &SshSession, mappings: &HashMap<St
         }
 
         // Check if remote directory is writable
-        session.validate_remote_dir(&remote_dir_resolved, config.use_sudo)?;
-        session.create_remote_dir(&remote_dir_resolved, config.use_sudo)?;
+        server_handle.validate_remote_dir(&remote_dir_resolved, config.use_sudo).await?;
+        server_handle.create_remote_dir(&remote_dir_resolved, config.use_sudo).await?;
 
         let local_file_or_dir_clone = local_file_or_dir.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
         let config_clone = config.clone();
+        let server_handle_clone = server_handle.clone();
 
         // spawn upload thread
-        let handle = thread::spawn(move || {
-            let session_thread = connect_ssh_thread(
-                config_clone.host.clone(),
-                config_clone.user.clone(),
-                config_clone.ssh_port,
-                config_clone.password.clone(),
-            );
-            session_thread
+        // spawn async task
+        let task = tokio::spawn(async move {
+            server_handle_clone
                 .upload_file_or_dir_contents_into_dir(
                     &local_file_or_dir_clone,
                     &remote_dir_clone,
@@ -62,25 +62,25 @@ pub fn run(config: &UploadCmdConfig, session: &SshSession, mappings: &HashMap<St
                     config_clone.silent,
                     false,
                     true,
-                )
-                .map_err(|e| {
-                    format!(
-                        "Failed to upload '{}' to remote directory '{}' . \n\t{}",
-                        local_file_or_dir_clone.display(),
-                        remote_dir_clone,
-                        e
-                    )
-                })
+                ).await
+                .map_err(|e| format!(
+                    "Failed to upload '{}' to remote directory '{}' . \n\t{}",
+                    local_file_or_dir_clone.display(),
+                    remote_dir_clone,
+                    e
+                ))
         });
 
-        // store thread handle
-        threads.lock().unwrap().push(handle);
+        tasks.push(task);
     }
 
-    // collect thread results
+    // collect results
+    let results = join_all(tasks).await;
     let mut errors = Vec::new();
-    for handle in threads.lock().unwrap().drain(..) {
-        if let Err(e) = handle.join().unwrap() {
+    for r in results {
+        if let Err(e) = r {
+            errors.push(format!("Task join error: {:?}", e));
+        } else if let Ok(Err(e)) = r {
             errors.push(e);
         }
     }
