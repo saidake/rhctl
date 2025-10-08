@@ -26,7 +26,6 @@ configs:
     use-sudo: false    
     use-rsync: false
     silent: false
-    log-level: info
     
     upload:
       - properties-file: "AAA/config/path-mapping.properties"

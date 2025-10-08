@@ -8,12 +8,11 @@ use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::ServerMetadata;
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
 use crate::utils::file_utils::{
-    generate_remote_temp_dir, get_local_path_base_name, substitute_vars,
+    generate_remote_temp_dir, get_local_path_base_name,
 };
 use crate::utils::log_utils::ask_user;
 use crate::utils::ssh_utils::execution_print;
 use crate::{log_debug, log_info};
-use log::{debug, error};
 
 #[derive(Clone)]
 pub struct ServerHandle<T: ServerMetadata + Send + Sync + 'static> {
