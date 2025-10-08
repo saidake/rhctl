@@ -5,7 +5,7 @@ use log::error;
 use crate::{log_error, utils::log_utils::ask_user, Cli};
 
 // Root level
-pub fn validate_cli_args(cli: &Cli) {
+pub async fn validate_cli_args(cli: &Cli) {
     match (&cli.config, &cli.config_name, &cli.command) {
         (Some(config_path), Some(config_name), Some(_)) => {
             // Both YAML file and named config + subcommand provided
@@ -15,7 +15,7 @@ pub fn validate_cli_args(cli: &Cli) {
                     config_path, config_name
                 ),
                 false,
-            ) {
+            ).await {
                 log_error!("{}", e);
                 exit(1);
             }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::process::exit;
 use std::time::Duration;
 
-use crate::{log_error, Cli};
+use crate::{log_error};
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{ExecuteCmdConfig, PatchCmdConfig, UploadCmdConfig};
 use crate::domain::yml_config::{

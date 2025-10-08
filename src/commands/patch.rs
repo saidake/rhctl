@@ -28,7 +28,7 @@ pub async fn run(config: &PatchCmdConfig, server_handle: &ServerHandle<PatchCmdC
         ask_user(
             &format!("Restore '{}' from '{}'?", resolved_file, resolved_backup),
             config.silent,
-        )?;
+        );
         log_info!("Restoring '{}' from '{}'", resolved_file, resolved_backup);
         server_handle.exec(
             &format!("cp {} {} -f", resolved_backup, resolved_file),
@@ -49,7 +49,7 @@ pub async fn run(config: &PatchCmdConfig, server_handle: &ServerHandle<PatchCmdC
             resolved_upload
         ),
         config.silent,
-    )?;
+    );
 
     log_info!(
         "Uploading '{}' to '{}'",
@@ -82,7 +82,7 @@ pub async fn run(config: &PatchCmdConfig, server_handle: &ServerHandle<PatchCmdC
     ask_user(
         &format!("Backup '{}' to '{}'?", resolved_file, resolved_backup),
         config.silent,
-    )?;
+    );
     log_info!("Backing up '{}' to '{}'", resolved_file, resolved_backup);
     server_handle.exec(
         &format!("cp {} {} -f", resolved_file, resolved_backup),
@@ -99,7 +99,7 @@ pub async fn run(config: &PatchCmdConfig, server_handle: &ServerHandle<PatchCmdC
     ask_user(
         &format!("Overwrite '{}' with '{}'?", resolved_file, resolved_upload),
         config.silent,
-    )?;
+    );
     log_info!("Applying patch to '{}'", resolved_file);
     server_handle.exec(
         &format!("cp {} {} -f", resolved_upload, resolved_file),

@@ -302,7 +302,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
                 ask_user(format!(
                         "Remote path '{}' already exists. Transfering will DELETE it and use it as a temp folder. Continue?",
                         REMOTE_TEMP_SBXCTL_FOLDER
-                    ).as_str(),silent)?;
+                    ).as_str(),silent).await?;
 
                 self.exec(
                     &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
@@ -631,7 +631,7 @@ impl<T: ServerMetadata + Send + Sync + 'static> ServerHandle<T> {
             };
 
             // Ask user unless in silent mode
-            ask_user(&prompt, silent)?;
+            ask_user(&prompt, silent).await?;
             // Execute deletion
             self.exec(&format!("rm -rf \"{}\"", remote_path), use_sudo)
                 .await
