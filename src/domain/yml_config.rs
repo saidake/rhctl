@@ -121,10 +121,11 @@ pub struct YmlConfig {
     pub servers: Option<Vec<ServerConfig>>,
 
     // group name -> server names
-    pub groups: Option<HashMap<String, Vec<String>>>,
+    pub group_map: Option<HashMap<String, Vec<String>>>,
 
     // multiple deployment configs
     pub configs: Option<Vec<NamedConfig>>,
+    
     #[serde(default)]
-    pub vars: HashMap<String, String>,
+    pub var_map: HashMap<String, String>,
 }

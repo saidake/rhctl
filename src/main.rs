@@ -245,7 +245,7 @@ async fn main() {
         .init();
 
     // Validate CLI arguments
-    validate_cli_args(&cli);
+    validate_cli_args(&cli).await;
 
     // Load YAML config if provided
     let yaml_config = cli
@@ -290,7 +290,7 @@ async fn main() {
             ask_user_and_abort(
                 "CLI --var arguments are ignored when using YAML config. Using vars from YAML instead, Continue?",
                 false,
-            );
+            ).await;
         }
         // Parse all command configs with vars
         let upload_configs = parse_upload_configs(&named_config, yml_config);
@@ -307,7 +307,7 @@ async fn main() {
             if let Err(e) = load_properties(
                 config.properties_file.as_str(),
                 &mut mappings,
-                &yml_config.vars,
+                &yml_config.var_map,
             ) {
                 log_error!(
                     "{}",

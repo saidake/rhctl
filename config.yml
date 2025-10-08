@@ -12,10 +12,10 @@ servers:
   #   ssh-port: 22
   #   password: "testpwd"
   #   connect_timeout: 30s  
-vars:
+var-map:
   ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/sbxctl/AAA/assets"
 
-groups:
+group-map:
   dev: ["server1"]
   uat: ["server1"]
 

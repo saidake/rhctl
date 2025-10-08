@@ -134,7 +134,7 @@ pub fn parse_upload_configs(
 ) -> Vec<(UploadCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
-    let vars = &yml_config.vars;
+    let var_map = &yml_config.var_map;
 
     for upload in &named_config.upload {
         for server in &servers {
@@ -156,14 +156,14 @@ pub fn parse_upload_configs(
                     use_sudo: upload.use_sudo.or(named_config.use_sudo).unwrap_or(false),
                     use_rsync: upload.use_rsync.or(named_config.use_rsync).unwrap_or(false),
                     silent: upload.silent.or(named_config.silent).unwrap_or(false),
-                    properties_file: substitute_vars(&upload.properties_file, vars).unwrap_or_else(
+                    properties_file: substitute_vars(&upload.properties_file, var_map).unwrap_or_else(
                         |e| {
                             log_error!("{}", e);
                             exit(1);
                         },
                     ),
                 },
-                vars.clone(),
+                var_map.clone(),
             ));
         }
     }
@@ -176,7 +176,7 @@ pub fn parse_execute_configs(
 ) -> Vec<(ExecuteCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
-    let vars = &yml_config.vars;
+    let var_map = &yml_config.var_map;
 
     for execute in &named_config.execute {
         for script in &execute.scripts {
@@ -202,7 +202,7 @@ pub fn parse_execute_configs(
                             .or(named_config.use_rsync)
                             .unwrap_or(false),
                         silent: execute.silent.or(named_config.silent).unwrap_or(false),
-                        script: substitute_vars(script, vars).unwrap_or_else(|e| {
+                        script: substitute_vars(script, var_map).unwrap_or_else(|e| {
                             log_error!("{}", e);
                             exit(1);
                         }),
@@ -211,14 +211,14 @@ pub fn parse_execute_configs(
                                 .remote_path
                                 .clone()
                                 .unwrap_or_else(|| "~".to_string()),
-                            vars,
+                            var_map,
                         )
                         .unwrap_or_else(|e| {
                             log_error!("{}", e);
                             exit(1);
                         }),
                     },
-                    vars.clone(),
+                    var_map.clone(),
                 ));
             }
         }
@@ -232,7 +232,7 @@ pub fn parse_patch_configs(
 ) -> Vec<(PatchCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
-    let vars = &yml_config.vars;
+    let var_map = &yml_config.var_map;
 
     for patch in &named_config.patch {
         for server in &servers {
@@ -256,28 +256,28 @@ pub fn parse_patch_configs(
                     silent: patch.silent.or(named_config.silent).unwrap_or(false),
 
                     recover: patch.recover,
-                    local_path: substitute_vars(&patch.local_path, vars).unwrap_or_else(|e| {
+                    local_path: substitute_vars(&patch.local_path, var_map).unwrap_or_else(|e| {
                         log_error!("{}", e);
                         exit(1);
                     }),
-                    remote_upload: substitute_vars(&patch.remote_upload, vars).unwrap_or_else(
+                    remote_upload: substitute_vars(&patch.remote_upload, var_map).unwrap_or_else(
                         |e| {
                             log_error!("{}", e);
                             exit(1);
                         },
                     ),
-                    remote_path: substitute_vars(&patch.remote_path, vars).unwrap_or_else(|e| {
+                    remote_path: substitute_vars(&patch.remote_path, var_map).unwrap_or_else(|e| {
                         log_error!("{}", e);
                         exit(1);
                     }),
-                    remote_backup: substitute_vars(&patch.remote_backup, vars).unwrap_or_else(
+                    remote_backup: substitute_vars(&patch.remote_backup, var_map).unwrap_or_else(
                         |e| {
                             log_error!("{}", e);
                             exit(1);
                         },
                     ),
                 },
-                vars.clone(),
+                var_map.clone(),
             ));
         }
     }
@@ -327,9 +327,9 @@ fn collect_servers<T: TargetConfig>(
         }
     }
 
-    if let Some(groups) = &yml_config.groups {
+    if let Some(group_map) = &yml_config.group_map {
         for group_name in config.target_groups() {
-            if let Some(group_servers) = groups.get(group_name) {
+            if let Some(group_servers) = group_map.get(group_name) {
                 for server_name in group_servers {
                     if let Some(server) = server_map.get(server_name) {
                         if !servers
@@ -347,7 +347,7 @@ fn collect_servers<T: TargetConfig>(
                     }
                 }
             } else {
-                log_error!("Group '{}' not found in groups list", group_name);
+                log_error!("Group '{}' not found in group_map list", group_name);
                 exit(1);
             }
         }
