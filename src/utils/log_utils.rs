@@ -209,11 +209,11 @@ pub struct LogEntry {
     pub message: String,
 }
 
-pub async fn init_logger() -> mpsc::Sender<LogEntry> {
+pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
     let (tx, mut rx) = mpsc::channel::<LogEntry>(100);
     *LOG_SENDER.lock().await = Some(tx.clone());
 
-    tokio::spawn(async move {
+    let handle =tokio::spawn(async move {
         // let mut last_ask: Option<LogEntry> = None;
         let mut stdout = stdout();
         let mut last_ask: Option<LogEntry> = None;
@@ -283,5 +283,16 @@ pub async fn init_logger() -> mpsc::Sender<LogEntry> {
         }
     });
 
-    tx
+    handle
+}
+
+
+pub async fn flush_logs_and_exit(logger_handle: tokio::task::JoinHandle<()>) -> ! {
+    let tx = {
+        let mut guard = LOG_SENDER.lock().await;
+        guard.take()
+    };
+    drop(tx);
+    let _ = logger_handle.await;
+    std::process::exit(1);
 }

@@ -22,7 +22,7 @@ use crate::handlers::command_handler::{
 };
 use crate::utils::file_utils::load_properties;
 use crate::utils::file_utils::load_yaml_config;
-use crate::utils::log_utils::{ask_user_and_abort, init_logger};
+use crate::utils::log_utils::{ask_user_and_abort, flush_logs_and_exit, init_logger};
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
     humantime::parse_duration(s).map_err(|e| format!("Invalid duration '{}': {}", s, e))
@@ -240,7 +240,7 @@ async fn main() {
         })
         .init();
 
-    init_logger().await;
+    let log_handle = init_logger().await;
 
     // Thread handles for parallel execution
     let mut tasks: Vec<JoinHandle<()>> = Vec::new();
@@ -294,8 +294,9 @@ async fn main() {
                         config.properties_file, e
                     )
                 );
-                exit(1);
+                flush_logs_and_exit(log_handle).await;
             }
+            // println!("test---------");
             let server_metadata=Arc::new(config.server_metadata.clone());
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
@@ -304,7 +305,7 @@ async fn main() {
                     .await
                 {
                     log_error!("{}", e);
-                    exit(1);
+                    flush_logs_and_exit(log_handle).await;
                 }
                 let result = commands::upload::run(&config,  &mappings, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
@@ -314,7 +315,7 @@ async fn main() {
                         server_metadata.host,
                         e
                     );
-                    exit(1);
+                    flush_logs_and_exit(log_handle).await;
                 }
             });
             tasks.push(handle);
@@ -353,7 +354,7 @@ async fn main() {
                     .await
                 {
                     log_error!("{}", e);
-                    exit(1);
+                    flush_logs_and_exit(log_handle).await;
                 }
                 let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
@@ -363,7 +364,7 @@ async fn main() {
                         server_metadata.host,
                         e
                     );
-                    exit(1);
+                    flush_logs_and_exit(log_handle).await;
                 }
             });
             tasks.push(handle);
@@ -408,7 +409,7 @@ async fn main() {
                     .await
                 {
                     log_error!("{}", e);
-                    exit(1);
+                    flush_logs_and_exit(log_handle).await;
                 }
                 let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
@@ -418,7 +419,7 @@ async fn main() {
                         server_metadata.host,
                         e
                     );
-                    exit(1);
+                    flush_logs_and_exit(log_handle).await;
                 }
             });
             tasks.push(handle);
@@ -429,18 +430,25 @@ async fn main() {
             ..
         } => {
             // Load YAML config if provided
-            let yml_config = load_yaml_config(&config).unwrap_or_else(|err| {
-                log_error!("{}", err);
-                exit(1);
-            });
-            let named_config = yml_config
+            let yml_config = match load_yaml_config(&config) {
+                Ok(cfg) => cfg,
+                Err(err) => {
+                    log_error!("{}", err);
+                    flush_logs_and_exit(log_handle).await;
+                }
+            };
+
+            let named_config = match yml_config
                 .configs
                 .as_ref()
                 .and_then(|configs| configs.iter().find(|c| c.name == *config_name))
-                .unwrap_or_else(|| {
+            {
+                Some(c) => c,
+                None => {
                     log_error!("Config '{}' not found in YAML file", config_name);
-                    exit(1);
-                });
+                    flush_logs_and_exit(log_handle).await;
+                }
+            };
 
             if !cli_vars.is_empty() {
                 ask_user_and_abort(
@@ -472,7 +480,7 @@ async fn main() {
                             config.properties_file, e
                         )
                     );
-                    exit(1);
+                    flush_logs_and_exit(log_handle).await;
                 }
                 let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
@@ -548,13 +556,8 @@ async fn main() {
         }
     }
 
-    // Collect results
     join_all(tasks).await;
     if let Err(e) = global_server_pool.cleanup_pending_servers().await {
-         log_error!(
-             "Cleanup temp forder failed: \n\t{}",
-             e
-         );
-         exit(1);
+        log::error!("Cleanup temp forder failed: \n\t{}",e);
      }
 }
