@@ -1,5 +1,4 @@
-use crate::{common::ssh::ServerHandle, domain::cmd_params::ServerMetadata, log_error, log_remote};
-use log::{error, info};
+use crate::{ log_error, log_remote};
 
 pub fn execution_print(line: &str, is_stderr: bool) -> Result<(), String> {
     if is_stderr {

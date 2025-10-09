@@ -1,17 +1,17 @@
+use futures::future::join_all;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use futures::future::join_all;
 
-
-use crate::common::ssh::ServerHandle;
-use crate::domain::cmd_params::UploadCmdConfig;
+use crate::common::ssh_pool::ServerPool;
+use crate::domain::cmd_params::{ServerMetadata, UploadCmdConfig};
 use crate::{log_info, log_warn};
 
 pub async fn run(
-    config: &UploadCmdConfig, 
-    server_handle: &ServerHandle<UploadCmdConfig>, 
-    mappings: &HashMap<String, String>
+    config: &UploadCmdConfig,
+    mappings: &HashMap<String, String>,
+    server_metadata: &Arc<ServerMetadata>,
+    global_server_pool: Arc<ServerPool>,
 ) -> Result<(), String> {
     if !Path::new(&config.properties_file).exists() {
         return Err(format!(
@@ -24,15 +24,13 @@ pub async fn run(
     for (local_item, remote_dir) in mappings {
         let local_file_or_dir = Path::new(&local_item).to_path_buf();
         if !local_file_or_dir.exists() {
-            log_warn!(
-                "Local item '{}' not found. Skipping.",
-                local_item
-            );
+            log_warn!("Local item '{}' not found. Skipping.", local_item);
             continue;
         }
 
-        let remote_dir_resolved = 
-        server_handle.resolve_remote_path(config.use_sudo, &remote_dir).await?;
+        let remote_dir_resolved = global_server_pool
+            .resolve_remote_path(server_metadata, config.use_sudo, &remote_dir)
+            .await?;
         if remote_dir_resolved.is_empty() {
             return Err(format!(
                 "Failed to resolve remote directory '{}'",
@@ -41,19 +39,25 @@ pub async fn run(
         }
 
         // Check if remote directory is writable
-        server_handle.validate_remote_dir(&remote_dir_resolved, config.use_sudo).await?;
-        server_handle.create_remote_dir(&remote_dir_resolved, config.use_sudo).await?;
+        global_server_pool
+            .validate_remote_dir(server_metadata, &remote_dir_resolved, config.use_sudo)
+            .await?;
+        global_server_pool
+            .create_remote_dir(server_metadata, &remote_dir_resolved, config.use_sudo)
+            .await?;
 
         let local_file_or_dir_clone = local_file_or_dir.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
         let config_clone = config.clone();
-        let server_handle_clone = server_handle.clone();
+        let global_server_pool_clone = global_server_pool.clone();
+        let server_metadata_clone = server_metadata.clone(); // clone Arc
 
         // spawn upload thread
         // spawn async task
         let task = tokio::spawn(async move {
-            server_handle_clone
+            global_server_pool_clone
                 .upload_file_or_dir_contents_into_dir(
+                    &server_metadata_clone,
                     &local_file_or_dir_clone,
                     &remote_dir_clone,
                     None,
@@ -62,13 +66,16 @@ pub async fn run(
                     config_clone.silent,
                     false,
                     true,
-                ).await
-                .map_err(|e| format!(
-                    "Failed to upload '{}' to remote directory '{}' . \n\t{}",
-                    local_file_or_dir_clone.display(),
-                    remote_dir_clone,
-                    e
-                ))
+                )
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to upload '{}' to remote directory '{}' . \n\t{}",
+                        local_file_or_dir_clone.display(),
+                        remote_dir_clone,
+                        e
+                    )
+                })
         });
 
         tasks.push(task);

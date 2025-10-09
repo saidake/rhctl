@@ -15,7 +15,6 @@ mod domain;
 mod handlers;
 mod utils;
 
-use crate::common::ssh::ServerHandle;
 use crate::common::ssh_pool::{PoolOptions, ServerPool};
 use crate::handlers::command_handler::{
     parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
@@ -217,7 +216,7 @@ async fn main() {
         .map(|s| s.as_str())
         .or_else(|| cli.log_level.as_deref())
         .unwrap_or("info");
-    println!("log_level: {}", log_level);
+    // println!("log_level: {}", log_level);
 
     // Initialize logging
     env_logger::Builder::new()
@@ -297,27 +296,22 @@ async fn main() {
                 );
                 exit(1);
             }
-            let server_handle = ServerHandle {
-                server_metadata: Arc::new(config.clone()),
-                global_server_pool: global_server_pool.clone(),
-            };
+            let server_metadata=Arc::new(config.server_metadata.clone());
+            let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
-                if let Err(e) = server_handle
-                    .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                if let Err(e) = global_server_pool_clone
+                    .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
                     .await
                 {
                     log_error!("{}", e);
                     exit(1);
                 }
-                let result = commands::upload::run(&config, &server_handle, &mappings).await;
-                if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                    log_error!("{}", e);
-                }
+                let result = commands::upload::run(&config,  &mappings, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
                     log_error!(
                         "Upload failed for {}@{}: \n\t{}",
-                        config.user,
-                        config.host,
+                        server_metadata.user,
+                        server_metadata.host,
                         e
                     );
                     exit(1);
@@ -351,27 +345,22 @@ async fn main() {
                 remote_path,
                 &cli_vars,
             );
-            let server_handle = ServerHandle {
-                server_metadata: Arc::new(config.clone()),
-                global_server_pool: global_server_pool.clone(),
-            };
+            let server_metadata=Arc::new(config.server_metadata.clone());
+            let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
-                if let Err(e) = server_handle
-                    .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                if let Err(e) = global_server_pool_clone
+                    .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
                     .await
                 {
                     log_error!("{}", e);
                     exit(1);
                 }
-                let result = commands::execute::run(&config, &server_handle).await;
-                if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                    log_error!("{}", e);
-                }
+                let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
                     log_error!(
                         "Execute failed for {}@{}: \n\t{}",
-                        config.user,
-                        config.host,
+                        server_metadata.user,
+                        server_metadata.host,
                         e
                     );
                     exit(1);
@@ -411,27 +400,22 @@ async fn main() {
                 remote_backup,
                 &cli_vars,
             );
-            let server_handle = ServerHandle {
-                server_metadata: Arc::new(config.clone()),
-                global_server_pool: global_server_pool.clone(),
-            };
+            let server_metadata=Arc::new(config.server_metadata.clone());
+            let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
-                if let Err(e) = server_handle
-                    .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                if let Err(e) = 
+                global_server_pool_clone.check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
                     .await
                 {
                     log_error!("{}", e);
                     exit(1);
                 }
-                let result = commands::patch::run(&config, &server_handle).await;
-                if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                    log_error!("{}", e);
-                }
+                let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
                     log_error!(
                         "Patch failed for {}@{}: \n\t{}",
-                        config.user,
-                        config.host,
+                        server_metadata.user,
+                        server_metadata.host,
                         e
                     );
                     exit(1);
@@ -474,10 +458,7 @@ async fn main() {
 
             // Spawn threads for upload commands
             for (config, vars) in upload_configs {
-                let server_handle = ServerHandle {
-                    server_metadata: Arc::new(config.clone()),
-                    global_server_pool: global_server_pool.clone(),
-                };
+            let server_metadata=Arc::new(config.server_metadata.clone());
                 let mut mappings = HashMap::new();
                 if let Err(e) = load_properties(
                     config.properties_file.as_str(),
@@ -493,27 +474,23 @@ async fn main() {
                     );
                     exit(1);
                 }
-
+                let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
-                    if let Err(e) = server_handle
-                        .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                    if let Err(e) = global_server_pool_clone
+                        .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
                         .await
                     {
                         log_error!("{}", e);
-                        exit(1);
+                        return;
                     }
-                    let result = commands::upload::run(&config, &server_handle, &vars).await;
-                    if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                        log_error!("{}", e);
-                    }
+                    let result = commands::upload::run(&config,  &vars, &server_metadata, global_server_pool_clone.clone()).await;
                     if let Err(e) = result {
                         log_error!(
                             "Upload failed for {}@{}: \n\t{}",
-                            config.user,
-                            config.host,
+                            server_metadata.user,
+                            server_metadata.host,
                             e
                         );
-                        exit(1);
                     }
                 });
                 tasks.push(handle);
@@ -521,30 +498,24 @@ async fn main() {
 
             // Spawn threads for execute commands
             for (config, _) in execute_configs {
-                let server_handle = ServerHandle {
-                    server_metadata: Arc::new(config.clone()),
-                    global_server_pool: global_server_pool.clone(),
-                };
+                let server_metadata=Arc::new(config.server_metadata.clone());
+                let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
-                    if let Err(e) = server_handle
-                        .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                    if let Err(e) = global_server_pool_clone
+                        .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
                         .await
                     {
                         log_error!("{}", e);
-                        exit(1);
+                        return;
                     }
-                    let result = commands::execute::run(&config, &server_handle).await;
-                    if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                        log_error!("{}", e);
-                    }
+                    let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                     if let Err(e) = result {
                         log_error!(
                             "Execute failed for {}@{}: \n\t{}",
-                            config.user,
-                            config.host,
+                            server_metadata.user,
+                            server_metadata.host,
                             e
                         );
-                        exit(1);
                     }
                 });
                 tasks.push(handle);
@@ -552,30 +523,24 @@ async fn main() {
 
             // Spawn threads for patch commands
             for (config, _) in patch_configs {
-                let server_handle = ServerHandle {
-                    server_metadata: Arc::new(config.clone()),
-                    global_server_pool: global_server_pool.clone(),
-                };
+                let server_metadata=Arc::new(config.server_metadata.clone());
+                let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
-                    if let Err(e) = server_handle
-                        .check_global_remote_temp_dir(config.use_sudo, config.silent)
+                    if let Err(e) = global_server_pool_clone
+                        .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
                         .await
                     {
                         log_error!("{}", e);
-                        exit(1);
+                        return;
                     }
-                    let result = commands::patch::run(&config, &server_handle).await;
-                    if let Err(e) = server_handle.delete_global_temp_dir(config.use_sudo).await {
-                        log_error!("{}", e);
-                    }
+                    let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                     if let Err(e) = result {
                         log_error!(
                             "Patch failed for {}@{}: \n\t{}",
-                            config.user,
-                            config.host,
+                            server_metadata.user,
+                            server_metadata.host,
                             e
                         );
-                        exit(1);
                     }
                 });
                 tasks.push(handle);
@@ -584,15 +549,12 @@ async fn main() {
     }
 
     // Collect results
-    let results = join_all(tasks).await;
-    let mut errors = Vec::new();
-    for result in results {
-        if let Err(e) = result {
-            errors.push(format!("Task failed: {:?}", e));
-        }
-    }
-    if !errors.is_empty() {
-        log_error!("Errors occurred:\n{}", errors.join("\n"));
-        exit(1);
-    }
+    join_all(tasks).await;
+    if let Err(e) = global_server_pool.cleanup_pending_servers().await {
+         log_error!(
+             "Cleanup temp forder failed: \n\t{}",
+             e
+         );
+         exit(1);
+     }
 }
