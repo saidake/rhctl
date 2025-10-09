@@ -3,7 +3,6 @@ use std::io::Read; // Added Read import
 use std::path::Path;
 use std::sync::Arc;
 
-use log::{debug, info};
 
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{ExecuteCmdConfig, ServerMetadata};

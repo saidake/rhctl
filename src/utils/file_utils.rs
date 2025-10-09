@@ -6,7 +6,7 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Read;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 pub fn load_yaml_config(path: &str) -> Result<YmlConfig, String> {

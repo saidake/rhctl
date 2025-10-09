@@ -1,7 +1,7 @@
 use ansi_term::Colour;
 use clap::{Parser, Subcommand};
 use futures::future::join_all;
-use log::{Level, error};
+use log::Level;
 use std::collections::HashMap;
 use std::io::Write;
 use std::process::exit;

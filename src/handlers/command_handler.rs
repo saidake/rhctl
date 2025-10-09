@@ -1,4 +1,3 @@
-use log::error;
 use std::collections::HashMap;
 use std::process::exit;
 use std::time::Duration;
@@ -8,11 +7,11 @@ use crate::domain::cmd_params::{
     ExecuteCmdConfig, PatchCmdConfig, ServerMetadata, UploadCmdConfig,
 };
 use crate::domain::yml_config::{
-    ExecuteConfig, NamedConfig, PatchConfig, ServerConfig, TargetConfig, UploadConfig, YmlConfig,
+    NamedConfig, ServerConfig, TargetConfig, YmlConfig,
 };
 use crate::log_error;
 use crate::utils::file_utils::substitute_vars;
-use crate::utils::log_utils::{ask_user, ask_user_and_abort, prompt_password_or_exit};
+use crate::utils::log_utils::prompt_password_or_exit;
 
 // Root level
 pub fn parse_patch_config_from_cmd(

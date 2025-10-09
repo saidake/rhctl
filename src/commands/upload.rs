@@ -1,7 +1,7 @@
 use futures::future::join_all;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{ServerMetadata, UploadCmdConfig};
