@@ -54,7 +54,7 @@ pub async fn run(
         return Ok(());
     }
 
-    log_info!("==================================== Upload the local file");
+    log_info!(">>> Upload the local file");
     log_info!("Local file info:");
     log_local_file_info(&local_path)?;
     ask_user(
@@ -97,7 +97,7 @@ pub async fn run(
         .exec_with_log(server_metadata,&format!("ls -al {}", resolved_upload), config.use_sudo)
         .await?;
 
-    log_info!("==================================== Backup the server file");
+    log_info!(">>> Backup the server file");
     if !global_server_pool
         .file_or_dir_exists(server_metadata,&resolved_file, config.use_sudo)
         .await?
@@ -124,7 +124,7 @@ pub async fn run(
     global_server_pool
         .exec_with_log(server_metadata,&format!("ls -al {}", resolved_backup), config.use_sudo)
         .await?;
-    log_info!("==================================== Overwrite the server file");
+    log_info!(">>> Overwrite the server file");
     log_info!("Uploaded file info:");
     let ls_upload_before = global_server_pool
         .exec(server_metadata,&format!("ls -al {}", resolved_upload), config.use_sudo)

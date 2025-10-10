@@ -54,60 +54,6 @@ impl std::fmt::Display for SshError {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct ConnectOptions {
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub password: String,
-    pub connect_timeout: Duration,
-}
-
-impl ConnectOptions {
-    pub fn new(host: &str, port: u16, username: &str, password: &str) -> Self {
-        Self {
-            host: host.to_string(),
-            port,
-            username: username.to_string(),
-            password: password.to_string(),
-            connect_timeout: Duration::from_secs(10),
-        }
-    }
-
-    async fn connect(&self) -> Result<Handle<Client>, SshError> {
-        let addr = format!("{}:{}", self.host, self.port);
-        let stream = tokio::time::timeout(self.connect_timeout, TcpStream::connect(&addr))
-            .await
-            .map_err(|_| {
-                SshError::Io(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "Connection timed out",
-                ))
-            })?
-            .map_err(|e| SshError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
-
-        let config = Arc::new(russh::client::Config::default());
-        let client = Client {
-            username: self.username.clone(),
-            password: self.password.clone(),
-        };
-        let mut session = russh::client::connect_stream(config, stream, client).await?;
-
-        let auth_result = session
-            .authenticate_password(self.username.clone(), self.password.clone())
-            .await
-            .map_err(SshError::Russh)?;
-
-        if !auth_result {
-            return Err(SshError::Io(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "Authentication failed",
-            )));
-        }
-
-        Ok(session)
-    }
-}
 
 #[derive(Clone)]
 struct Client {
@@ -138,7 +84,7 @@ pub struct PoolOptions {
 impl PoolOptions {
     pub fn new() -> Self {
         Self {
-            max_connections: 10,
+            max_connections: 2000,
             acquire_timeout: Duration::from_secs(30),
             idle_timeout: Some(Duration::from_secs(600)),
             max_channel_per_session: 5,
@@ -217,7 +163,7 @@ impl LiveSessionWrapper {
 }
 
 struct SessionPool {
-    connect_options: ConnectOptions,
+    server_metadata: Arc<ServerMetadata>,
     active_sessions: Mutex<Vec<Arc<LiveSessionWrapper>>>,
     idle_sessions: Mutex<Vec<Idle>>,
     options: PoolOptions,
@@ -225,14 +171,47 @@ struct SessionPool {
 }
 
 impl SessionPool {
-    fn new(connect_options: ConnectOptions, options: PoolOptions) -> Self {
+    fn new(server_metadata: &Arc<ServerMetadata>, options: PoolOptions) -> Self {
         Self {
-            connect_options,
+            server_metadata: server_metadata.clone(),
             active_sessions: Mutex::new(vec![]),
             idle_sessions: Mutex::new(vec![]),
             options: options.clone(),
             session_semaphore: Arc::new(Semaphore::new(options.max_connections as usize)),
         }
+    }
+    async fn connect(&self) -> Result<Handle<Client>, SshError> {
+        let addr = format!("{}:{}", self.server_metadata.host, self.server_metadata.ssh_port);
+        let stream = tokio::time::timeout(self.server_metadata.connect_timeout, TcpStream::connect(&addr))
+            .await
+            .map_err(|_| {
+                SshError::Io(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Connection timed out",
+                ))
+            })?
+            .map_err(|e| SshError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
+
+        let config = Arc::new(russh::client::Config::default());
+        let client = Client {
+            username: self.server_metadata.user.clone(),
+            password: self.server_metadata.password.clone(),
+        };
+        let mut session = russh::client::connect_stream(config, stream, client).await?;
+
+        let auth_result = session
+            .authenticate_password(self.server_metadata.user.clone(), self.server_metadata.password.clone())
+            .await
+            .map_err(SshError::Russh)?;
+
+        if !auth_result {
+            return Err(SshError::Io(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Authentication failed",
+            )));
+        }
+
+        Ok(session)
     }
 
     pub async fn get_session(&self) -> Result<Arc<LiveSessionWrapper>, SshError> {
@@ -271,8 +250,7 @@ impl SessionPool {
         })?
         .map_err(|_| SshError::Io(io::Error::new(io::ErrorKind::Other, "Server pool closed")))?;
 
-        let conn_opts = self.connect_options.clone();
-        let sess = conn_opts.connect().await?;
+        let sess = self.connect().await?;
         let live = Live {
             raw: Arc::new(sess),
             created_at: Instant::now(),
@@ -344,14 +322,7 @@ impl ServerPool {
         if let Some(pool) = self.servers.get(&server_metadata.server_key) {
             return pool.clone();
         }
-
-        let connect_opts = ConnectOptions::new(
-            &server_metadata.host,
-            server_metadata.ssh_port,
-            &server_metadata.user,
-            &server_metadata.password,
-        );
-        let server_pool = Arc::new(SessionPool::new(connect_opts, self.options.clone()));
+        let server_pool = Arc::new(SessionPool::new(&server_metadata, self.options.clone()));
         self.servers
             .insert(server_metadata.server_key, server_pool.clone());
         server_pool
