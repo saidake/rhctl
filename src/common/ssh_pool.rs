@@ -128,7 +128,6 @@ impl russh::client::Handler for Client {
 #[derive(Clone, Debug)]
 pub struct PoolOptions {
     pub max_connections: u32,
-    pub min_connections: u32,
     pub acquire_timeout: Duration,
     pub idle_timeout: Option<Duration>,
     pub max_channel_per_session: u32,
@@ -138,7 +137,6 @@ impl PoolOptions {
     pub fn new() -> Self {
         Self {
             max_connections: 10,
-            min_connections: 0,
             acquire_timeout: Duration::from_secs(30),
             idle_timeout: Some(Duration::from_secs(600)),
             max_channel_per_session: 5,
@@ -172,7 +170,7 @@ impl Drop for ChannelGuard {
 #[derive(Clone)]
 pub struct LiveSessionWrapper {
     live: Live,
-    semaphore: Arc<Semaphore>,
+    channel_semaphore: Arc<Semaphore>,
     max_permits: usize,
 }
 
@@ -180,18 +178,23 @@ impl LiveSessionWrapper {
     fn new(live: Live, max_channel: u32) -> Self {
         Self {
             live,
-            semaphore: Arc::new(Semaphore::new(max_channel as usize)),
+            channel_semaphore: Arc::new(Semaphore::new(max_channel as usize)),
             max_permits: max_channel as usize,
         }
     }
 
     pub async fn get_channel_guard(&self) -> Result<ChannelGuard, SshError> {
-        let permit = self.semaphore.clone().acquire_owned().await.map_err(|_| {
-            SshError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to acquire channel permit",
-            ))
-        })?;
+        let permit = self
+            .channel_semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| {
+                SshError::Io(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Failed to acquire channel permit",
+                ))
+            })?;
 
         let channel = self
             .live
@@ -207,7 +210,7 @@ impl LiveSessionWrapper {
     }
 
     pub fn is_fully_idle(&self) -> bool {
-        self.semaphore.available_permits() == self.max_permits
+        self.channel_semaphore.available_permits() == self.max_permits
     }
 }
 
@@ -216,7 +219,7 @@ struct SessionPool {
     active_sessions: Mutex<Vec<Arc<LiveSessionWrapper>>>,
     idle_sessions: Mutex<Vec<Idle>>,
     options: PoolOptions,
-    semaphore: Arc<Semaphore>,
+    session_semaphore: Arc<Semaphore>,
 }
 
 impl SessionPool {
@@ -226,7 +229,7 @@ impl SessionPool {
             active_sessions: Mutex::new(vec![]),
             idle_sessions: Mutex::new(vec![]),
             options: options.clone(),
-            semaphore: Arc::new(Semaphore::new(options.max_connections as usize)),
+            session_semaphore: Arc::new(Semaphore::new(options.max_connections as usize)),
         }
     }
 
@@ -247,7 +250,7 @@ impl SessionPool {
         {
             let active_guard = self.active_sessions.lock().unwrap();
             for s in active_guard.iter() {
-                if s.semaphore.available_permits() > 0 {
+                if s.channel_semaphore.available_permits() > 0 {
                     return Ok(s.clone());
                 }
             }
@@ -255,7 +258,7 @@ impl SessionPool {
 
         let _permit = tokio::time::timeout(
             self.options.acquire_timeout,
-            self.semaphore.clone().acquire_owned(),
+            self.session_semaphore.clone().acquire_owned(),
         )
         .await
         .map_err(|_| {
@@ -577,17 +580,47 @@ impl ServerPool {
         let mut stdout_buf = String::new();
         let mut stderr_buf = String::new();
         let mut first_line = true;
-
         let mut stdout_collected = Vec::new();
         let mut stderr_collected = Vec::new();
+        let mut partial_stdout_line = String::new();
+        let mut partial_stderr_line = String::new();
 
         while let Some(msg) = channel_guard.channel.wait().await {
             match msg {
                 ChannelMsg::Data { data } => {
                     stdout_collected.extend_from_slice(&data);
+                    let data_str = String::from_utf8_lossy(&data).to_string();
+                    partial_stdout_line.push_str(&data_str);
+
+                    // Process complete lines
+                    while let Some(line_end) = partial_stdout_line.find('\n') {
+                        let line = partial_stdout_line[..line_end].to_string();
+                        partial_stdout_line = partial_stdout_line[line_end + 1..].to_string();
+
+                        if print_log {
+                            if !(first_line && use_sudo && line.is_empty()) {
+                                execution_print(&line, false)?;
+                            }
+                            if first_line && use_sudo {
+                                first_line = false;
+                            }
+                        }
+                    }
                 }
                 ChannelMsg::ExtendedData { data, ext } if ext == 1 => {
                     stderr_collected.extend_from_slice(&data);
+                    let data_str = String::from_utf8_lossy(&data).to_string();
+                    partial_stderr_line.push_str(&data_str);
+
+                    // Process complete lines
+                    while let Some(line_end) = partial_stderr_line.find('\n') {
+                        let line = partial_stderr_line[..line_end].to_string();
+                        partial_stderr_line = partial_stderr_line[line_end + 1..].to_string();
+
+                        if print_log {
+                            execution_print(&line, true)?;
+                        }
+                    }
                 }
                 ChannelMsg::ExitStatus { exit_status } => {
                     if exit_status != 0 {
@@ -596,10 +629,10 @@ impl ServerPool {
                         let mut msg =
                             format!("Command '{}' failed with exit status {}.", cmd, exit_status);
                         if !stdout_str.trim().is_empty() {
-                            msg.push_str(&format!("\n\tstdout:\n\t{}", stdout_str));
+                            msg.push_str(&format!("\n\t{}", stdout_str));
                         }
                         if !stderr_str.trim().is_empty() {
-                            msg.push_str(&format!("\n\tstderr:\n\t{}", stderr_str));
+                            msg.push_str(&format!("\n\t{}", stderr_str));
                         }
                         return Err(msg);
                     }
@@ -609,21 +642,19 @@ impl ServerPool {
             }
         }
 
-        stdout_buf = String::from_utf8_lossy(&stdout_collected).to_string();
-        stderr_buf = String::from_utf8_lossy(&stderr_collected).to_string();
-
-        if print_log {
-            for line in stdout_buf.lines() {
-                if first_line && use_sudo && line.trim().is_empty() {
-                    first_line = false;
-                    continue;
-                }
-                execution_print(line, false)?;
-            }
-            for line in stderr_buf.lines() {
-                execution_print(line, true)?;
+        // Handle any remaining partial lines
+        if !partial_stdout_line.is_empty() && print_log {
+            if !(first_line && use_sudo && partial_stdout_line.trim().is_empty()) {
+                execution_print(&partial_stdout_line, false)?;
             }
         }
+        if !partial_stderr_line.is_empty() && print_log {
+            execution_print(&partial_stderr_line, true)?;
+        }
+
+        // Collect final output for return
+        stdout_buf = String::from_utf8_lossy(&stdout_collected).to_string();
+        stderr_buf = String::from_utf8_lossy(&stderr_collected).to_string();
 
         channel_guard
             .channel
@@ -909,15 +940,20 @@ impl ServerPool {
                     )
                 })?;
             // Send SCP header
-            channel_guard.channel.data(header.as_bytes()).await.map_err(|e| {
-                format!(
-                    "Failed to send SCP header for '{}'. \n\t{}",
-                    remote_target, e
-                )
-            })?;
+            channel_guard
+                .channel
+                .data(header.as_bytes())
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to send SCP header for '{}'. \n\t{}",
+                        remote_target, e
+                    )
+                })?;
 
             // Send buffer data (borrow as slice: &buffer or &buffer[..])
-            channel_guard.channel
+            channel_guard
+                .channel
                 .data(&buffer[..]) // or .data(&buffer)
                 .await
                 .map_err(|e| {

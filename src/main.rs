@@ -246,7 +246,6 @@ async fn main() {
 
     let options = PoolOptions {
         max_connections: 10,
-        min_connections: 0,
         acquire_timeout: Duration::from_secs(30),
         idle_timeout: Some(Duration::from_secs(600)), // 10min default
         max_channel_per_session: 5,
