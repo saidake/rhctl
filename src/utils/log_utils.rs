@@ -93,56 +93,60 @@ pub async fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
         return Ok(());
     }
 
-    // lock to ensure only one ask at a time
+    // Lock entire ASK sequence
     let _guard = ASK_LOCK.lock().await;
-    ASK_ACTIVE.store(true, Ordering::SeqCst);
 
-    // log the prompt
     log_ask!("{} [y/N]: ", prompt);
     stdout().flush().unwrap();
 
-    // spawn a blocking task to capture single key input
-    let res = task::spawn_blocking(move || {
-        enable_raw_mode().unwrap(); // enter raw mode
-        let mut result = Err(USER_ABORTED_MESSAGE.to_string());
+    // Use a scope to keep _guard alive
+    let res = {
+        // we cannot move `_guard` into blocking thread,
+        // but we can keep this scope until after blocking completes.
+        let result = task::spawn_blocking(move || {
+            enable_raw_mode().unwrap();
+            let mut result = Err(USER_ABORTED_MESSAGE.to_string());
 
-        loop {
-            if event::poll(std::time::Duration::from_millis(500)).unwrap() {
-                if let Event::Key(KeyEvent { code, .. }) = event::read().unwrap() {
-                    match code {
-                        KeyCode::Char(c @ 'y') | KeyCode::Char(c @ 'Y') => {
-                            print!("{}", c);
-                            result = Ok(());
-                            break;
+            loop {
+                if event::poll(std::time::Duration::from_millis(500)).unwrap() {
+                    if let Event::Key(KeyEvent { code, .. }) = event::read().unwrap() {
+                        match code {
+                            KeyCode::Char(c @ 'y') | KeyCode::Char(c @ 'Y') => {
+                                print!("{}", c);
+                                result = Ok(());
+                                break;
+                            }
+                            KeyCode::Char(c @ 'n') | KeyCode::Char(c @ 'N') => {
+                                print!("{}", c);
+                                result = Err(USER_ABORTED_MESSAGE.to_string());
+                                break;
+                            }
+                            KeyCode::Char('c')
+                                if event::KeyModifiers::CONTROL
+                                    .contains(event::KeyModifiers::CONTROL) =>
+                            {
+                                disable_raw_mode().unwrap();
+                                println!(); // move to next line after input
+                                std::process::exit(130); // typical exit code for Ctrl+C
+                            }
+                            _ => {}
                         }
-                        KeyCode::Char(c @ 'n') | KeyCode::Char(c @ 'N') => {
-                            print!("{}", c);
-                            result = Err(USER_ABORTED_MESSAGE.to_string());
-                            break;
-                        }
-                        KeyCode::Char('c')
-                            if event::KeyModifiers::CONTROL
-                                .contains(event::KeyModifiers::CONTROL) =>
-                        {
-                            disable_raw_mode().unwrap();
-                            println!(); // move to next line after input
-                            std::process::exit(130); // typical exit code for Ctrl+C
-                        }
-                        _ => {}
                     }
                 }
             }
-        }
 
-        disable_raw_mode().unwrap(); // leave raw mode
-        println!(); // move to next line after input
+            disable_raw_mode().unwrap(); // leave raw mode
+            println!(); // move to next line after input
+            result
+        })
+        .await
+        .unwrap(); // unwrap the JoinHandle
+
         result
-    })
-    .await
-    .unwrap(); // unwrap the JoinHandle
+    };
 
+    // guard is dropped here — after ask completes
     ASK_ACTIVE.store(false, Ordering::SeqCst);
-
     res
 }
 
@@ -212,13 +216,16 @@ pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
                         .to_string(),
                     entry.message
                 ),
-                "ASK" => print!(
-                    "[{}] {}",
-                    ansi_term::Colour::Cyan
-                        .paint(format!("{:<6}", "ASK"))
-                        .to_string(),
-                    entry.message
-                ),
+                "ASK" => {
+                    ASK_ACTIVE.store(true, Ordering::SeqCst);
+                    print!(
+                        "[{}] {}",
+                        ansi_term::Colour::Cyan
+                            .paint(format!("{:<6}", "ASK"))
+                            .to_string(),
+                        entry.message
+                    )
+                }
                 _ => println!("[{}] {}", entry.level, entry.message),
             }
 
@@ -228,9 +235,11 @@ pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
                 last_ask = Some(entry);
             } else if entry.level.trim() != "ASK" && ASK_ACTIVE.load(Ordering::SeqCst) {
                 // println!("ask 1");
+                // println!("entry.level.trim(): {}", entry.level.trim());
+                // println!();
                 if let Some(ref ask) = last_ask {
-                    // println!("ask: {}", ask.message);
-                    // execute!(stdout, cursor::MoveToColumn(0)).unwrap();
+                    // println!("ask.message: {}", ask.message);
+                    // println!();
                     execute!(
                         stdout,
                         cursor::MoveToColumn(0),
