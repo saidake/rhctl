@@ -237,6 +237,8 @@ async fn main() {
             "error" => log::LevelFilter::Error,
             _ => log::LevelFilter::Info,
         })
+        .filter_module("russh", log::LevelFilter::Info)
+        .filter_module("russh_keys", log::LevelFilter::Info)
         .init();
 
     let log_handle = init_logger().await;

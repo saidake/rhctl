@@ -8,13 +8,15 @@ use async_recursion::async_recursion;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use dashmap::DashSet;
+use futures::channel;
 use russh::ChannelId;
 use russh::client::{self, Handle, Msg};
 use russh::{Channel, ChannelMsg};
 use russh_keys::key::PublicKey;
 use std::collections::hash_map::DefaultHasher;
+use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Cursor, Read, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -616,10 +618,9 @@ impl ServerPool {
                     while let Some(line_end) = partial_stderr_line.find('\n') {
                         let line = partial_stderr_line[..line_end].to_string();
                         partial_stderr_line = partial_stderr_line[line_end + 1..].to_string();
-
-                        if print_log {
-                            execution_print(&line, true)?;
-                        }
+                        // if print_log {
+                        //     execution_print(&line, true)?;
+                        // }
                     }
                 }
                 ChannelMsg::ExitStatus { exit_status } => {
@@ -869,118 +870,87 @@ impl ServerPool {
                 .await?;
             }
         } else {
-            let mut file = std::fs::File::open(local_file_or_dir).map_err(|e| {
-                format!(
-                    "Failed to open local file '{}'. \n\t{}",
-                    local_file_or_dir.display(),
-                    e
-                )
-            })?;
-
-            let stat = file.metadata().map_err(|e| {
-                format!(
-                    "Failed to get metadata for '{}'. \n\t{}",
-                    local_file_or_dir.display(),
-                    e
-                )
-            })?;
-
-            log_debug!(
-                "Uploading file '{}' ({} bytes) to '{}'",
-                local_file_or_dir.display(),
-                stat.len(),
-                remote_target
-            );
-
+            let mut file = File::open(local_file_or_dir)
+                .map_err(|e| format!("Failed to open local file {:?}: {}", local_file_or_dir, e))?;
+            let metadata = file.metadata().map_err(|e| format!("metadata: {}", e))?;
             let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).map_err(|e| {
-                format!(
-                    "Failed to read file '{}'. \n\t{}",
-                    local_file_or_dir.display(),
-                    e
-                )
-            })?;
+            file.read_to_end(&mut buffer)
+                .map_err(|e| format!("read: {}", e))?;
 
+            // Enable scp receiver
+            let scp_cmd = format!("scp -t {}", remote_target);
             let mut channel_guard = self.get_channel(&server_metadata).await?;
-            let scp_command = format!("scp -t {}", remote_target);
             channel_guard
                 .channel
-                .exec(true, scp_command.as_bytes().to_vec())
+                .exec(true, scp_cmd.as_bytes().to_vec())
                 .await
-                .map_err(|e| {
-                    format!("Failed to initiate SCP for '{}'. \n\t{}", remote_target, e)
-                })?;
+                .map_err(|e| e.to_string())?;
 
-            let mut response = Vec::new();
-            while let Some(msg) = channel_guard.channel.wait().await {
-                match msg {
-                    ChannelMsg::Data { data } => {
-                        response.extend_from_slice(&data);
-                        if response.contains(&b'\0') {
-                            break;
-                        }
-                    }
-                    _ => continue,
+            // Wait for ACK
+            self.wait_for_ack(&mut channel_guard.channel).await?;
+
+            // Send header
+            let filename = local_file_or_dir.file_name().unwrap().to_str().unwrap();
+            let mode = 0o644;
+            let header = format!("C{:04o} {} {}\n", mode, buffer.len(), filename);
+            channel_guard
+                .channel
+                .data(header.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
+            self.wait_for_ack(&mut channel_guard.channel).await?;
+
+            // Send file data
+            let mut reader =
+                BufReader::new(File::open(local_file_or_dir).map_err(|e| e.to_string())?);
+            let mut buf = [0u8; 8192];
+            loop {
+                let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+                if n == 0 {
+                    break;
                 }
+                let mut cursor = Cursor::new(&buf[..n]);
+                channel_guard
+                    .channel
+                    .data(&mut cursor)
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
 
-            let file_size = stat.len();
-            let mode = 0o644;
-            let header = format!("C{:o} {} {}\n", mode, file_size, base_name);
-
-            // Send SCP header
+            // Send end null byte
+            let mut cursor = Cursor::new(&[0u8]);
             channel_guard
                 .channel
-                .data(header.as_bytes())
+                .data(&mut cursor)
                 .await
-                .map_err(|e| {
-                    format!(
-                        "Failed to send SCP header for '{}'. \n\t{}",
-                        remote_target, e
-                    )
-                })?;
-            // Send SCP header
+                .map_err(|e| e.to_string())?;
+
             channel_guard
                 .channel
-                .data(header.as_bytes())
+                .close()
                 .await
-                .map_err(|e| {
-                    format!(
-                        "Failed to send SCP header for '{}'. \n\t{}",
-                        remote_target, e
-                    )
-                })?;
-
-            // Send buffer data (borrow as slice: &buffer or &buffer[..])
-            channel_guard
-                .channel
-                .data(&buffer[..]) // or .data(&buffer)
-                .await
-                .map_err(|e| {
-                    format!(
-                        "Failed to write to SCP channel for '{}'. \n\t{}",
-                        remote_target, e
-                    )
-                })?;
-
-            // Send SCP end signal (null byte)
-            channel_guard.channel.data(&[0u8][..]).await.map_err(|e| {
-                format!(
-                    "Failed to send SCP end signal for '{}'. \n\t{}",
-                    remote_target, e
-                )
-            })?;
-
-            // Close the channel
-            channel_guard.channel.close().await.map_err(|e| {
-                format!(
-                    "Failed to close SCP channel for '{}'. \n\t{}",
-                    remote_target, e
-                )
-            })?;
+                .map_err(|e| e.to_string())?;
         }
 
         Ok(())
+    }
+
+    async fn wait_for_ack(&self, channel: &mut russh::Channel<Msg>) -> Result<(), String> {
+        let mut ack_buf = Vec::new();
+        while let Some(msg) = channel.wait().await {
+            if let ChannelMsg::Data { data } = msg {
+                ack_buf.extend_from_slice(&data);
+                if ack_buf.contains(&0) {
+                    return Ok(());
+                } else if ack_buf.contains(&1) || ack_buf.contains(&2) {
+                    return Err(format!(
+                        "SCP remote error: {:?}",
+                        String::from_utf8_lossy(&ack_buf)
+                    ));
+                }
+            }
+        }
+        Err("SCP: No ACK from server".to_string())
     }
 
     fn command_exists(&self, cmd: &str) -> bool {
