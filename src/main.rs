@@ -4,7 +4,6 @@ use futures::future::join_all;
 use log::Level;
 use std::collections::HashMap;
 use std::io::Write;
-use std::process::exit;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;

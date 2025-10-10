@@ -116,6 +116,7 @@ pub struct NamedConfig {
 }
 
 #[derive(Clone, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
 pub struct YmlConfig {
     // list of servers
     pub servers: Option<Vec<ServerConfig>>,

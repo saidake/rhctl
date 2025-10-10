@@ -5,23 +5,52 @@ use crate::utils::log_utils::ask_user;
 use crate::utils::ssh_utils::execution_print;
 use crate::{log_debug, log_info};
 use async_recursion::async_recursion;
-use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::path::Path;
-
+use async_trait::async_trait;
 use dashmap::DashMap;
 use dashmap::DashSet;
-use ssh2::Channel;
-use ssh2::Session;
+use russh::ChannelId;
+use russh::client::{self, Handle, Msg};
+use russh::{Channel, ChannelMsg};
+use russh_keys::key::PublicKey;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::io;
-use std::io::{Error, ErrorKind};
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task;
+
+#[derive(Debug)]
+pub enum SshError {
+    Russh(russh::Error),
+    Io(io::Error),
+    Custom(String),
+}
+
+impl From<russh::Error> for SshError {
+    fn from(err: russh::Error) -> Self {
+        SshError::Russh(err)
+    }
+}
+
+impl From<io::Error> for SshError {
+    fn from(err: io::Error) -> Self {
+        SshError::Io(err)
+    }
+}
+
+impl std::fmt::Display for SshError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            SshError::Russh(e) => write!(f, "SSH error: {}", e),
+            SshError::Io(e) => write!(f, "IO error: {}", e),
+            SshError::Custom(e) => write!(f, "Custom error: {}", e),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ConnectOptions {
@@ -43,39 +72,66 @@ impl ConnectOptions {
         }
     }
 
-    async fn connect(&self) -> Result<Session, Error> {
+    async fn connect(&self) -> Result<Handle<Client>, SshError> {
         let addr = format!("{}:{}", self.host, self.port);
         let stream = tokio::time::timeout(self.connect_timeout, TcpStream::connect(&addr))
             .await
-            .map_err(|_| Error::new(ErrorKind::TimedOut, "Connection timed out"))?
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+            .map_err(|_| {
+                SshError::Io(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Connection timed out",
+                ))
+            })?
+            .map_err(|e| SshError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
 
-        let username = self.username.clone();
-        let password = self.password.clone();
+        let config = Arc::new(russh::client::Config::default());
+        let client = Client {
+            username: self.username.clone(),
+            password: self.password.clone(),
+        };
+        let mut session = russh::client::connect_stream(config, stream, client).await?;
 
-        let sess = task::spawn_blocking(move || {
-            let mut sess = Session::new().map_err(|e| Error::new(ErrorKind::Other, e))?;
-            sess.set_tcp_stream(stream);
-            sess.handshake()
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            sess.userauth_password(&username, &password)
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            Ok::<Session, Error>(sess)
-        })
-        .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))??;
+        let auth_result = session
+            .authenticate_password(self.username.clone(), self.password.clone())
+            .await
+            .map_err(SshError::Russh)?;
 
-        Ok(sess)
+        if !auth_result {
+            return Err(SshError::Io(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Authentication failed",
+            )));
+        }
+
+        Ok(session)
+    }
+}
+
+#[derive(Clone)]
+struct Client {
+    username: String,
+    password: String,
+}
+
+#[async_trait]
+impl russh::client::Handler for Client {
+    type Error = SshError;
+
+    async fn check_server_key(
+        &mut self,
+        server_public_key: &PublicKey,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct PoolOptions {
-    pub max_connections: u32, // max sessions per server
+    pub max_connections: u32,
     pub min_connections: u32,
     pub acquire_timeout: Duration,
-    pub idle_timeout: Option<Duration>, // session idle timeout
-    pub max_channel_per_session: u32,   // max concurrent channel per session
+    pub idle_timeout: Option<Duration>,
+    pub max_channel_per_session: u32,
 }
 
 impl PoolOptions {
@@ -84,7 +140,7 @@ impl PoolOptions {
             max_connections: 10,
             min_connections: 0,
             acquire_timeout: Duration::from_secs(30),
-            idle_timeout: Some(Duration::from_secs(600)), // 10min default
+            idle_timeout: Some(Duration::from_secs(600)),
             max_channel_per_session: 5,
         }
     }
@@ -92,7 +148,7 @@ impl PoolOptions {
 
 #[derive(Clone)]
 struct Live {
-    raw: Session,
+    raw: Arc<Handle<Client>>,
     created_at: Instant,
 }
 
@@ -102,20 +158,14 @@ struct Idle {
     idle_since: Instant,
 }
 
-/// Wrapper for a channel that automatically releases resources when dropped
 pub struct ChannelGuard {
-    pub channel: Channel,
-    _permit: OwnedSemaphorePermit, // RAII for channel slot
+    pub channel: russh::Channel<Msg>,
+    _permit: OwnedSemaphorePermit,
 }
 
-impl<'a> Drop for ChannelGuard {
+impl Drop for ChannelGuard {
     fn drop(&mut self) {
-        // Try closing channel gracefully
-        let _ = self.channel.send_eof();
-        let _ = self.channel.wait_eof();
-        let _ = self.channel.close();
-        let _ = self.channel.wait_close();
-        // OwnedSemaphorePermit is automatically released
+        // Channels are automatically closed when dropped
     }
 }
 
@@ -135,23 +185,20 @@ impl LiveSessionWrapper {
         }
     }
 
-    /// Synchronously acquire a channel, returns ChannelGuard
-    pub async fn get_channel_guard(&self) -> io::Result<ChannelGuard> {
+    pub async fn get_channel_guard(&self) -> Result<ChannelGuard, SshError> {
         let permit = self.semaphore.clone().acquire_owned().await.map_err(|_| {
-            io::Error::new(io::ErrorKind::Other, "Failed to acquire channel permit")
+            SshError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Failed to acquire channel permit",
+            ))
         })?;
 
-        // Create ssh channel in blocking thread
-        let channel = tokio::task::spawn_blocking({
-            let session = self.live.raw.clone();
-            move || {
-                session.channel_session().map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("Channel error: {}", e))
-                })
-            }
-        })
-        .await
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Join error: {}", e)))??;
+        let channel = self
+            .live
+            .raw
+            .channel_open_session()
+            .await
+            .map_err(|e| SshError::Russh(e))?;
 
         Ok(ChannelGuard {
             channel,
@@ -164,13 +211,12 @@ impl LiveSessionWrapper {
     }
 }
 
-// Manage multiple sessions for one host/user/port
 struct SessionPool {
     connect_options: ConnectOptions,
     active_sessions: Mutex<Vec<Arc<LiveSessionWrapper>>>,
     idle_sessions: Mutex<Vec<Idle>>,
     options: PoolOptions,
-    semaphore: Arc<Semaphore>, // total session limit
+    semaphore: Arc<Semaphore>,
 }
 
 impl SessionPool {
@@ -184,8 +230,7 @@ impl SessionPool {
         }
     }
 
-    pub async fn get_session(&self) -> Result<Arc<LiveSessionWrapper>, Error> {
-        // First, try reuse idle sessions
+    pub async fn get_session(&self) -> Result<Arc<LiveSessionWrapper>, SshError> {
         {
             let mut idle_guard = self.idle_sessions.lock().unwrap();
             if let Some(idle) = idle_guard.pop() {
@@ -199,7 +244,6 @@ impl SessionPool {
             }
         }
 
-        // Then, try reuse active sessions with free channel
         {
             let active_guard = self.active_sessions.lock().unwrap();
             for s in active_guard.iter() {
@@ -209,19 +253,23 @@ impl SessionPool {
             }
         }
 
-        // No available session, create new if under limit
         let _permit = tokio::time::timeout(
             self.options.acquire_timeout,
             self.semaphore.clone().acquire_owned(),
         )
         .await
-        .map_err(|_| Error::new(ErrorKind::TimedOut, "Session acquire timed out"))?
-        .map_err(|_| Error::new(ErrorKind::Other, "Server pool closed"))?;
+        .map_err(|_| {
+            SshError::Io(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Session acquire timed out",
+            ))
+        })?
+        .map_err(|_| SshError::Io(io::Error::new(io::ErrorKind::Other, "Server pool closed")))?;
 
         let conn_opts = self.connect_options.clone();
         let sess = conn_opts.connect().await?;
         let live = Live {
-            raw: sess,
+            raw: Arc::new(sess),
             created_at: Instant::now(),
         };
         let wrapper = Arc::new(LiveSessionWrapper::new(
@@ -242,9 +290,9 @@ impl SessionPool {
                     live: s.live.clone(),
                     idle_since: Instant::now(),
                 });
-                false // remove from active
+                false
             } else {
-                true // keep in active
+                true
             }
         });
     }
@@ -304,22 +352,16 @@ impl ServerPool {
         server_pool
     }
 
-    // Behavior functions
     pub async fn get_channel(
         &self,
         server_metadata: &Arc<ServerMetadata>,
     ) -> Result<ChannelGuard, String> {
-        // get the session pool
         let server_pool = self.get_session_pool(server_metadata).await;
-        let server_pool = Arc::clone(&server_pool); // clone Arc if needed
-
-        // get a live session
         let live_session_wrapper = server_pool
             .get_session()
             .await
             .map_err(|e| format!("Get session error:\n\t{}", e))?;
 
-        // get channel guard
         let guard = live_session_wrapper
             .get_channel_guard()
             .await
@@ -328,7 +370,6 @@ impl ServerPool {
         Ok(guard)
     }
 
-    // Start background idle cleanup thread
     pub fn start_idle_cleanup(self: Arc<Self>, interval: Duration) {
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval);
@@ -348,27 +389,28 @@ impl ServerPool {
         self.exec(server_metadata, &format!("echo {}", path), use_sudo)
             .await
     }
-    /// Check if a remote path REMOTE_TEMP_SBXCTL_FOLDER exists, ask user for overwrite if needed,
-    /// and delete it if confirmed.
-    /// Returns Ok(true) if deleted, Ok(false) if skipped, Err(...) on error.
+
     pub async fn check_global_remote_temp_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,
         use_sudo: bool,
         silent: bool,
     ) -> Result<(), String> {
-        // Only non-root sudo users need to handle the global temp folder
         if use_sudo && server_metadata.user != "root" {
             self.pending_clean_servers.insert(server_metadata.clone());
             let exists = self
                 .file_or_dir_exists(server_metadata, REMOTE_TEMP_SBXCTL_FOLDER, use_sudo)
                 .await?;
-            // println!("exists: {}",exists);
             if exists {
-                ask_user(format!(
+                ask_user(
+                    format!(
                         "Remote path '{}' already exists. Transfering will DELETE it and use it as a temp folder. Continue?",
                         REMOTE_TEMP_SBXCTL_FOLDER
-                    ).as_str(),silent).await?;
+                    )
+                    .as_str(),
+                    silent,
+                )
+                .await?;
 
                 self.exec(
                     server_metadata,
@@ -376,12 +418,6 @@ impl ServerPool {
                     use_sudo,
                 )
                 .await?;
-                // .map_err(|e| {
-                //     format!(
-                //         "Failed to remove existing remote '{}'. \n\t{}",
-                //         REMOTE_TEMP_SBXCTL_FOLDER, e
-                //     )
-                // })?;
             }
         }
         Ok(())
@@ -394,7 +430,6 @@ impl ServerPool {
         Ok(())
     }
 
-    /// Check if file or directory exists (-e).
     pub async fn file_or_dir_exists(
         &self,
         server_metadata: &Arc<ServerMetadata>,
@@ -404,7 +439,6 @@ impl ServerPool {
         self.check_path(server_metadata, path, "-e", use_sudo).await
     }
 
-    /// Check if file exists (-f).
     pub async fn file_exists(
         &self,
         server_metadata: &Arc<ServerMetadata>,
@@ -414,7 +448,6 @@ impl ServerPool {
         self.check_path(server_metadata, path, "-f", use_sudo).await
     }
 
-    /// Check if directory exists (-d).
     pub async fn dir_exists(
         &self,
         server_metadata: &Arc<ServerMetadata>,
@@ -424,7 +457,6 @@ impl ServerPool {
         self.check_path(server_metadata, path, "-d", use_sudo).await
     }
 
-    /// Check if a remote path exists with specific test flag (-e, -f, -d).
     pub async fn check_path(
         &self,
         server_metadata: &Arc<ServerMetadata>,
@@ -435,11 +467,6 @@ impl ServerPool {
         log_debug!("Checking if '{}' exists with flag '{}'", path, flag);
 
         let full_cmd = format!("sh -c 'test {} {}'", flag, path);
-        // println!(
-        //     "path: {}, full_cmd: {}, use_sudo: {}",
-        //     path, full_cmd, use_sudo
-        // );
-
         let result = self.exec(server_metadata, &full_cmd, use_sudo).await;
 
         match result {
@@ -448,12 +475,10 @@ impl ServerPool {
                 Ok(true)
             }
             Err(e) => {
-                // If test returns 1 → path does not exist
                 if e.contains("exit status 1") {
                     log_debug!("Remote path '{}' exists (flag '{}'): false", path, flag);
                     Ok(false)
                 } else {
-                    // Other errors (such as insufficient sudo permissions) return Err directly
                     Err(format!("Failed to check remote path '{}'. \n\t{}", path, e))
                 }
             }
@@ -464,14 +489,9 @@ impl ServerPool {
         &self,
         server_metadata: &Arc<ServerMetadata>,
     ) -> Result<(), String> {
-        // println!("delete_global_temp_dir");
         let remote_temp_sbxctl_folder_exists = self
             .file_or_dir_exists(server_metadata, REMOTE_TEMP_SBXCTL_FOLDER, true)
             .await?;
-        // println!(
-        //     "remote_temp_sbxctl_folder_exists: {}",
-        //     remote_temp_sbxctl_folder_exists
-        // );
         if remote_temp_sbxctl_folder_exists {
             self.exec(
                 server_metadata,
@@ -521,98 +541,102 @@ impl ServerPool {
             cmd.to_string()
         };
 
-        // println!("full_cmd: {}", full_cmd);
         if use_sudo {
             channel_guard
                 .channel
-                .request_pty("xterm", None, None)
+                .request_pty(true, "xterm", 0, 0, 0, 0, &[])
+                .await
                 .map_err(|e| format!("Failed to request pty for sudo. \n\t{}", e))?;
         }
 
         channel_guard
             .channel
-            .exec(&full_cmd)
+            .exec(true, full_cmd.as_bytes().to_vec())
+            .await
             .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
 
-        // Input password
         if use_sudo {
-            let mut prompt_buf = [0u8; 1024];
-            channel_guard
-                .channel
-                .read(&mut prompt_buf)
-                .map_err(|e| format!("Failed to read sudo prompt: {}", e))?;
+            let mut data = Vec::new();
+            while let Some(msg) = channel_guard.channel.wait().await {
+                match msg {
+                    russh::ChannelMsg::Data { data: channel_data } => {
+                        data.extend_from_slice(&channel_data);
+                        break;
+                    }
+                    _ => continue,
+                }
+            }
             let pw_with_newline = format!("{}\n", server_metadata.password);
             channel_guard
                 .channel
-                .write_all(pw_with_newline.as_bytes())
+                .data(pw_with_newline.as_bytes())
+                .await
                 .map_err(|e| format!("Failed to send sudo password. \n\t{}", e))?;
         }
 
-        // Read stdout
         let mut stdout_buf = String::new();
         let mut stderr_buf = String::new();
+        let mut first_line = true;
 
-        {
-            let stdout = channel_guard.channel.stream(0);
-            let stdout_reader = BufReader::new(stdout);
-            let mut first_line = true;
-            for line in stdout_reader.lines() {
-                let line = line.map_err(|e| format!("Failed to read stdout. \n\t{}", e))?;
+        let mut stdout_collected = Vec::new();
+        let mut stderr_collected = Vec::new();
+
+        while let Some(msg) = channel_guard.channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } => {
+                    stdout_collected.extend_from_slice(&data);
+                }
+                ChannelMsg::ExtendedData { data, ext } if ext == 1 => {
+                    stderr_collected.extend_from_slice(&data);
+                }
+                ChannelMsg::ExitStatus { exit_status } => {
+                    if exit_status != 0 {
+                        let stdout_str = String::from_utf8_lossy(&stdout_collected);
+                        let stderr_str = String::from_utf8_lossy(&stderr_collected);
+                        let mut msg =
+                            format!("Command '{}' failed with exit status {}.", cmd, exit_status);
+                        if !stdout_str.trim().is_empty() {
+                            msg.push_str(&format!("\n\tstdout:\n\t{}", stdout_str));
+                        }
+                        if !stderr_str.trim().is_empty() {
+                            msg.push_str(&format!("\n\tstderr:\n\t{}", stderr_str));
+                        }
+                        return Err(msg);
+                    }
+                    break;
+                }
+                _ => continue,
+            }
+        }
+
+        stdout_buf = String::from_utf8_lossy(&stdout_collected).to_string();
+        stderr_buf = String::from_utf8_lossy(&stderr_collected).to_string();
+
+        if print_log {
+            for line in stdout_buf.lines() {
                 if first_line && use_sudo && line.trim().is_empty() {
                     first_line = false;
                     continue;
                 }
-                // println!("line: ------------{}--------", line);
-                stdout_buf.push_str(&line);
-                stdout_buf.push('\n');
-                if print_log {
-                    execution_print(&line, false)?;
-                }
+                execution_print(line, false)?;
             }
-        }
-
-        // Read stderr
-        {
-            let stderr = channel_guard.channel.stderr();
-            let stderr_reader = BufReader::new(stderr);
-            for line in stderr_reader.lines() {
-                let line = line.map_err(|e| format!("Failed to read stderr. \n\t{}", e))?;
-                stderr_buf.push_str(&line);
-                stderr_buf.push('\n');
-                if print_log {
-                    execution_print(&line, true)?;
-                }
+            for line in stderr_buf.lines() {
+                execution_print(line, true)?;
             }
         }
 
         channel_guard
             .channel
-            .wait_close()
+            .close()
+            .await
             .map_err(|e| format!("Failed to close channel. \n\t{}", e))?;
-        let exit_status = channel_guard
-            .channel
-            .exit_status()
-            .map_err(|e| format!("Failed to get exit status. \n\t{}", e))?;
 
-        log_debug!("Command exit status: {}", exit_status);
-
-        if exit_status != 0 {
-            let mut msg = format!("Command '{}' failed with exit status {}.", cmd, exit_status);
-            if !stdout_buf.trim().is_empty() {
-                msg.push_str(&format!("\n\tstdout:\n\t{}", stdout_buf));
-            }
-            if !stderr_buf.trim().is_empty() {
-                msg.push_str(&format!("\n\tstderr:\n\t{}", stderr_buf));
-            }
-            return Err(msg);
-        }
         if stdout_buf.ends_with('\n') {
             stdout_buf.pop();
         }
-        // println!("stdout_buf: ------------{}--------", stdout_buf);
         Ok(stdout_buf)
     }
-    // This method does not create remote_dir; you should ensure the directory exists and is writable.
+
     pub async fn upload_file_or_dir_contents_into_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,
@@ -625,7 +649,6 @@ impl ServerPool {
         direct_write_if_sudo: bool,
         print_log: bool,
     ) -> Result<(), String> {
-        // Create a temp directory for the current user
         let mut remote_temp_dir: Option<String> = None;
         if use_sudo && server_metadata.user != "root" && !direct_write_if_sudo {
             remote_temp_dir = Some(
@@ -634,7 +657,6 @@ impl ServerPool {
             );
         }
 
-        // Create remote directory with appropriate permissions
         if local_file_or_dir.is_dir() {
             for entry in std::fs::read_dir(local_file_or_dir).map_err(|e| {
                 format!(
@@ -649,15 +671,10 @@ impl ServerPool {
                 let base_name = get_local_path_base_name(&sub_path)?;
                 let remote_sub = format!("{}/{}", remote_dir, base_name);
 
-                // Check if remote file or directory exists
                 self.ask_safe_to_transfer(server_metadata, &remote_sub, use_sudo, silent)
                     .await?;
-                // thread::sleep(Duration::from_secs(500000));
                 if use_sudo && server_metadata.user != "root" && !direct_write_if_sudo {
-                    // println!("sub_path: {}", sub_path.display());
-
                     let temp_dir = remote_temp_dir.as_ref().unwrap();
-                    // println!("do_upload_with_scp_recursive");
                     self.do_upload(
                         server_metadata,
                         use_sudo,
@@ -681,10 +698,6 @@ impl ServerPool {
             }
             if use_sudo && server_metadata.user != "root" && !direct_write_if_sudo {
                 let temp_dir = remote_temp_dir.as_ref().unwrap();
-                // Move the content in temp_dir to the remote_dir
-                // println!("move_and_delete_temp_dir - temp_dir: {}", temp_dir);
-                // println!("move_and_delete_temp_dir - remote_dir: {}", remote_dir);
-                // thread::sleep(Duration::from_secs(30));
                 self.move_and_delete_temp_dir(server_metadata, temp_dir, remote_dir, use_sudo)
                     .await?;
             }
@@ -705,7 +718,6 @@ impl ServerPool {
                 .await?;
             if use_sudo && server_metadata.user != "root" && !direct_write_if_sudo {
                 let temp_dir = remote_temp_dir.as_ref().unwrap();
-                // println!("do_upload_with_scp_recursive");
                 self.do_upload(
                     server_metadata,
                     use_sudo,
@@ -715,11 +727,6 @@ impl ServerPool {
                     new_file_name,
                 )
                 .await?;
-                // Move the content in temp_dir to the remote_dir
-                // println!("move_and_delete_temp_dir - temp_dir: {}", temp_dir);
-                // println!("move_and_delete_temp_dir - remote_dir: {}", remote_dir);
-                // thread::sleep(Duration::from_secs(30));
-
                 self.move_and_delete_temp_dir(server_metadata, temp_dir, remote_dir, use_sudo)
                     .await?;
             } else {
@@ -752,11 +759,9 @@ impl ServerPool {
         remote_dir: &str,
         use_sudo: bool,
     ) -> Result<(), String> {
-        // Move hidden files if any exist
         let hidden_exists = self
             .file_or_dir_exists(server_metadata, &format!("{}/.[!.]*", temp_dir), use_sudo)
             .await?;
-        // println!("hidden_exists: {}", hidden_exists);
         if hidden_exists {
             self.exec(
                 server_metadata,
@@ -766,11 +771,9 @@ impl ServerPool {
             .await?;
         }
 
-        // Move normal files if any exist
         let normal_exists = self
             .file_or_dir_exists(server_metadata, &format!("{0}/*", temp_dir), use_sudo)
             .await?;
-        // println!("normal_exists: {}", normal_exists);
         if normal_exists {
             self.exec(
                 server_metadata,
@@ -779,8 +782,7 @@ impl ServerPool {
             )
             .await?;
         }
-        // thread::sleep(Duration::from_secs(30));
-        // Remove the temporary directory
+
         self.exec(
             server_metadata,
             &format!("rm -rf \"{}\"", temp_dir),
@@ -791,8 +793,6 @@ impl ServerPool {
         Ok(())
     }
 
-    // Upload a local file or directory to a remote directory via SCP recursively.
-    // An error occurs if the file’s parent directory does not exist.
     #[async_recursion]
     async fn do_upload_with_scp_recursive(
         &self,
@@ -802,9 +802,6 @@ impl ServerPool {
         use_sudo: bool,
         new_base_name: Option<&str>,
     ) -> Result<(), String> {
-        // println!("local_file_or_dir: {}", local_file_or_dir.display());
-        // println!("remote_dir: {}", remote_dir);
-        // thread::sleep(Duration::from_secs(60));
         if !local_file_or_dir.exists() {
             return Err(format!(
                 "Local path '{}' does not exist",
@@ -815,21 +812,12 @@ impl ServerPool {
         let base_name = new_base_name
             .map(|s| s.to_string())
             .unwrap_or(get_local_path_base_name(&local_file_or_dir)?);
-        // Build the remote target path
         let remote_target = format!("{}/{}", remote_dir, base_name);
-        // println!(
-        //     "local_file_or_dir:{}, remote_target: {}",
-        //     local_file_or_dir.display(),
-        //     remote_target
-        // );
 
-        // Create remote directory if local path is a directory
         if local_file_or_dir.is_dir() {
-            // println!("local_file_or_dir.is_dir");
             self.create_remote_dir(server_metadata, remote_target.as_str(), use_sudo)
                 .await?;
-            // Recursively upload each entry
-            for entry in fs::read_dir(local_file_or_dir).map_err(|e| {
+            for entry in std::fs::read_dir(local_file_or_dir).map_err(|e| {
                 format!(
                     "Failed to read local directory '{}'. \n\t{}",
                     local_file_or_dir.display(),
@@ -840,7 +828,6 @@ impl ServerPool {
                     entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
                 let sub_path = entry.path();
 
-                // Recursive call
                 self.do_upload_with_scp_recursive(
                     server_metadata,
                     &sub_path,
@@ -851,8 +838,7 @@ impl ServerPool {
                 .await?;
             }
         } else {
-            // Local path is a file → upload
-            let mut file = fs::File::open(local_file_or_dir).map_err(|e| {
+            let mut file = std::fs::File::open(local_file_or_dir).map_err(|e| {
                 format!(
                     "Failed to open local file '{}'. \n\t{}",
                     local_file_or_dir.display(),
@@ -884,44 +870,80 @@ impl ServerPool {
                 )
             })?;
 
-            //                     self
-            // .use_channel(&server_metadata, move |channel| {
-
-            // }).await?;
             let mut channel_guard = self.get_channel(&server_metadata).await?;
+            let scp_command = format!("scp -t {}", remote_target);
+            channel_guard
+                .channel
+                .exec(true, scp_command.as_bytes().to_vec())
+                .await
+                .map_err(|e| {
+                    format!("Failed to initiate SCP for '{}'. \n\t{}", remote_target, e)
+                })?;
 
-            channel_guard.channel.write_all(&buffer).map_err(|e| {
+            let mut response = Vec::new();
+            while let Some(msg) = channel_guard.channel.wait().await {
+                match msg {
+                    ChannelMsg::Data { data } => {
+                        response.extend_from_slice(&data);
+                        if response.contains(&b'\0') {
+                            break;
+                        }
+                    }
+                    _ => continue,
+                }
+            }
+
+            let file_size = stat.len();
+            let mode = 0o644;
+            let header = format!("C{:o} {} {}\n", mode, file_size, base_name);
+
+            // Send SCP header
+            channel_guard
+                .channel
+                .data(header.as_bytes())
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to send SCP header for '{}'. \n\t{}",
+                        remote_target, e
+                    )
+                })?;
+            // Send SCP header
+            channel_guard.channel.data(header.as_bytes()).await.map_err(|e| {
                 format!(
-                    "Failed to write to SCP channel for '{}'. \n\t{}",
+                    "Failed to send SCP header for '{}'. \n\t{}",
                     remote_target, e
                 )
             })?;
-            channel_guard.channel.send_eof().map_err(|e| {
+
+            // Send buffer data (borrow as slice: &buffer or &buffer[..])
+            channel_guard.channel
+                .data(&buffer[..]) // or .data(&buffer)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to write to SCP channel for '{}'. \n\t{}",
+                        remote_target, e
+                    )
+                })?;
+
+            // Send SCP end signal (null byte)
+            channel_guard.channel.data(&[0u8][..]).await.map_err(|e| {
                 format!(
-                    "Failed to send EOF for SCP upload to '{}'. \n\t{}",
+                    "Failed to send SCP end signal for '{}'. \n\t{}",
                     remote_target, e
                 )
             })?;
-            channel_guard.channel.wait_eof().map_err(|e| {
-                format!(
-                    "Failed to wait for EOF for SCP upload to '{}'. \n\t{}",
-                    remote_target, e
-                )
-            })?;
-            channel_guard.channel.close().map_err(|e| {
+
+            // Close the channel
+            channel_guard.channel.close().await.map_err(|e| {
                 format!(
                     "Failed to close SCP channel for '{}'. \n\t{}",
                     remote_target, e
                 )
             })?;
-            channel_guard.channel.wait_close().map_err(|e| {
-                format!(
-                    "Failed to wait for SCP channel close for '{}'. \n\t{}",
-                    remote_target, e
-                )
-            })?;
         }
-        // thread::sleep(Duration::from_secs(1500000000));
+
         Ok(())
     }
 
@@ -1014,9 +1036,6 @@ impl ServerPool {
         Ok(())
     }
 
-    /// Check if a remote path exists (file or directory), ask user for overwrite if needed,
-    /// and delete it if confirmed.
-    /// Returns Ok(true) if deleted, Ok(false) if skipped, Err(...) on error.
     pub async fn ask_safe_to_transfer(
         &self,
         server_metadata: &Arc<ServerMetadata>,
@@ -1024,20 +1043,14 @@ impl ServerPool {
         use_sudo: bool,
         silent: bool,
     ) -> Result<(), String> {
-        // Check if remote path is a file or directory
         let is_file = self
             .file_exists(server_metadata, remote_path, use_sudo)
             .await?;
         let is_dir = self
             .dir_exists(server_metadata, remote_path, use_sudo)
             .await?;
-        // println!(
-        //     "is_file: {}, is_dir: {}, remote_path: {}",
-        //     is_file, is_dir, remote_path
-        // );
 
         if is_file || is_dir {
-            // Build prompt message
             let prompt = if is_file {
                 format!(
                     "Remote file '{}' already exists. Overwriting will DELETE it. Continue?",
@@ -1050,9 +1063,7 @@ impl ServerPool {
                 )
             };
 
-            // Ask user unless in silent mode
             ask_user(&prompt, silent).await?;
-            // Execute deletion
             self.exec(
                 server_metadata,
                 &format!("rm -rf \"{}\"", remote_path),
@@ -1067,11 +1078,10 @@ impl ServerPool {
                     e
                 )
             })?;
-            // println!("delete remote_path: {}", remote_path);
-            return Ok(()); // Deleted successfully
+            return Ok(());
         }
 
-        Ok(()) // Path does not exist
+        Ok(())
     }
 
     pub async fn validate_remote_dir(
@@ -1109,8 +1119,6 @@ impl ServerPool {
         Ok(())
     }
 
-    // Creates a remote directory if it doesn't exist.
-    // If the directory already exists, no error occurs.
     pub async fn create_remote_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,

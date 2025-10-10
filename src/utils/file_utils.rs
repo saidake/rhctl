@@ -1,6 +1,6 @@
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
 use crate::domain::yml_config::YmlConfig;
-use crate::{ log_local};
+use crate::log_local;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
@@ -15,6 +15,7 @@ pub fn load_yaml_config(path: &str) -> Result<YmlConfig, String> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)
         .map_err(|e| format!("Failed to read config file {}. \n\t{}", path, e))?;
+    // println!("contents: {:?}", contents);
     serde_yaml::from_str(&contents)
         .map_err(|e| format!("Failed to parse YAML config {}. \n\t{}", path, e))
 }
@@ -88,6 +89,7 @@ pub fn load_properties(
     mappings: &mut HashMap<String, String>,
     vars: &HashMap<String, String>,
 ) -> Result<(), String> {
+    // println!("vars: {:?}", vars);
     let file = substitute_vars(file, vars)?;
     let f = File::open(&file).map_err(|e| format!("Error opening file '{}'. \n\t{}", file, e))?;
     for (line_num, line) in BufReader::new(f).lines().enumerate() {
@@ -169,5 +171,5 @@ pub fn substitute_vars(input_path: &str, vars: &HashMap<String, String>) -> Resu
         }
     }
 
-    Ok(result) // 返回 String
+    Ok(result)
 }

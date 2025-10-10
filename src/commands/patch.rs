@@ -73,7 +73,7 @@ pub async fn run(
         resolved_upload
     );
     let (basename, parent) = split_unix_path(&resolved_upload)?;
-    // println!("parent: {}",parent);
+    // println!("basename: {}, parent: {}",basename, parent);
     global_server_pool
         .validate_remote_dir(server_metadata,&parent, config.use_sudo)
         .await?;

@@ -14,7 +14,6 @@ use std::io::stdout;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{io::Write, process::exit};
-use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
@@ -68,13 +67,6 @@ macro_rules! log_debug {
 
 #[macro_export]
 macro_rules! log_remote {
-    // ($($arg:tt)*) => {{
-    //     let msg = format!($($arg)*);
-    //     let label = format!("{:<6}", "REMOTE");
-    //     let label_colored = ansi_term::Colour::Purple.paint(&label).to_string();
-    //     $crate::utils::log_utils::log_with_lock(&label_colored, &msg);
-    //     // println!("[{}] {}", ansi_term::Colour::Purple.paint(&label), msg);
-    // }};
     ($($arg:tt)*) => {
         $crate::utils::log_utils::log_with_lock("REMOTE", &format!($($arg)*));
     };
@@ -93,38 +85,6 @@ macro_rules! log_ask {
         $crate::utils::log_utils::log_with_lock("ASK", &format!($($arg)*));
     };
 }
-
-// /// Ask user with a prompt, return true if input is 'y' or 'Y'
-// /// User must press Enter
-// pub fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
-//     if silent {
-//         return Ok(());
-//     }
-
-//     log_ask!("{} [y/N]: ", prompt);
-//     std::io::stdout().flush().unwrap();
-
-//     let mut input = String::new();
-//     std::io::stdin().read_line(&mut input).unwrap();
-
-//     if input.trim().eq_ignore_ascii_case("y") {
-//         Ok(())
-//     } else {
-//         Err(USER_ABORTED_MESSAGE.to_string())
-//     }
-
-//     // // log
-//     // log_ask!("{} [y/N]: ", prompt);
-//     // io::stdout().flush().unwrap();
-
-//     // let mut input = String::new();
-//     // io::stdin().read_line(&mut input).unwrap();
-
-//     // if input.trim().to_lowercase() != "y" {
-//     //     return Err(USER_ABORTED_MESSAGE.to_string());
-//     // }
-//     // Ok(())
-// }
 
 /// Ask user with a prompt, return true if input is 'y' or 'Y'
 /// User must press Enter
@@ -150,11 +110,13 @@ pub async fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
             if event::poll(std::time::Duration::from_millis(500)).unwrap() {
                 if let Event::Key(KeyEvent { code, .. }) = event::read().unwrap() {
                     match code {
-                        KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        KeyCode::Char(c @ 'y') | KeyCode::Char(c @ 'Y') => {
+                            print!("{}", c);
                             result = Ok(());
                             break;
                         }
-                        KeyCode::Char('n') | KeyCode::Char('N') => {
+                        KeyCode::Char(c @ 'n') | KeyCode::Char(c @ 'N') => {
+                            print!("{}", c);
                             result = Err(USER_ABORTED_MESSAGE.to_string());
                             break;
                         }
@@ -213,7 +175,7 @@ pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
     let (tx, mut rx) = mpsc::channel::<LogEntry>(100);
     *LOG_SENDER.lock().await = Some(tx.clone());
 
-    let handle =tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         // let mut last_ask: Option<LogEntry> = None;
         let mut stdout = stdout();
         let mut last_ask: Option<LogEntry> = None;
@@ -268,7 +230,13 @@ pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
                 // println!("ask 1");
                 if let Some(ref ask) = last_ask {
                     // println!("ask: {}", ask.message);
-                    execute!(stdout, cursor::MoveToColumn(0)).unwrap();
+                    // execute!(stdout, cursor::MoveToColumn(0)).unwrap();
+                    execute!(
+                        stdout,
+                        cursor::MoveToColumn(0),
+                        Clear(ClearType::CurrentLine)
+                    )
+                    .unwrap();
                     print!(
                         "[{}] {}",
                         ansi_term::Colour::Cyan
@@ -285,7 +253,6 @@ pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
 
     handle
 }
-
 
 pub async fn flush_logs_and_exit(logger_handle: tokio::task::JoinHandle<()>) -> ! {
     let tx = {

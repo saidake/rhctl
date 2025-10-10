@@ -21,13 +21,11 @@ mod domain;
 mod handlers;
 mod utils;
 
-use crate::{common::ssh::ServerHandle, utils::log_utils::init_logger};
-use crate::common::ssh_pool::{PoolOptions, ServerPool};
+use crate::{common::ssh_pool::{PoolOptions, ServerPool}, utils::log_utils::init_logger};
 use crate::handlers::command_handler::{
     parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
     parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
 };
-use crate::handlers::validation_handler::validate_cli_args;
 use crate::utils::file_utils::load_properties;
 use crate::utils::file_utils::load_yaml_config;
 use crate::utils::log_utils::{ask_user, ask_user_and_abort};
@@ -252,5 +250,20 @@ async fn main() {
         log_info!("test3");
     });
 
-    let _ = tokio::join!(t1, t2, t22, t3, t4);
+      let t5 = tokio::spawn(async {
+        sleep(Duration::from_millis(3000)).await;
+        log_info!("test4");
+    });
+
+      let t6 = tokio::spawn(async {
+        sleep(Duration::from_millis(6000)).await;
+        log_info!("test5");
+    });
+
+      let t7 = tokio::spawn(async {
+        sleep(Duration::from_millis(10000)).await;
+        log_info!("test6");
+    });
+
+    let _ = tokio::join!(t1, t2, t22, t3, t4, t5, t6, t7);
 }
