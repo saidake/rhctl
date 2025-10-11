@@ -1,3 +1,17 @@
+# Common config (Optional, applies for all servers)
+common:
+  server:
+    connect_timeout: 60s  
+    max_channels_per_session: 200
+    max_sessions_per_server: 2000
+    session_acquire_timeout: 30s
+    max_session_lifetime: 10m
+
+var-map:
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/sbxctl/AAA/assets"
+group-map:
+  dev: ["server1"]
+  uat: ["server1"]
 
 servers:
   - name: "server1"
@@ -5,19 +19,7 @@ servers:
     user: "test99"
     ssh-port: 22
     password: "testpwd"
-    connect_timeout: 60s  
-  # - name: "server2"
-  #   host: "192.168.75.128"
-  #   user: "test99"
-  #   ssh-port: 22
-  #   password: "testpwd"
-  #   connect_timeout: 30s  
-var-map:
-  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/sbxctl/AAA/assets"
-
-group-map:
-  dev: ["server1"]
-  uat: ["server1"]
+    connect_timeout: 60s  # You can overwrite common config in this command.
 
 configs:   
   - name: "dev-deploy"   
@@ -30,7 +32,7 @@ configs:
     upload:
       - properties-file: "AAA/config/path-mapping.properties"
 
-        # You can specify the current config for some servers or groups.
+        # Specify servers or groups.
         target-servers: ["server1"] 
         # target-groups: ["dev"]
         
@@ -45,12 +47,10 @@ configs:
         remote-path: "~/examples/example-patch-remote.txt"
         remote-backup: "/tmp/example-patch-remote.txt.bak"
         target-servers: ["server1"]  
-        # target-groups: ["dev"]
 
     execute:
       - remote-path: "~"
         scripts: 
           - "AAA/assets/example-bash.sh"
         target-servers: ["server1"]  
-        # target-groups: ["dev"]
 

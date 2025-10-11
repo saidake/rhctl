@@ -6,9 +6,7 @@ use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{
     ExecuteCmdConfig, PatchCmdConfig, ServerMetadata, UploadCmdConfig,
 };
-use crate::domain::yml_config::{
-    NamedConfig, ServerConfig, TargetConfig, YmlConfig,
-};
+use crate::domain::yml_config::{NamedConfig, ServerConfig, TargetConfig, YmlConfig};
 use crate::log_error;
 use crate::utils::file_utils::substitute_vars;
 use crate::utils::log_utils::prompt_password_or_exit;
@@ -19,15 +17,21 @@ pub fn parse_patch_config_from_cmd(
     user: String,
     ssh_port: Option<u16>,
     password: Option<String>,
-    connect_timeout: Option<Duration>,
-    use_sudo: bool,
-    use_rsync: bool,
-    silent: bool,
+
     recover: bool,
     local_path: String,
     remote_upload: String,
     remote_path: String,
     remote_backup: String,
+
+    use_sudo: bool,
+    use_rsync: bool,
+    silent: bool,
+    connect_timeout: Option<Duration>,
+    max_channels_per_session: Option<usize>,
+    max_sessions_per_server: Option<usize>,
+    session_acquire_timeout: Option<Duration>,
+    max_session_lifetime: Option<Duration>,
     cli_vars: &HashMap<String, String>,
 ) -> PatchCmdConfig {
     let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
@@ -38,7 +42,12 @@ pub fn parse_patch_config_from_cmd(
             ssh_port: ssh_port.unwrap_or(22),
             password: password.unwrap_or_else(|| prompt_password_or_exit()),
             server_key,
+
             connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
+            max_channels_per_session: max_channels_per_session.unwrap_or(200),
+            max_sessions_per_server: max_sessions_per_server.unwrap_or(200),
+            session_acquire_timeout: session_acquire_timeout.unwrap_or(Duration::from_secs(30)),
+            max_session_lifetime: max_session_lifetime.unwrap_or(Duration::from_secs(600)),
         },
         use_sudo,
         use_rsync,
@@ -69,12 +78,17 @@ pub fn parse_execute_config_from_cmd(
     user: String,
     ssh_port: Option<u16>,
     password: Option<String>,
-    connect_timeout: Option<Duration>,
+    script: String,
+    remote_path: Option<String>,
+
     use_sudo: bool,
     use_rsync: bool,
     silent: bool,
-    script: String,
-    remote_path: Option<String>,
+    connect_timeout: Option<Duration>,
+    max_channels_per_session: Option<usize>,
+    max_sessions_per_server: Option<usize>,
+    session_acquire_timeout: Option<Duration>,
+    max_session_lifetime: Option<Duration>,
     cli_vars: &HashMap<String, String>,
 ) -> ExecuteCmdConfig {
     let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
@@ -85,7 +99,12 @@ pub fn parse_execute_config_from_cmd(
             ssh_port: ssh_port.unwrap_or(22),
             password: password.unwrap_or_else(|| prompt_password_or_exit()),
             server_key,
+
             connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
+            max_channels_per_session: max_channels_per_session.unwrap_or(200),
+            max_sessions_per_server: max_sessions_per_server.unwrap_or(200),
+            session_acquire_timeout: session_acquire_timeout.unwrap_or(Duration::from_secs(30)),
+            max_session_lifetime: max_session_lifetime.unwrap_or(Duration::from_secs(600)),
         },
         use_sudo,
         use_rsync,
@@ -108,11 +127,20 @@ pub fn parse_upload_config_from_cmd(
     user: String,
     ssh_port: Option<u16>,
     password: Option<String>,
-    connect_timeout: Option<Duration>,
+    // connect_timeout: Option<Duration>,
+    // use_sudo: bool,
+    // use_rsync: bool,
+    // silent: bool,
+    properties_file: String,
+
     use_sudo: bool,
     use_rsync: bool,
     silent: bool,
-    properties_file: String,
+    connect_timeout: Option<Duration>,
+    max_channels_per_session: Option<usize>,
+    max_sessions_per_server: Option<usize>,
+    session_acquire_timeout: Option<Duration>,
+    max_session_lifetime: Option<Duration>,
     cli_vars: &HashMap<String, String>,
 ) -> UploadCmdConfig {
     let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
@@ -123,7 +151,12 @@ pub fn parse_upload_config_from_cmd(
             ssh_port: ssh_port.unwrap_or(22),
             password: password.unwrap_or_else(|| prompt_password_or_exit()),
             server_key,
+
             connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
+            max_channels_per_session: max_channels_per_session.unwrap_or(200),
+            max_sessions_per_server: max_sessions_per_server.unwrap_or(200),
+            session_acquire_timeout: session_acquire_timeout.unwrap_or(Duration::from_secs(30)),
+            max_session_lifetime: max_session_lifetime.unwrap_or(Duration::from_secs(600)),
         },
         use_sudo,
         use_rsync,
@@ -142,7 +175,7 @@ pub fn parse_upload_configs(
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
     let var_map = &yml_config.var_map;
-
+    let common = &yml_config.common;
     for upload in &named_config.upload {
         for server in &servers {
             configs.push((
@@ -160,7 +193,26 @@ pub fn parse_upload_configs(
                             server.ssh_port.unwrap_or(22),
                             &server.user,
                         ),
-                        connect_timeout: server.connect_timeout.unwrap_or(Duration::from_secs(60)),
+                        connect_timeout: server
+                            .connect_timeout
+                            .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
+                            .unwrap_or(Duration::from_secs(60)),
+                        max_channels_per_session: server
+                            .max_channels_per_session
+                            .or_else(|| common.as_ref()?.server.as_ref()?.max_channels_per_session)
+                            .unwrap_or(200),
+                        max_sessions_per_server: server
+                            .max_sessions_per_server
+                            .or_else(|| common.as_ref()?.server.as_ref()?.max_sessions_per_server)
+                            .unwrap_or(200),
+                        session_acquire_timeout: server
+                            .session_acquire_timeout
+                            .or_else(|| common.as_ref()?.server.as_ref()?.session_acquire_timeout)
+                            .unwrap_or(Duration::from_secs(30)),
+                        max_session_lifetime: server
+                            .max_session_lifetime
+                            .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
+                            .unwrap_or(Duration::from_secs(600)),
                     },
 
                     use_sudo: upload.use_sudo.or(named_config.use_sudo).unwrap_or(false),
@@ -186,6 +238,7 @@ pub fn parse_execute_configs(
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
     let var_map = &yml_config.var_map;
+    let common = &yml_config.common;
 
     for execute in &named_config.execute {
         for script in &execute.scripts {
@@ -207,7 +260,30 @@ pub fn parse_execute_configs(
                             ),
                             connect_timeout: server
                                 .connect_timeout
+                                .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
                                 .unwrap_or(Duration::from_secs(60)),
+                            max_channels_per_session: server
+                                .max_channels_per_session
+                                .or_else(|| {
+                                    common.as_ref()?.server.as_ref()?.max_channels_per_session
+                                })
+                                .unwrap_or(200),
+                            max_sessions_per_server: server
+                                .max_sessions_per_server
+                                .or_else(|| {
+                                    common.as_ref()?.server.as_ref()?.max_sessions_per_server
+                                })
+                                .unwrap_or(200),
+                            session_acquire_timeout: server
+                                .session_acquire_timeout
+                                .or_else(|| {
+                                    common.as_ref()?.server.as_ref()?.session_acquire_timeout
+                                })
+                                .unwrap_or(Duration::from_secs(30)),
+                            max_session_lifetime: server
+                                .max_session_lifetime
+                                .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
+                                .unwrap_or(Duration::from_secs(600)),
                         },
 
                         use_sudo: execute.use_sudo.or(named_config.use_sudo).unwrap_or(false),
@@ -247,6 +323,7 @@ pub fn parse_patch_configs(
     let mut configs = Vec::new();
     let servers = resolve_servers(named_config, yml_config);
     let var_map = &yml_config.var_map;
+    let common = &yml_config.common;
 
     for patch in &named_config.patch {
         for server in &servers {
@@ -265,7 +342,26 @@ pub fn parse_patch_configs(
                             server.ssh_port.unwrap_or(22),
                             &server.user,
                         ),
-                        connect_timeout: server.connect_timeout.unwrap_or(Duration::from_secs(60)),
+                        connect_timeout: server
+                            .connect_timeout
+                            .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
+                            .unwrap_or(Duration::from_secs(60)),
+                        max_channels_per_session: server
+                            .max_channels_per_session
+                            .or_else(|| common.as_ref()?.server.as_ref()?.max_channels_per_session)
+                            .unwrap_or(200),
+                        max_sessions_per_server: server
+                            .max_sessions_per_server
+                            .or_else(|| common.as_ref()?.server.as_ref()?.max_sessions_per_server)
+                            .unwrap_or(200),
+                        session_acquire_timeout: server
+                            .session_acquire_timeout
+                            .or_else(|| common.as_ref()?.server.as_ref()?.session_acquire_timeout)
+                            .unwrap_or(Duration::from_secs(30)),
+                        max_session_lifetime: server
+                            .max_session_lifetime
+                            .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
+                            .unwrap_or(Duration::from_secs(600)),
                     },
 
                     use_sudo: patch.use_sudo.or(named_config.use_sudo).unwrap_or(false),

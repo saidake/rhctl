@@ -60,5 +60,10 @@ pub struct ServerMetadata {
     pub user: String,
     pub ssh_port: u16,
     pub password: String,
+
     pub connect_timeout: Duration,
+    pub max_channels_per_session: usize,
+    pub max_sessions_per_server: usize,
+    pub session_acquire_timeout: Duration,
+    pub max_session_lifetime: Duration
 }

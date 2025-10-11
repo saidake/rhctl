@@ -42,8 +42,15 @@ pub struct ServerConfig {
     pub user: String,
     pub ssh_port: Option<u16>,
     pub password: Option<String>,
+
     #[serde(default, with = "humantime_serde")]
     pub connect_timeout: Option<Duration>, 
+    pub max_channels_per_session: Option<usize>,
+    pub max_sessions_per_server: Option<usize>,
+    #[serde(default, with = "humantime_serde")]
+    pub session_acquire_timeout: Option<Duration>, 
+    #[serde(default, with = "humantime_serde")]
+    pub max_session_lifetime: Option<Duration>,  
 }
 
 #[derive(Clone, Deserialize, Default)]
@@ -115,12 +122,44 @@ pub struct NamedConfig {
     pub execute: Vec<ExecuteConfig>,
 }
 
+
+#[derive(Clone, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub struct CommonConfig {
+    // #[serde(default)]
+    // pub global: Option<GlobalConfig>,
+
+    #[serde(default)]
+    pub server: Option<ServerConfigLimits>,
+}
+
+#[derive(Clone, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub struct GlobalConfig {
+    pub max_global_channels: Option<usize>,
+}
+
+#[derive(Clone, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub struct ServerConfigLimits {
+    #[serde(default, with = "humantime_serde")]
+    pub connect_timeout: Option<Duration>, 
+    pub max_channels_per_session: Option<usize>,
+    pub max_sessions_per_server: Option<usize>,
+    #[serde(default, with = "humantime_serde")]
+    pub session_acquire_timeout: Option<Duration>, 
+    #[serde(default, with = "humantime_serde")]
+    pub max_session_lifetime: Option<Duration>,  
+}
+
+
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct YmlConfig {
     // list of servers
+    pub common: Option<CommonConfig>,
+    
     pub servers: Option<Vec<ServerConfig>>,
-
     // group name -> server names
     pub group_map: Option<HashMap<String, Vec<String>>>,
 

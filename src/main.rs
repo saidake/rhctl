@@ -14,7 +14,7 @@ mod domain;
 mod handlers;
 mod utils;
 
-use crate::common::ssh_pool::{PoolOptions, ServerPool};
+use crate::common::ssh_pool::{ServerOptions, ServerPool};
 use crate::handlers::command_handler::{
     parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
     parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
@@ -67,9 +67,10 @@ enum Commands {
         #[arg(long, help = "Remote password")]
         password: Option<String>,
 
-        #[arg(long)]
-        #[arg(value_parser = parse_duration)]
-        connect_timeout: Option<Duration>,
+        #[arg(long, help = "Path to properties file")]
+        properties_file: String,
+
+
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
@@ -88,8 +89,25 @@ enum Commands {
         )]
         silent: bool,
 
-        #[arg(long, help = "Path to properties file")]
-        properties_file: String,
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        connect_timeout: Option<Duration>,
+
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_channels_per_session: Option<usize>,
+
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_sessions_per_server: Option<usize>,
+
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        session_acquire_timeout: Option<Duration>,
+
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_session_lifetime: Option<Duration>,
     },
 
     #[command(about = "Execute a local bash script remotely")]
@@ -106,9 +124,12 @@ enum Commands {
         #[arg(long, help = "Remote password")]
         password: Option<String>,
 
-        #[arg(long)]
-        #[arg(value_parser = parse_duration)]
-        connect_timeout: Option<Duration>,
+        #[arg(long, help = "Local bash script file")]
+        script: String,
+
+        #[arg(long, default_value = "~", help = "Remote working path")]
+        remote_path: Option<String>,
+
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
@@ -127,11 +148,25 @@ enum Commands {
         )]
         silent: bool,
 
-        #[arg(long, help = "Local bash script file")]
-        script: String,
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        connect_timeout: Option<Duration>,
 
-        #[arg(long, default_value = "~", help = "Remote working path")]
-        remote_path: Option<String>,
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_channels_per_session: Option<usize>,
+
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_sessions_per_server: Option<usize>,
+
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        session_acquire_timeout: Option<Duration>,
+
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_session_lifetime: Option<Duration>,
     },
 
     #[command(about = "Patch a remote file with a local patch")]
@@ -148,9 +183,21 @@ enum Commands {
         #[arg(long, help = "Remote password")]
         password: Option<String>,
 
-        #[arg(long)]
-        #[arg(value_parser = parse_duration)]
-        connect_timeout: Option<Duration>,
+        #[arg(long, help = "Local source file")]
+        local_path: String,
+
+        #[arg(long, help = "Remote upload path for patch")]
+        remote_upload: String,
+
+        #[arg(long, help = "Remote target file to patch")]
+        remote_path: String,
+
+        #[arg(long, help = "Remote backup file path")]
+        remote_backup: String,
+
+        #[arg(long, default_value = "false", help = "Recover from backup")]
+        recover: bool,
+
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
@@ -169,20 +216,27 @@ enum Commands {
         )]
         silent: bool,
 
-        #[arg(long, help = "Local source file")]
-        local_path: String,
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        connect_timeout: Option<Duration>,
 
-        #[arg(long, help = "Remote upload path for patch")]
-        remote_upload: String,
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_channels_per_session: Option<usize>,
 
-        #[arg(long, help = "Remote target file to patch")]
-        remote_path: String,
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_sessions_per_server: Option<usize>,
 
-        #[arg(long, help = "Remote backup file path")]
-        remote_backup: String,
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        session_acquire_timeout: Option<Duration>,
 
-        #[arg(long, default_value = "false", help = "Recover from backup")]
-        recover: bool,
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_session_lifetime: Option<Duration>,
+
+
     },
 
     #[command(about = "Run using YAML configuration file")]
@@ -246,13 +300,7 @@ async fn main() {
     // Thread handles for parallel execution
     let mut tasks: Vec<JoinHandle<()>> = Vec::new();
 
-    let options = PoolOptions {
-        max_connections: 10,
-        acquire_timeout: Duration::from_secs(30),
-        idle_timeout: Some(Duration::from_secs(600)), // 10min default
-        max_channel_per_session: 5,
-    };
-    let global_server_pool = Arc::new(ServerPool::new(options));
+    let global_server_pool = Arc::new(ServerPool::new());
     global_server_pool
         .clone()
         .start_idle_cleanup(Duration::from_secs(10));
@@ -264,11 +312,17 @@ async fn main() {
             ssh_port,
             user,
             password,
-            connect_timeout,
+
+            properties_file,
+
             use_sudo,
             use_rsync,
             silent,
-            properties_file,
+            connect_timeout,
+            max_channels_per_session,
+            max_sessions_per_server,
+            session_acquire_timeout,
+            max_session_lifetime,
             ..
         } => {
             let config = parse_upload_config_from_cmd(
@@ -276,11 +330,17 @@ async fn main() {
                 user,
                 ssh_port,
                 password,
-                connect_timeout,
+                properties_file,
+
                 use_sudo,
                 use_rsync,
                 silent,
-                properties_file,
+                connect_timeout,
+                max_channels_per_session,
+                max_sessions_per_server,
+                session_acquire_timeout,
+                max_session_lifetime,
+
                 &cli_vars,
             );
             let mut mappings = HashMap::new();
@@ -325,12 +385,17 @@ async fn main() {
             ssh_port,
             user,
             password,
-            connect_timeout,
+            script,
+            remote_path,
+
             use_sudo,
             use_rsync,
             silent,
-            script,
-            remote_path,
+            connect_timeout,
+            max_channels_per_session,
+            max_sessions_per_server,
+            session_acquire_timeout,
+            max_session_lifetime,
             ..
         } => {
             let config = parse_execute_config_from_cmd(
@@ -338,12 +403,17 @@ async fn main() {
                 user,
                 ssh_port,
                 password,
-                connect_timeout,
+                script,
+                remote_path,
+
                 use_sudo,
                 use_rsync,
                 silent,
-                script,
-                remote_path,
+                connect_timeout,
+                max_channels_per_session,
+                max_sessions_per_server,
+                session_acquire_timeout,
+                max_session_lifetime,
                 &cli_vars,
             );
             let server_metadata=Arc::new(config.server_metadata.clone());
@@ -374,15 +444,21 @@ async fn main() {
             ssh_port,
             user,
             password,
-            connect_timeout,
-            use_sudo,
-            use_rsync,
-            silent,
+
             local_path,
             remote_upload,
             remote_path,
             remote_backup,
             recover,
+            
+            use_sudo,
+            use_rsync,
+            silent,
+            connect_timeout,
+            max_channels_per_session,
+            max_sessions_per_server,
+            session_acquire_timeout,
+            max_session_lifetime,
             ..
         } => {
             let config = parse_patch_config_from_cmd(
@@ -390,15 +466,22 @@ async fn main() {
                 user,
                 ssh_port,
                 password,
-                connect_timeout,
-                use_sudo,
-                use_rsync,
-                silent,
+
                 recover,
                 local_path,
                 remote_upload,
                 remote_path,
                 remote_backup,
+                
+                use_sudo,
+                use_rsync,
+                silent,
+                connect_timeout,
+                max_channels_per_session,
+                max_sessions_per_server,
+                session_acquire_timeout,
+                max_session_lifetime,
+
                 &cli_vars,
             );
             let server_metadata=Arc::new(config.server_metadata.clone());

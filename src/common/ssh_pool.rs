@@ -54,7 +54,6 @@ impl std::fmt::Display for SshError {
     }
 }
 
-
 #[derive(Clone)]
 struct Client {
     username: String,
@@ -74,20 +73,20 @@ impl russh::client::Handler for Client {
 }
 
 #[derive(Clone, Debug)]
-pub struct PoolOptions {
-    pub max_connections: u32,
-    pub acquire_timeout: Duration,
-    pub idle_timeout: Option<Duration>,
-    pub max_channel_per_session: u32,
+pub struct ServerOptions {
+    pub session_acquire_timeout: Duration,
+    pub max_session_lifetime: Option<Duration>,
+    pub max_channels_per_session: u32,
+    pub max_sessions_per_server: u32,
 }
 
-impl PoolOptions {
+impl ServerOptions {
     pub fn new() -> Self {
         Self {
-            max_connections: 2000,
-            acquire_timeout: Duration::from_secs(30),
-            idle_timeout: Some(Duration::from_secs(600)),
-            max_channel_per_session: 5,
+            max_sessions_per_server: 2000,
+            session_acquire_timeout: Duration::from_secs(30),
+            max_session_lifetime: Some(Duration::from_secs(600)),
+            max_channels_per_session: 5,
         }
     }
 }
@@ -123,11 +122,11 @@ pub struct LiveSessionWrapper {
 }
 
 impl LiveSessionWrapper {
-    fn new(live: Live, max_channel: u32) -> Self {
+    fn new(live: Live, max_channels_per_session: usize) -> Self {
         Self {
             live,
-            channel_semaphore: Arc::new(Semaphore::new(max_channel as usize)),
-            max_permits: max_channel as usize,
+            channel_semaphore: Arc::new(Semaphore::new(max_channels_per_session as usize)),
+            max_permits: max_channels_per_session as usize,
         }
     }
 
@@ -166,31 +165,37 @@ struct SessionPool {
     server_metadata: Arc<ServerMetadata>,
     active_sessions: Mutex<Vec<Arc<LiveSessionWrapper>>>,
     idle_sessions: Mutex<Vec<Idle>>,
-    options: PoolOptions,
     session_semaphore: Arc<Semaphore>,
 }
 
 impl SessionPool {
-    fn new(server_metadata: &Arc<ServerMetadata>, options: PoolOptions) -> Self {
+    fn new(server_metadata: &Arc<ServerMetadata>) -> Self {
         Self {
             server_metadata: server_metadata.clone(),
             active_sessions: Mutex::new(vec![]),
             idle_sessions: Mutex::new(vec![]),
-            options: options.clone(),
-            session_semaphore: Arc::new(Semaphore::new(options.max_connections as usize)),
+            session_semaphore: Arc::new(Semaphore::new(
+                server_metadata.max_sessions_per_server as usize,
+            )),
         }
     }
     async fn connect(&self) -> Result<Handle<Client>, SshError> {
-        let addr = format!("{}:{}", self.server_metadata.host, self.server_metadata.ssh_port);
-        let stream = tokio::time::timeout(self.server_metadata.connect_timeout, TcpStream::connect(&addr))
-            .await
-            .map_err(|_| {
-                SshError::Io(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "Connection timed out",
-                ))
-            })?
-            .map_err(|e| SshError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
+        let addr = format!(
+            "{}:{}",
+            self.server_metadata.host, self.server_metadata.ssh_port
+        );
+        let stream = tokio::time::timeout(
+            self.server_metadata.connect_timeout,
+            TcpStream::connect(&addr),
+        )
+        .await
+        .map_err(|_| {
+            SshError::Io(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Connection timed out",
+            ))
+        })?
+        .map_err(|e| SshError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
 
         let config = Arc::new(russh::client::Config::default());
         let client = Client {
@@ -200,7 +205,10 @@ impl SessionPool {
         let mut session = russh::client::connect_stream(config, stream, client).await?;
 
         let auth_result = session
-            .authenticate_password(self.server_metadata.user.clone(), self.server_metadata.password.clone())
+            .authenticate_password(
+                self.server_metadata.user.clone(),
+                self.server_metadata.password.clone(),
+            )
             .await
             .map_err(SshError::Russh)?;
 
@@ -220,7 +228,7 @@ impl SessionPool {
             if let Some(idle) = idle_guard.pop() {
                 let wrapper = Arc::new(LiveSessionWrapper::new(
                     idle.live,
-                    self.options.max_channel_per_session,
+                    self.server_metadata.max_channels_per_session,
                 ));
                 let mut active_guard = self.active_sessions.lock().unwrap();
                 active_guard.push(wrapper.clone());
@@ -238,7 +246,7 @@ impl SessionPool {
         }
 
         let _permit = tokio::time::timeout(
-            self.options.acquire_timeout,
+            self.server_metadata.session_acquire_timeout,
             self.session_semaphore.clone().acquire_owned(),
         )
         .await
@@ -257,7 +265,7 @@ impl SessionPool {
         };
         let wrapper = Arc::new(LiveSessionWrapper::new(
             live,
-            self.options.max_channel_per_session,
+            self.server_metadata.max_channels_per_session,
         ));
         self.active_sessions.lock().unwrap().push(wrapper.clone());
         Ok(wrapper)
@@ -281,25 +289,21 @@ impl SessionPool {
     }
 
     fn cleanup_idle(&self) {
-        if let Some(timeout) = self.options.idle_timeout {
-            let mut idle_guard = self.idle_sessions.lock().unwrap();
-            idle_guard.retain(|s| s.idle_since.elapsed() <= timeout);
-        }
+        let mut idle_guard = self.idle_sessions.lock().unwrap();
+        idle_guard.retain(|s| s.idle_since.elapsed() <= self.server_metadata.max_session_lifetime);
     }
 }
 
 pub struct ServerPool {
     servers: DashMap<u64, Arc<SessionPool>>,
     pub pending_clean_servers: Arc<DashSet<Arc<ServerMetadata>>>,
-    options: PoolOptions,
 }
 
 impl ServerPool {
-    pub fn new(options: PoolOptions) -> Self {
+    pub fn new() -> Self {
         Self {
             servers: DashMap::new(),
             pending_clean_servers: Arc::new(DashSet::new()),
-            options,
         }
     }
 
@@ -322,7 +326,7 @@ impl ServerPool {
         if let Some(pool) = self.servers.get(&server_metadata.server_key) {
             return pool.clone();
         }
-        let server_pool = Arc::new(SessionPool::new(&server_metadata, self.options.clone()));
+        let server_pool = Arc::new(SessionPool::new(&server_metadata));
         self.servers
             .insert(server_metadata.server_key, server_pool.clone());
         server_pool
