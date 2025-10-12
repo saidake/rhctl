@@ -1,3 +1,4 @@
+use crate::domain::cmd_params::ServerMetadata;
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
 use crate::domain::yml_config::YmlConfig;
 use crate::log_local;
@@ -8,6 +9,7 @@ use std::io::Read;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 
 pub fn load_yaml_config(path: &str) -> Result<YmlConfig, String> {
     let mut file =
@@ -36,7 +38,11 @@ pub fn split_unix_path(path: &str) -> Result<(String, String), String> {
     }
 }
 
-pub fn log_local_file_info(local_path: &Path) -> Result<(), String> {
+pub fn log_local_file_info(
+    server_metadata: &Arc<ServerMetadata>,
+    task_name: &str,
+    local_path: &Path,
+) -> Result<(), String> {
     let ls_local = Command::new("ls")
         .arg("-al")
         .arg(local_path)
@@ -58,7 +64,7 @@ pub fn log_local_file_info(local_path: &Path) -> Result<(), String> {
 
     for line in String::from_utf8_lossy(&ls_local.stdout).lines() {
         // Replace `log_local` with your actual logging macro
-        log_local!("{}", line);
+        log_local!(server_metadata, task_name, "{}", line);
     }
 
     Ok(())

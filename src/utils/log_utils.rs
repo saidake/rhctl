@@ -1,4 +1,8 @@
-use crate::domain::constants::USER_ABORTED_MESSAGE;
+use crate::domain::cmd_params::ServerMetadata;
+use crate::domain::constants::{
+    LOG_ASK, LOG_DEBUG, LOG_ERROR, LOG_INFO, LOG_LEVEL_WIDTH, LOG_LOCAL, LOG_REMOTE,
+    LOG_TASK_NAME_WIDTH, LOG_WARN, USER_ABORTED_MESSAGE,
+};
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use tokio::task;
@@ -24,71 +28,153 @@ static LOG_SENDER: Lazy<Arc<Mutex<Option<mpsc::Sender<LogEntry>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 
 /// Core logging function with lock
-pub fn log_with_lock(level: &str, message: &str) {
+pub fn log_server_with_lock(
+    server_metadata: &Arc<ServerMetadata>,
+    task_name: &str,
+    level: &str,
+    message: &str,
+) {
     if let Some(tx) = &*LOG_SENDER.try_lock().unwrap() {
         let _ = tx.try_send(LogEntry {
+            user: Some(server_metadata.user.clone()),
+            host: Some(server_metadata.host.clone()),
+            task_name: Some(task_name.to_string()),
             level: level.to_string(),
             message: message.to_string(),
         });
     }
 }
 
-/// Macro for info log
+pub fn log_server_option_with_lock(
+    server_metadata: Option<&Arc<ServerMetadata>>,
+    task_name: Option<&str>,
+    level: &str,
+    message: &str,
+) {
+    if let Some(tx) = &*LOG_SENDER.try_lock().unwrap() {
+        match server_metadata {
+            Some(meta) => {
+                let _ = tx.try_send(LogEntry {
+                    user: Some(meta.user.clone()),
+                    host: Some(meta.host.clone()),
+                    task_name: task_name.map(|s| s.to_string()),
+                    level: level.to_string(),
+                    message: message.to_string(),
+                });
+            }
+            None => {
+                let _ = tx.try_send(LogEntry {
+                    user: None,
+                    host: None,
+                    task_name: task_name.map(|s| s.to_string()),
+                    level: level.to_string(),
+                    message: message.to_string(),
+                });
+            }
+        }
+    }
+}
+
+pub fn log_user_host_with_lock(
+    user: Option<&str>,
+    host: Option<&str>,
+    task_name: Option<&str>,
+    level: &str,
+    message: &str,
+) {
+    if let Some(tx) = &*LOG_SENDER.try_lock().unwrap() {
+        let _ = tx.try_send(LogEntry {
+            user: user.map(|s| s.to_string()),
+            host: host.map(|s| s.to_string()),
+            task_name: task_name.map(|s| s.to_string()),
+            level: level.to_string(),
+            message: message.to_string(),
+        });
+    }
+}
+
 #[macro_export]
 macro_rules! log_info {
-    ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_with_lock("INFO", &format!($($arg)*));
+    ($server_metadata:expr, $task_name:expr, $($arg:tt)*) => {
+        $crate::utils::log_utils::log_server_with_lock($server_metadata, $task_name, $crate::domain::constants::LOG_INFO, &format!($($arg)*));
     };
 }
 
 /// Macro for error log
 #[macro_export]
 macro_rules! log_error {
+    ($server_metadata:expr, $task_name:expr, $($arg:tt)*) => {
+        $crate::utils::log_utils::log_server_with_lock($server_metadata, $task_name, $crate::domain::constants::LOG_ERROR, &format!($($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! log_error_direct {
+    ($user:expr,$host:expr, $task_name:expr, $($arg:tt)*) => {
+        $crate::utils::log_utils::log_user_host_with_lock(Some($user), Some($host), Some($task_name), $crate::domain::constants::LOG_ERROR, &format!($($arg)*));
+    };
+}
+#[macro_export]
+macro_rules! log_error_root {
     ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_with_lock("ERROR", &format!($($arg)*));
+        $crate::utils::log_utils::log_user_host_with_lock(None, None, None, $crate::domain::constants::LOG_ERROR, &format!($($arg)*));
     };
 }
 
 /// Macro for warn log
 #[macro_export]
 macro_rules! log_warn {
-    ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_with_lock("WARN", &format!($($arg)*));
+    ($server_metadata:expr, $task_name:expr, $($arg:tt)*) => {
+        $crate::utils::log_utils::log_server_with_lock($server_metadata, $task_name, $crate::domain::constants::LOG_WARN, &format!($($arg)*));
     };
 }
 
 /// Macro for debug log
 #[macro_export]
 macro_rules! log_debug {
-    ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_with_lock("DEBUG", &format!($($arg)*));
+    ($server_metadata:expr, $task_name:expr, $($arg:tt)*) => {
+        $crate::utils::log_utils::log_server_with_lock($server_metadata, $task_name, $crate::domain::constants::LOG_DEBUG, &format!($($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! log_remote {
-    ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_with_lock("REMOTE", &format!($($arg)*));
+    ($server_metadata:expr, $task_name:expr, $($arg:tt)*) => {
+        $crate::utils::log_utils::log_server_with_lock($server_metadata, $task_name, $crate::domain::constants::LOG_REMOTE, &format!($($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! log_local {
-     ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_with_lock("LOCAL", &format!($($arg)*));
+    ($server_metadata:expr, $task_name:expr, $($arg:tt)*) => {
+        $crate::utils::log_utils::log_server_with_lock($server_metadata, $task_name, $crate::domain::constants::LOG_LOCAL, &format!($($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! log_ask {
-         ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_with_lock("ASK", &format!($($arg)*));
+    ($server_metadata:expr, $task_name:expr, $($arg:tt)*) => {
+        $crate::utils::log_utils::log_server_option_with_lock($server_metadata, $task_name, $crate::domain::constants::LOG_ASK, &format!($($arg)*));
     };
 }
 
 /// Ask user with a prompt, return true if input is 'y' or 'Y'
 /// User must press Enter
-pub async fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
+pub async fn ask_user(
+    server_metadata: &Arc<ServerMetadata>,
+    task_name: &str,
+    prompt: &str,
+    silent: bool,
+) -> Result<(), String> {
+    ask_user_option(Some(server_metadata), Some(task_name), prompt, silent).await
+}
+
+pub async fn ask_user_option(
+    server_metadata: Option<&Arc<ServerMetadata>>,
+    task_name: Option<&str>,
+    prompt: &str,
+    silent: bool,
+) -> Result<(), String> {
     if silent {
         return Ok(());
     }
@@ -96,7 +182,7 @@ pub async fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
     // Lock entire ASK sequence
     let _guard = ASK_LOCK.lock().await;
 
-    log_ask!("{} [y/N]: ", prompt);
+    log_ask!(server_metadata, task_name, "{} [y/N]: ", prompt);
     stdout().flush().unwrap();
 
     // Use a scope to keep _guard alive
@@ -150,20 +236,41 @@ pub async fn ask_user(prompt: &str, silent: bool) -> Result<(), String> {
     res
 }
 
-pub async fn ask_user_and_abort(prompt: &str, silent: bool) {
+pub async fn ask_user_and_abort(
+    server_metadata: &Arc<ServerMetadata>,
+    task_name: &str,
+    prompt: &str,
+    silent: bool,
+) {
     if silent {
         return;
     }
 
-    if let Err(_) = ask_user(prompt, false).await {
+    if let Err(_) = ask_user(server_metadata, task_name, prompt, false).await {
         exit(1);
     }
 }
-pub fn prompt_password_or_exit() -> String {
+
+pub async fn ask_user_and_abort_option(
+    server_metadata: Option<&Arc<ServerMetadata>>,
+    task_name: Option<&str>,
+    prompt: &str,
+    silent: bool,
+) {
+    if silent {
+        return;
+    }
+
+    if let Err(_) = ask_user_option(server_metadata, task_name, prompt, false).await {
+        exit(1);
+    }
+}
+
+pub fn prompt_password_or_exit(user: &str, host: &str, task_name: &str) -> String {
     match prompt_password("Enter SSH password: ") {
         Ok(pwd) if !pwd.is_empty() => pwd,
         _ => {
-            log_error!("Password is required.");
+            log_error_direct!(user, host, task_name,"Password is required.");
             std::process::exit(1);
         }
     }
@@ -171,6 +278,9 @@ pub fn prompt_password_or_exit() -> String {
 
 #[derive(Debug, Clone)]
 pub struct LogEntry {
+    pub host: Option<String>,
+    pub user: Option<String>,
+    pub task_name: Option<String>,
     pub level: String,
     pub message: String,
 }
@@ -186,7 +296,7 @@ pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
 
         while let Some(entry) = rx.recv().await {
             // println!("entry.level.trim()1: --{}--", entry.level.trim());
-            if entry.level.trim() != "ASK" && ASK_ACTIVE.load(Ordering::SeqCst) {
+            if entry.level.trim() != LOG_ASK && ASK_ACTIVE.load(Ordering::SeqCst) {
                 // println!("ASK_ACTIVE --------");
                 // execute!(stdout, cursor::MoveUp(1), cursor::MoveToColumn(0), Clear(ClearType::CurrentLine)).unwrap();
                 execute!(
@@ -198,42 +308,32 @@ pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
             }
 
             match entry.level.as_str() {
-                "INFO" => info!("{}", entry.message),
-                "ERROR" => error!("{}", entry.message),
-                "WARN" => warn!("{}", entry.message),
-                "DEBUG" => debug!("{}", entry.message),
-                "REMOTE" => println!(
-                    "[{}] {}",
-                    ansi_term::Colour::Purple
-                        .paint(format!("{:<6}", "REMOTE"))
-                        .to_string(),
-                    entry.message
-                ),
-                "LOCAL" => println!(
-                    "[{}] {}",
-                    ansi_term::Colour::Purple
-                        .paint(format!("{:<6}", "LOCAL"))
-                        .to_string(),
-                    entry.message
-                ),
-                "ASK" => {
+                LOG_ASK => {
                     ASK_ACTIVE.store(true, Ordering::SeqCst);
-                    print!(
-                        "[{}] {}",
-                        ansi_term::Colour::Cyan
-                            .paint(format!("{:<6}", "ASK"))
-                            .to_string(),
-                        entry.message
-                    )
+                    print_ask_with_info(
+                        entry.host.as_deref(),
+                        entry.user.as_deref(),
+                        entry.task_name.as_deref(),
+                        &entry.message,
+                    );
                 }
-                _ => println!("[{}] {}", entry.level, entry.message),
+                _ => {
+                    // Print common log （ INFO / ERROR / WARN / DEBUG / REMOTE / LOCAL）
+                    logger_println_with_info(
+                        entry.host.as_deref(),
+                        entry.user.as_deref(),
+                        entry.task_name.as_deref(),
+                        entry.level.as_str(),
+                        &entry.message,
+                    );
+                }
             }
 
             // println!("entry.level.trim()2: --{}--", entry.level.trim());
-            if entry.level.trim() == "ASK" {
+            if entry.level.trim() == LOG_ASK {
                 // println!("ask assignment");
                 last_ask = Some(entry);
-            } else if entry.level.trim() != "ASK" && ASK_ACTIVE.load(Ordering::SeqCst) {
+            } else if entry.level.trim() != LOG_ASK && ASK_ACTIVE.load(Ordering::SeqCst) {
                 // println!("ask 1");
                 // println!("entry.level.trim(): {}", entry.level.trim());
                 // println!();
@@ -246,12 +346,11 @@ pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
                         Clear(ClearType::CurrentLine)
                     )
                     .unwrap();
-                    print!(
-                        "[{}] {}",
-                        ansi_term::Colour::Cyan
-                            .paint(format!("{:<6}", "ASK"))
-                            .to_string(),
-                        ask.message
+                    print_ask_with_info(
+                        ask.host.as_deref(),
+                        ask.user.as_deref(),
+                        ask.task_name.as_deref(),
+                        &ask.message,
                     );
                 }
             }
@@ -261,6 +360,90 @@ pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
     });
 
     handle
+}
+
+pub fn logger_println_with_info(
+    host: Option<&str>,
+    user: Option<&str>,
+    task_name: Option<&str>,
+    level: &str,
+    message: &str,
+) {
+    let level_colored = match level {
+        LOG_ERROR => ansi_term::Colour::Red
+            .paint(format!("{:<width$}", LOG_ERROR, width = LOG_LEVEL_WIDTH))
+            .to_string(),
+        LOG_WARN => ansi_term::Colour::Yellow
+            .paint(format!("{:<width$}", LOG_WARN, width = LOG_LEVEL_WIDTH))
+            .to_string(),
+        LOG_INFO => ansi_term::Colour::Green
+            .paint(format!("{:<width$}", LOG_INFO, width = LOG_LEVEL_WIDTH))
+            .to_string(),
+        LOG_DEBUG => ansi_term::Colour::Blue
+            .paint(format!("{:<width$}", LOG_DEBUG, width = LOG_LEVEL_WIDTH))
+            .to_string(),
+        LOG_REMOTE => ansi_term::Colour::Purple
+            .paint(format!("{:<width$}", LOG_REMOTE, width = LOG_LEVEL_WIDTH))
+            .to_string(),
+        LOG_LOCAL => ansi_term::Colour::Purple
+            .paint(format!("{:<width$}", LOG_LOCAL, width = LOG_LEVEL_WIDTH))
+            .to_string(),
+        _ => ansi_term::Colour::Green
+            .paint(format!("{:<width$}", LOG_INFO, width = LOG_LEVEL_WIDTH))
+            .to_string(),
+    };
+
+    let formatted = match (user, host, task_name) {
+        (Some(user), Some(host), Some(task)) => {
+            let colored_user = ansi_term::Colour::Fixed(81).paint(user).to_string(); // bright magenta
+            let colored_host = ansi_term::Colour::Fixed(81).paint(host).to_string(); // cyan-blue
+            let colored_task = ansi_term::Colour::Fixed(216)
+                .paint(format!("{:<width$}", task, width = LOG_TASK_NAME_WIDTH))
+                .to_string(); // orange-yellow
+            format!(
+                "[{}@{}][{}][{}] {}",
+                colored_user, colored_host, colored_task, level_colored, message
+            )
+        }
+        _ => {
+            format!("[{}] {}", level_colored, message)
+        }
+    };
+    match level {
+        LOG_ERROR => error!("{}", formatted),
+        LOG_WARN => warn!("{}", formatted),
+        LOG_INFO => info!("{}", formatted),
+        LOG_DEBUG => debug!("{}", formatted),
+        _ => info!("{}", formatted),
+    }
+}
+
+pub fn print_ask_with_info(
+    host: Option<&str>,
+    user: Option<&str>,
+    task_name: Option<&str>,
+    message: &str,
+) {
+    let colored_ask = &ansi_term::Colour::Cyan
+        .paint(format!("{:<width$}", LOG_ASK, width = LOG_LEVEL_WIDTH))
+        .to_string();
+    match (user, host, task_name) {
+        (Some(user), Some(host), Some(task)) => {
+            // 207 bright magenta
+            let colored_user = ansi_term::Colour::Fixed(81).paint(user).to_string(); // bright magenta
+            let colored_host = ansi_term::Colour::Fixed(81).paint(host).to_string(); // cyan-blue
+            let colored_task = ansi_term::Colour::Fixed(216)
+                .paint(format!("{:<width$}", task, width = LOG_TASK_NAME_WIDTH))
+                .to_string(); // orange-yellow
+            print!(
+                "[{}@{}][{}][{}] {}",
+                colored_user, colored_host, colored_task, colored_ask, message
+            );
+        }
+        _ => {
+            print!("[{}] {}", colored_ask, message);
+        }
+    }
 }
 
 pub async fn flush_logs_and_exit(logger_handle: tokio::task::JoinHandle<()>) -> ! {

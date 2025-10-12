@@ -6,23 +6,24 @@ use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{
     ExecuteCmdConfig, PatchCmdConfig, ServerMetadata, UploadCmdConfig,
 };
+use crate::domain::constants::{EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
 use crate::domain::yml_config::{NamedConfig, ServerConfig, TargetConfig, YmlConfig};
-use crate::log_error;
 use crate::utils::file_utils::substitute_vars;
 use crate::utils::log_utils::prompt_password_or_exit;
+use crate::{log_error, log_error_direct, log_error_root};
 
 // Root level
 pub fn parse_patch_config_from_cmd(
-    host: String,
-    user: String,
+    host: &str,
+    user: &str,
     ssh_port: Option<u16>,
     password: Option<String>,
 
     recover: bool,
-    local_path: String,
-    remote_upload: String,
-    remote_path: String,
-    remote_backup: String,
+    local_path: &str,
+    remote_upload: &str,
+    remote_path: &str,
+    remote_backup: &str,
 
     use_sudo: bool,
     use_rsync: bool,
@@ -35,12 +36,15 @@ pub fn parse_patch_config_from_cmd(
     cli_vars: &HashMap<String, String>,
 ) -> PatchCmdConfig {
     let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
+    let password =
+        password.unwrap_or_else(|| prompt_password_or_exit(&user, &host, PATCH_TASK_NAME));
+
     PatchCmdConfig {
         server_metadata: ServerMetadata {
-            host,
-            user,
+            host: host.to_string(),
+            user: user.to_string(),
             ssh_port: ssh_port.unwrap_or(22),
-            password: password.unwrap_or_else(|| prompt_password_or_exit()),
+            password,
             server_key,
 
             connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
@@ -54,19 +58,19 @@ pub fn parse_patch_config_from_cmd(
         silent,
         recover,
         local_path: substitute_vars(&local_path, &cli_vars).unwrap_or_else(|e| {
-            log_error!("{}", e);
+            log_error_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
         remote_upload: substitute_vars(&remote_upload, &cli_vars).unwrap_or_else(|e| {
-            log_error!("{}", e);
+            log_error_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
         remote_path: substitute_vars(&remote_path, &cli_vars).unwrap_or_else(|e| {
-            log_error!("{}", e);
+            log_error_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
         remote_backup: substitute_vars(&remote_backup, &cli_vars).unwrap_or_else(|e| {
-            log_error!("{}", e);
+            log_error_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
     }
@@ -74,11 +78,11 @@ pub fn parse_patch_config_from_cmd(
 
 // Root level
 pub fn parse_execute_config_from_cmd(
-    host: String,
-    user: String,
+    host: &str,
+    user: &str,
     ssh_port: Option<u16>,
     password: Option<String>,
-    script: String,
+    script: &str,
     remote_path: Option<String>,
 
     use_sudo: bool,
@@ -92,12 +96,14 @@ pub fn parse_execute_config_from_cmd(
     cli_vars: &HashMap<String, String>,
 ) -> ExecuteCmdConfig {
     let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
+    let password =
+        password.unwrap_or_else(|| prompt_password_or_exit(&user, &host, EXECUTE_TASK_NAME));
     ExecuteCmdConfig {
         server_metadata: ServerMetadata {
-            host,
-            user,
+            host: host.to_string(),
+            user: user.to_string(),
             ssh_port: ssh_port.unwrap_or(22),
-            password: password.unwrap_or_else(|| prompt_password_or_exit()),
+            password,
             server_key,
 
             connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
@@ -110,12 +116,12 @@ pub fn parse_execute_config_from_cmd(
         use_rsync,
         silent,
         script: substitute_vars(&script, &cli_vars).unwrap_or_else(|e| {
-            log_error!("{}", e);
+            log_error_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
             exit(1);
         }),
         remote_path: substitute_vars(&remote_path.unwrap_or_else(|| "~".to_string()), &cli_vars)
             .unwrap_or_else(|e| {
-                log_error!("{}", e);
+                log_error_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
                 exit(1);
             }),
     }
@@ -123,15 +129,15 @@ pub fn parse_execute_config_from_cmd(
 
 // Root level
 pub fn parse_upload_config_from_cmd(
-    host: String,
-    user: String,
+    host: &str,
+    user: &str,
     ssh_port: Option<u16>,
     password: Option<String>,
     // connect_timeout: Option<Duration>,
     // use_sudo: bool,
     // use_rsync: bool,
     // silent: bool,
-    properties_file: String,
+    properties_file: &str,
 
     use_sudo: bool,
     use_rsync: bool,
@@ -144,12 +150,14 @@ pub fn parse_upload_config_from_cmd(
     cli_vars: &HashMap<String, String>,
 ) -> UploadCmdConfig {
     let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
+    let password =
+        password.unwrap_or_else(|| prompt_password_or_exit(&user, &host, UPLOAD_TASK_NAME));
     UploadCmdConfig {
         server_metadata: ServerMetadata {
-            host,
-            user,
+            host: host.to_string(),
+            user: user.to_string(),
             ssh_port: ssh_port.unwrap_or(22),
-            password: password.unwrap_or_else(|| prompt_password_or_exit()),
+            password,
             server_key,
 
             connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
@@ -162,7 +170,7 @@ pub fn parse_upload_config_from_cmd(
         use_rsync,
         silent,
         properties_file: substitute_vars(&properties_file, &cli_vars).unwrap_or_else(|e| {
-            log_error!("{}", e);
+            log_error_direct!(user, host, UPLOAD_TASK_NAME, "{}", e);
             exit(1);
         }),
     }
@@ -176,18 +184,19 @@ pub fn parse_upload_configs(
     let servers = resolve_servers(named_config, yml_config);
     let var_map = &yml_config.var_map;
     let common = &yml_config.common;
+
     for upload in &named_config.upload {
         for server in &servers {
+            let password = server.password.clone().unwrap_or_else(|| {
+                prompt_password_or_exit(&server.user, &server.host, UPLOAD_TASK_NAME)
+            });
             configs.push((
                 UploadCmdConfig {
                     server_metadata: ServerMetadata {
                         host: server.host.clone(),
                         user: server.user.clone(),
                         ssh_port: server.ssh_port.unwrap_or(22),
-                        password: server
-                            .password
-                            .clone()
-                            .unwrap_or_else(|| prompt_password_or_exit()),
+                        password,
                         server_key: ServerPool::generate_server_key(
                             &server.host,
                             server.ssh_port.unwrap_or(22),
@@ -220,7 +229,13 @@ pub fn parse_upload_configs(
                     silent: upload.silent.or(named_config.silent).unwrap_or(false),
                     properties_file: substitute_vars(&upload.properties_file, var_map)
                         .unwrap_or_else(|e| {
-                            log_error!("{}", e);
+                            log_error_direct!(
+                                &server.user,
+                                &server.host,
+                                UPLOAD_TASK_NAME,
+                                "{}",
+                                e
+                            );
                             exit(1);
                         }),
                 },
@@ -243,16 +258,16 @@ pub fn parse_execute_configs(
     for execute in &named_config.execute {
         for script in &execute.scripts {
             for server in &servers {
+                let password = server.password.clone().unwrap_or_else(|| {
+                    prompt_password_or_exit(&server.user, &server.host, EXECUTE_TASK_NAME)
+                });
                 configs.push((
                     ExecuteCmdConfig {
                         server_metadata: ServerMetadata {
                             host: server.host.clone(),
                             user: server.user.clone(),
                             ssh_port: server.ssh_port.unwrap_or(22),
-                            password: server
-                                .password
-                                .clone()
-                                .unwrap_or_else(|| prompt_password_or_exit()),
+                            password,
                             server_key: ServerPool::generate_server_key(
                                 &server.host,
                                 server.ssh_port.unwrap_or(22),
@@ -293,7 +308,13 @@ pub fn parse_execute_configs(
                             .unwrap_or(false),
                         silent: execute.silent.or(named_config.silent).unwrap_or(false),
                         script: substitute_vars(script, var_map).unwrap_or_else(|e| {
-                            log_error!("{}", e);
+                            log_error_direct!(
+                                &server.user,
+                                &server.host,
+                                EXECUTE_TASK_NAME,
+                                "{}",
+                                e
+                            );
                             exit(1);
                         }),
                         remote_path: substitute_vars(
@@ -304,7 +325,13 @@ pub fn parse_execute_configs(
                             var_map,
                         )
                         .unwrap_or_else(|e| {
-                            log_error!("{}", e);
+                            log_error_direct!(
+                                &server.user,
+                                &server.host,
+                                EXECUTE_TASK_NAME,
+                                "{}",
+                                e
+                            );
                             exit(1);
                         }),
                     },
@@ -327,16 +354,16 @@ pub fn parse_patch_configs(
 
     for patch in &named_config.patch {
         for server in &servers {
+            let password = server.password.clone().unwrap_or_else(|| {
+                prompt_password_or_exit(&server.user, &server.host, PATCH_TASK_NAME)
+            });
             configs.push((
                 PatchCmdConfig {
                     server_metadata: ServerMetadata {
                         host: server.host.clone(),
                         user: server.user.clone(),
                         ssh_port: server.ssh_port.unwrap_or(22),
-                        password: server
-                            .password
-                            .clone()
-                            .unwrap_or_else(|| prompt_password_or_exit()),
+                        password,
                         server_key: ServerPool::generate_server_key(
                             &server.host,
                             server.ssh_port.unwrap_or(22),
@@ -370,22 +397,22 @@ pub fn parse_patch_configs(
 
                     recover: patch.recover,
                     local_path: substitute_vars(&patch.local_path, var_map).unwrap_or_else(|e| {
-                        log_error!("{}", e);
+                        log_error_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
                         exit(1);
                     }),
                     remote_upload: substitute_vars(&patch.remote_upload, var_map).unwrap_or_else(
                         |e| {
-                            log_error!("{}", e);
+                            log_error_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
                             exit(1);
                         },
                     ),
                     remote_path: substitute_vars(&patch.remote_path, var_map).unwrap_or_else(|e| {
-                        log_error!("{}", e);
+                        log_error_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
                         exit(1);
                     }),
                     remote_backup: substitute_vars(&patch.remote_backup, var_map).unwrap_or_else(
                         |e| {
-                            log_error!("{}", e);
+                            log_error_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
                             exit(1);
                         },
                     ),
@@ -435,7 +462,7 @@ fn collect_servers<T: TargetConfig>(
                 servers.push(server.clone());
             }
         } else {
-            log_error!("Server '{}' not found in servers list", server_name);
+            log_error_root!("Server '{}' not found in servers list", server_name);
             exit(1);
         }
     }
@@ -452,7 +479,7 @@ fn collect_servers<T: TargetConfig>(
                             servers.push(server.clone());
                         }
                     } else {
-                        log_error!(
+                        log_error_root!(
                             "Server '{}' in group '{}' not found in servers list",
                             server_name,
                             group_name
@@ -461,7 +488,7 @@ fn collect_servers<T: TargetConfig>(
                     }
                 }
             } else {
-                log_error!("Group '{}' not found in group_map list", group_name);
+                log_error_root!("Group '{}' not found in group_map list", group_name);
                 exit(1);
             }
         }

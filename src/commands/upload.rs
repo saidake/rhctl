@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{ServerMetadata, UploadCmdConfig};
+use crate::domain::constants::UPLOAD_TASK_NAME;
 use crate::{log_info, log_warn};
 
 pub async fn run(
@@ -24,12 +25,12 @@ pub async fn run(
     for (local_item, remote_dir) in mappings {
         let local_file_or_dir = Path::new(&local_item).to_path_buf();
         if !local_file_or_dir.exists() {
-            log_warn!("Local item '{}' not found. Skipping.", local_item);
+            log_warn!(server_metadata, UPLOAD_TASK_NAME,"Local item '{}' not found. Skipping.", local_item);
             continue;
         }
 
         let remote_dir_resolved = global_server_pool
-            .resolve_remote_path(server_metadata, config.use_sudo, &remote_dir)
+            .resolve_remote_path(server_metadata,UPLOAD_TASK_NAME, config.use_sudo, &remote_dir)
             .await?;
         if remote_dir_resolved.is_empty() {
             return Err(format!(
@@ -40,10 +41,10 @@ pub async fn run(
 
         // Check if remote directory is writable
         global_server_pool
-            .validate_remote_dir(server_metadata, &remote_dir_resolved, config.use_sudo)
+            .validate_remote_dir(server_metadata, UPLOAD_TASK_NAME, &remote_dir_resolved, config.use_sudo)
             .await?;
         global_server_pool
-            .create_remote_dir(server_metadata, &remote_dir_resolved, config.use_sudo)
+            .create_remote_dir(server_metadata, UPLOAD_TASK_NAME, &remote_dir_resolved, config.use_sudo)
             .await?;
 
         let local_file_or_dir_clone = local_file_or_dir.clone();
@@ -58,6 +59,7 @@ pub async fn run(
             global_server_pool_clone
                 .upload_file_or_dir_contents_into_dir(
                     &server_metadata_clone,
+                    UPLOAD_TASK_NAME,
                     &local_file_or_dir_clone,
                     &remote_dir_clone,
                     None,
@@ -96,6 +98,6 @@ pub async fn run(
         return Err(errors.join("\n\n\t"));
     }
 
-    log_info!("Upload complete.");
+    log_info!(server_metadata,UPLOAD_TASK_NAME,"Upload complete.");
     Ok(())
 }

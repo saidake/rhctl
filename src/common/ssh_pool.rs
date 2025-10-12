@@ -1,5 +1,5 @@
 use crate::domain::cmd_params::ServerMetadata;
-use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
+use crate::domain::constants::{REMOTE_TEMP_SBXCTL_FOLDER, SYSTEM_TASK_NAME};
 use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
 use crate::utils::log_utils::ask_user;
 use crate::utils::ssh_utils::execution_print;
@@ -363,26 +363,38 @@ impl ServerPool {
     pub async fn resolve_remote_path(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         use_sudo: bool,
         path: &str,
     ) -> Result<String, String> {
-        self.exec(server_metadata, &format!("echo {}", path), use_sudo)
-            .await
+        self.exec(
+            server_metadata,
+            task_name,
+            &format!("echo {}", path),
+            use_sudo,
+        )
+        .await
     }
 
     pub async fn check_global_remote_temp_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         use_sudo: bool,
         silent: bool,
     ) -> Result<(), String> {
         if use_sudo && server_metadata.user != "root" {
             self.pending_clean_servers.insert(server_metadata.clone());
             let exists = self
-                .file_or_dir_exists(server_metadata, REMOTE_TEMP_SBXCTL_FOLDER, use_sudo)
+                .file_or_dir_exists(
+                    server_metadata,
+                    task_name,
+                    REMOTE_TEMP_SBXCTL_FOLDER,
+                    use_sudo,
+                )
                 .await?;
             if exists {
-                ask_user(
+                ask_user(server_metadata,task_name,
                     format!(
                         "Remote path '{}' already exists. Transfering will DELETE it and use it as a temp folder. Continue?",
                         REMOTE_TEMP_SBXCTL_FOLDER
@@ -394,6 +406,7 @@ impl ServerPool {
 
                 self.exec(
                     server_metadata,
+                    task_name,
                     &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
                     use_sudo,
                 )
@@ -405,7 +418,7 @@ impl ServerPool {
 
     pub async fn cleanup_pending_servers(&self) -> Result<(), String> {
         for server in self.pending_clean_servers.iter() {
-            self.delete_global_temp_dir(&server).await?;
+            self.delete_global_temp_dir(&server, SYSTEM_TASK_NAME).await?;
         }
         Ok(())
     }
@@ -413,50 +426,77 @@ impl ServerPool {
     pub async fn file_or_dir_exists(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         path: &str,
         use_sudo: bool,
     ) -> Result<bool, String> {
-        self.check_path(server_metadata, path, "-e", use_sudo).await
+        self.check_path(server_metadata, task_name, path, "-e", use_sudo)
+            .await
     }
 
     pub async fn file_exists(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         path: &str,
         use_sudo: bool,
     ) -> Result<bool, String> {
-        self.check_path(server_metadata, path, "-f", use_sudo).await
+        self.check_path(server_metadata, task_name, path, "-f", use_sudo)
+            .await
     }
 
     pub async fn dir_exists(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         path: &str,
         use_sudo: bool,
     ) -> Result<bool, String> {
-        self.check_path(server_metadata, path, "-d", use_sudo).await
+        self.check_path(server_metadata, task_name, path, "-d", use_sudo)
+            .await
     }
 
     pub async fn check_path(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         path: &str,
         flag: &str,
         use_sudo: bool,
     ) -> Result<bool, String> {
-        log_debug!("Checking if '{}' exists with flag '{}'", path, flag);
+        log_debug!(
+            server_metadata,
+            task_name,
+            "Checking if '{}' exists with flag '{}'",
+            path,
+            flag
+        );
 
         let full_cmd = format!("sh -c 'test {} {}'", flag, path);
-        let result = self.exec(server_metadata, &full_cmd, use_sudo).await;
+        let result = self
+            .exec(server_metadata, task_name, &full_cmd, use_sudo)
+            .await;
 
         match result {
             Ok(_) => {
-                log_debug!("Remote path '{}' exists (flag '{}'): true", path, flag);
+                log_debug!(
+                    server_metadata,
+                    task_name,
+                    "Remote path '{}' exists (flag '{}'): true",
+                    path,
+                    flag
+                );
                 Ok(true)
             }
             Err(e) => {
                 if e.contains("exit status 1") {
-                    log_debug!("Remote path '{}' exists (flag '{}'): false", path, flag);
+                    log_debug!(
+                        server_metadata,
+                        task_name,
+                        "Remote path '{}' exists (flag '{}'): false",
+                        path,
+                        flag
+                    );
                     Ok(false)
                 } else {
                     Err(format!("Failed to check remote path '{}'. \n\t{}", path, e))
@@ -468,13 +508,15 @@ impl ServerPool {
     pub async fn delete_global_temp_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
     ) -> Result<(), String> {
         let remote_temp_sbxctl_folder_exists = self
-            .file_or_dir_exists(server_metadata, REMOTE_TEMP_SBXCTL_FOLDER, true)
+            .file_or_dir_exists(server_metadata, task_name, REMOTE_TEMP_SBXCTL_FOLDER, true)
             .await?;
         if remote_temp_sbxctl_folder_exists {
             self.exec(
                 server_metadata,
+                task_name,
                 &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
                 true,
             )
@@ -486,26 +528,29 @@ impl ServerPool {
     pub async fn exec(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         cmd: &str,
         use_sudo: bool,
     ) -> Result<String, String> {
-        self.exec_with_stream(server_metadata, cmd, use_sudo, false)
+        self.exec_with_stream(server_metadata, task_name, cmd, use_sudo, false)
             .await
     }
 
     pub async fn exec_with_log(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         cmd: &str,
         use_sudo: bool,
     ) -> Result<String, String> {
-        self.exec_with_stream(server_metadata, cmd, use_sudo, true)
+        self.exec_with_stream(server_metadata, task_name, cmd, use_sudo, true)
             .await
     }
 
     async fn exec_with_stream(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         cmd: &str,
         use_sudo: bool,
         print_log: bool,
@@ -513,7 +558,13 @@ impl ServerPool {
         let cmd: String = cmd.to_string();
         let mut channel_guard = self.get_channel(&server_metadata).await?;
 
-        log_debug!("Streaming command: {} (sudo: {})", cmd, use_sudo);
+        log_debug!(
+            server_metadata,
+            task_name,
+            "Streaming command: {} (sudo: {})",
+            cmd,
+            use_sudo
+        );
         let full_cmd = if use_sudo {
             let escaped = cmd.replace("'", "'\\''");
             format!("sudo -S bash -c '{}'", escaped)
@@ -576,7 +627,7 @@ impl ServerPool {
 
                         if print_log {
                             if !(first_line && use_sudo && line.is_empty()) {
-                                execution_print(&line, false)?;
+                                execution_print(server_metadata, task_name, &line, false)?;
                             }
                             if first_line && use_sudo {
                                 first_line = false;
@@ -621,11 +672,11 @@ impl ServerPool {
         // Handle any remaining partial lines
         if !partial_stdout_line.is_empty() && print_log {
             if !(first_line && use_sudo && partial_stdout_line.trim().is_empty()) {
-                execution_print(&partial_stdout_line, false)?;
+                execution_print(server_metadata, task_name, &partial_stdout_line, false)?;
             }
         }
         if !partial_stderr_line.is_empty() && print_log {
-            execution_print(&partial_stderr_line, true)?;
+            execution_print(server_metadata, task_name, &partial_stderr_line, true)?;
         }
 
         // Collect final output for return
@@ -647,6 +698,7 @@ impl ServerPool {
     pub async fn upload_file_or_dir_contents_into_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         local_file_or_dir: &Path,
         remote_dir: &str,
         new_file_name: Option<&str>,
@@ -659,7 +711,7 @@ impl ServerPool {
         let mut remote_temp_dir: Option<String> = None;
         if use_sudo && server_metadata.user != "root" && !direct_write_if_sudo {
             remote_temp_dir = Some(
-                self.create_remote_temp_dir(server_metadata, "upload", use_sudo)
+                self.create_remote_temp_dir(server_metadata, task_name, "upload", use_sudo)
                     .await?,
             );
         }
@@ -678,12 +730,19 @@ impl ServerPool {
                 let base_name = get_local_path_base_name(&sub_path)?;
                 let remote_sub = format!("{}/{}", remote_dir, base_name);
 
-                self.ask_safe_to_transfer(server_metadata, &remote_sub, use_sudo, silent)
-                    .await?;
+                self.ask_safe_to_transfer(
+                    server_metadata,
+                    task_name,
+                    &remote_sub,
+                    use_sudo,
+                    silent,
+                )
+                .await?;
                 if use_sudo && server_metadata.user != "root" && !direct_write_if_sudo {
                     let temp_dir = remote_temp_dir.as_ref().unwrap();
                     self.do_upload(
                         server_metadata,
+                        task_name,
                         use_sudo,
                         use_rsync,
                         &sub_path,
@@ -694,6 +753,7 @@ impl ServerPool {
                 } else {
                     self.do_upload(
                         server_metadata,
+                        task_name,
                         use_sudo,
                         use_rsync,
                         &sub_path,
@@ -705,11 +765,19 @@ impl ServerPool {
             }
             if use_sudo && server_metadata.user != "root" && !direct_write_if_sudo {
                 let temp_dir = remote_temp_dir.as_ref().unwrap();
-                self.move_and_delete_temp_dir(server_metadata, temp_dir, remote_dir, use_sudo)
-                    .await?;
+                self.move_and_delete_temp_dir(
+                    server_metadata,
+                    task_name,
+                    temp_dir,
+                    remote_dir,
+                    use_sudo,
+                )
+                .await?;
             }
             if print_log {
                 log_info!(
+                    server_metadata,
+                    task_name,
                     "Successfully uploaded the contents of the folder '{}' into '{}'",
                     local_file_or_dir.display(),
                     remote_dir
@@ -721,12 +789,13 @@ impl ServerPool {
                 remote_dir,
                 new_file_name.unwrap_or(get_local_path_base_name(&local_file_or_dir)?.as_str())
             );
-            self.ask_safe_to_transfer(server_metadata, &remote_file, use_sudo, silent)
+            self.ask_safe_to_transfer(server_metadata, task_name, &remote_file, use_sudo, silent)
                 .await?;
             if use_sudo && server_metadata.user != "root" && !direct_write_if_sudo {
                 let temp_dir = remote_temp_dir.as_ref().unwrap();
                 self.do_upload(
                     server_metadata,
+                    task_name,
                     use_sudo,
                     use_rsync,
                     &local_file_or_dir,
@@ -734,11 +803,18 @@ impl ServerPool {
                     new_file_name,
                 )
                 .await?;
-                self.move_and_delete_temp_dir(server_metadata, temp_dir, remote_dir, use_sudo)
-                    .await?;
+                self.move_and_delete_temp_dir(
+                    server_metadata,
+                    task_name,
+                    temp_dir,
+                    remote_dir,
+                    use_sudo,
+                )
+                .await?;
             } else {
                 self.do_upload(
                     server_metadata,
+                    task_name,
                     use_sudo,
                     use_rsync,
                     &local_file_or_dir,
@@ -749,6 +825,8 @@ impl ServerPool {
             }
             if print_log {
                 log_info!(
+                    server_metadata,
+                    task_name,
                     "Successfully uploaded the file '{}' to '{}'",
                     local_file_or_dir.display(),
                     remote_file
@@ -762,16 +840,23 @@ impl ServerPool {
     async fn move_and_delete_temp_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         temp_dir: &str,
         remote_dir: &str,
         use_sudo: bool,
     ) -> Result<(), String> {
         let hidden_exists = self
-            .file_or_dir_exists(server_metadata, &format!("{}/.[!.]*", temp_dir), use_sudo)
+            .file_or_dir_exists(
+                server_metadata,
+                task_name,
+                &format!("{}/.[!.]*", temp_dir),
+                use_sudo,
+            )
             .await?;
         if hidden_exists {
             self.exec(
                 server_metadata,
+                task_name,
                 &format!("mv \"{0}\"/.[!.]* \"{1}\"/", temp_dir, remote_dir),
                 use_sudo,
             )
@@ -779,11 +864,17 @@ impl ServerPool {
         }
 
         let normal_exists = self
-            .file_or_dir_exists(server_metadata, &format!("{0}/*", temp_dir), use_sudo)
+            .file_or_dir_exists(
+                server_metadata,
+                task_name,
+                &format!("{0}/*", temp_dir),
+                use_sudo,
+            )
             .await?;
         if normal_exists {
             self.exec(
                 server_metadata,
+                task_name,
                 &format!("mv \"{0}\"/* \"{1}\"/", temp_dir, remote_dir),
                 use_sudo,
             )
@@ -792,6 +883,7 @@ impl ServerPool {
 
         self.exec(
             server_metadata,
+            task_name,
             &format!("rm -rf \"{}\"", temp_dir),
             use_sudo,
         )
@@ -804,6 +896,7 @@ impl ServerPool {
     async fn do_upload_with_scp_recursive(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         local_file_or_dir: &Path,
         remote_dir: &str,
         use_sudo: bool,
@@ -822,7 +915,7 @@ impl ServerPool {
         let remote_target = format!("{}/{}", remote_dir, base_name);
 
         if local_file_or_dir.is_dir() {
-            self.create_remote_dir(server_metadata, remote_target.as_str(), use_sudo)
+            self.create_remote_dir(server_metadata, task_name, remote_target.as_str(), use_sudo)
                 .await?;
             for entry in std::fs::read_dir(local_file_or_dir).map_err(|e| {
                 format!(
@@ -837,6 +930,7 @@ impl ServerPool {
 
                 self.do_upload_with_scp_recursive(
                     server_metadata,
+                    task_name,
                     &sub_path,
                     &remote_target,
                     use_sudo,
@@ -941,6 +1035,7 @@ impl ServerPool {
     async fn do_upload(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         use_sudo: bool,
         use_rsync: bool,
         local_file_or_dir: &Path,
@@ -948,13 +1043,15 @@ impl ServerPool {
         new_file_name: Option<&str>,
     ) -> Result<(), String> {
         log_debug!(
+            server_metadata,
+            task_name,
             "Attempting to upload '{}' to '{}'",
             local_file_or_dir.display(),
             remote_dir
         );
 
         if use_rsync && self.command_exists("rsync") {
-            log_debug!("Using rsync for upload");
+            log_debug!(server_metadata, task_name, "Using rsync for upload");
             if !server_metadata.password.is_empty() {
                 if self.command_exists("sshpass") {
                     let remote_target = if let Some(name) = new_file_name {
@@ -999,19 +1096,27 @@ impl ServerPool {
             }
         } else {
             log_debug!(
+                server_metadata,
+                task_name,
                 "Starting SCP upload from '{}' to '{}'",
                 local_file_or_dir.display(),
                 remote_dir
             );
             self.do_upload_with_scp_recursive(
                 server_metadata,
+                task_name,
                 local_file_or_dir,
                 remote_dir,
                 use_sudo,
                 new_file_name,
             )
             .await?;
-            log_debug!("SCP upload to '{}' completed", remote_dir);
+            log_debug!(
+                server_metadata,
+                task_name,
+                "SCP upload to '{}' completed",
+                remote_dir
+            );
         }
 
         Ok(())
@@ -1020,15 +1125,16 @@ impl ServerPool {
     pub async fn ask_safe_to_transfer(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         remote_path: &str,
         use_sudo: bool,
         silent: bool,
     ) -> Result<(), String> {
         let is_file = self
-            .file_exists(server_metadata, remote_path, use_sudo)
+            .file_exists(server_metadata, task_name, remote_path, use_sudo)
             .await?;
         let is_dir = self
-            .dir_exists(server_metadata, remote_path, use_sudo)
+            .dir_exists(server_metadata, task_name, remote_path, use_sudo)
             .await?;
 
         if is_file || is_dir {
@@ -1044,9 +1150,10 @@ impl ServerPool {
                 )
             };
 
-            ask_user(&prompt, silent).await?;
+            ask_user(server_metadata,task_name,&prompt, silent).await?;
             self.exec(
                 server_metadata,
+                task_name,
                 &format!("rm -rf \"{}\"", remote_path),
                 use_sudo,
             )
@@ -1068,12 +1175,18 @@ impl ServerPool {
     pub async fn validate_remote_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         remote_dir: &str,
         use_sudo: bool,
     ) -> Result<(), String> {
-        log_debug!("Ensuring remote directory '{}' exists", remote_dir);
+        log_debug!(
+            server_metadata,
+            task_name,
+            "Ensuring remote directory '{}' exists",
+            remote_dir
+        );
         if self
-            .file_exists(server_metadata, remote_dir, use_sudo)
+            .file_exists(server_metadata, task_name, remote_dir, use_sudo)
             .await?
         {
             return Err(format!(
@@ -1082,10 +1195,15 @@ impl ServerPool {
             ));
         }
 
-        log_debug!("Checking if remote directory '{}' is writable", remote_dir);
+        log_debug!(
+            server_metadata,
+            task_name,
+            "Checking if remote directory '{}' is writable",
+            remote_dir
+        );
         let check_cmd = format!("test -w \"{}\"; echo $?", remote_dir);
         let output = self
-            .exec(server_metadata, &check_cmd, use_sudo)
+            .exec(server_metadata, task_name, &check_cmd, use_sudo)
             .await
             .map_err(|e| {
                 format!(
@@ -1103,11 +1221,12 @@ impl ServerPool {
     pub async fn create_remote_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         remote_dir: &str,
         use_sudo: bool,
     ) -> Result<(), String> {
         if self
-            .dir_exists(server_metadata, remote_dir, use_sudo)
+            .dir_exists(server_metadata, task_name, remote_dir, use_sudo)
             .await?
         {
             return Ok(());
@@ -1121,7 +1240,7 @@ impl ServerPool {
             format!("mkdir -p \"{}\"; chmod 700 \"{}\"", remote_dir, remote_dir)
         };
 
-        self.exec(server_metadata, &cmd, use_sudo)
+        self.exec(server_metadata, task_name, &cmd, use_sudo)
             .await
             .map_err(|e| {
                 format!(
@@ -1135,12 +1254,18 @@ impl ServerPool {
     pub async fn create_remote_temp_dir(
         &self,
         server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
         prefix: &str,
         use_sudo: bool,
     ) -> Result<String, String> {
         let temp_dir = generate_remote_temp_dir(prefix);
-        log_debug!("Uploading to temporary path '{}' with sudo", temp_dir);
-        self.create_remote_dir(server_metadata, temp_dir.as_str(), use_sudo)
+        log_debug!(
+            server_metadata,
+            task_name,
+            "Uploading to temporary path '{}' with sudo",
+            temp_dir
+        );
+        self.create_remote_dir(server_metadata, task_name, temp_dir.as_str(), use_sudo)
             .await?;
         Ok(temp_dir)
     }

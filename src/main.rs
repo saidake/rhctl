@@ -15,13 +15,14 @@ mod handlers;
 mod utils;
 
 use crate::common::ssh_pool::{ServerOptions, ServerPool};
+use crate::domain::constants::{EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
 use crate::handlers::command_handler::{
     parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
     parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
 };
 use crate::utils::file_utils::load_properties;
 use crate::utils::file_utils::load_yaml_config;
-use crate::utils::log_utils::{ask_user_and_abort, flush_logs_and_exit, init_logger};
+use crate::utils::log_utils::{ask_user_and_abort, ask_user_and_abort_option, flush_logs_and_exit, init_logger};
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
     humantime::parse_duration(s).map_err(|e| format!("Invalid duration '{}': {}", s, e))
@@ -274,15 +275,7 @@ async fn main() {
     // Initialize logging
     env_logger::Builder::new()
         .format(|buf, record| {
-            let level_text = format!("{:<6}", record.level().to_string());
-            let level_colored = match record.level() {
-                Level::Error => Colour::Red.paint(&level_text),
-                Level::Warn => Colour::Yellow.paint(&level_text),
-                Level::Info => Colour::Green.paint(&level_text),
-                Level::Debug => Colour::Blue.paint(&level_text),
-                Level::Trace => Colour::Purple.paint(&level_text),
-            };
-            writeln!(buf, "[{}] {}", level_colored, record.args())
+            writeln!(buf, "{}", record.args())
         })
         .filter_level(match log_level {
             "debug" => log::LevelFilter::Debug,
@@ -326,11 +319,11 @@ async fn main() {
             ..
         } => {
             let config = parse_upload_config_from_cmd(
-                host,
-                user,
+                &host,
+                &user,
                 ssh_port,
                 password,
-                properties_file,
+                &properties_file,
 
                 use_sudo,
                 use_rsync,
@@ -347,7 +340,7 @@ async fn main() {
             if let Err(e) =
                 load_properties(config.properties_file.as_str(), &mut mappings, &cli_vars)
             {
-                log_error!(
+                log_error_direct!(user.as_str(), host.as_str(), UPLOAD_TASK_NAME,
                     "{}",
                     format!(
                         "Failed to load properties file '{}'. \n\t{}",
@@ -361,15 +354,15 @@ async fn main() {
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
                 if let Err(e) = global_server_pool_clone
-                    .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
+                    .check_global_remote_temp_dir(&server_metadata,UPLOAD_TASK_NAME, config.use_sudo, config.silent)
                     .await
                 {
-                    log_error!("{}", e);
+                    log_error!(&server_metadata,UPLOAD_TASK_NAME,"{}", e);
                     flush_logs_and_exit(log_handle).await;
                 }
                 let result = commands::upload::run(&config,  &mappings, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
-                    log_error!(
+                    log_error!(&server_metadata,UPLOAD_TASK_NAME,
                         "Upload failed for {}@{}: \n\t{}",
                         server_metadata.user,
                         server_metadata.host,
@@ -399,11 +392,11 @@ async fn main() {
             ..
         } => {
             let config = parse_execute_config_from_cmd(
-                host,
-                user,
+                &host,
+                &user,
                 ssh_port,
                 password,
-                script,
+                &script,
                 remote_path,
 
                 use_sudo,
@@ -420,15 +413,15 @@ async fn main() {
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
                 if let Err(e) = global_server_pool_clone
-                    .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
+                    .check_global_remote_temp_dir(&server_metadata, EXECUTE_TASK_NAME, config.use_sudo, config.silent)
                     .await
                 {
-                    log_error!("{}", e);
+                    log_error!(&server_metadata, EXECUTE_TASK_NAME,"{}", e);
                     flush_logs_and_exit(log_handle).await;
                 }
                 let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
-                    log_error!(
+                    log_error!(&server_metadata, EXECUTE_TASK_NAME,
                         "Execute failed for {}@{}: \n\t{}",
                         server_metadata.user,
                         server_metadata.host,
@@ -462,16 +455,16 @@ async fn main() {
             ..
         } => {
             let config = parse_patch_config_from_cmd(
-                host,
-                user,
+                &host,
+                &user,
                 ssh_port,
                 password,
 
                 recover,
-                local_path,
-                remote_upload,
-                remote_path,
-                remote_backup,
+                &local_path,
+                &remote_upload,
+                &remote_path,
+                &remote_backup,
                 
                 use_sudo,
                 use_rsync,
@@ -488,15 +481,15 @@ async fn main() {
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
                 if let Err(e) = 
-                global_server_pool_clone.check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
+                global_server_pool_clone.check_global_remote_temp_dir(&server_metadata,PATCH_TASK_NAME, config.use_sudo, config.silent)
                     .await
                 {
-                    log_error!("{}", e);
+                    log_error!(&server_metadata,PATCH_TASK_NAME,"{}", e);
                     flush_logs_and_exit(log_handle).await;
                 }
                 let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
-                    log_error!(
+                    log_error!(&server_metadata,PATCH_TASK_NAME,
                         "Patch failed for {}@{}: \n\t{}",
                         server_metadata.user,
                         server_metadata.host,
@@ -516,7 +509,7 @@ async fn main() {
             let yml_config = match load_yaml_config(&config) {
                 Ok(cfg) => cfg,
                 Err(err) => {
-                    log_error!("{}", err);
+                    log_error_root!("{}", err);
                     flush_logs_and_exit(log_handle).await;
                 }
             };
@@ -528,13 +521,13 @@ async fn main() {
             {
                 Some(c) => c,
                 None => {
-                    log_error!("Config '{}' not found in YAML file", config_name);
+                    log_error_root!("Config '{}' not found in YAML file", config_name);
                     flush_logs_and_exit(log_handle).await;
                 }
             };
 
             if !cli_vars.is_empty() {
-                ask_user_and_abort(
+                ask_user_and_abort_option(None, None,
                 "CLI --var arguments are ignored when using YAML config. Using vars from YAML instead, Continue?",
                 false,
             ).await;
@@ -556,7 +549,7 @@ async fn main() {
                     &mut mappings,
                     &yml_config.var_map,
                 ) {
-                    log_error!(
+                    log_error_root!(
                         "{}",
                         format!(
                             "Failed to load properties file '{}'. \n\t{}",
@@ -568,15 +561,17 @@ async fn main() {
                 let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
                     if let Err(e) = global_server_pool_clone
-                        .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
+                        .check_global_remote_temp_dir(&server_metadata,UPLOAD_TASK_NAME, config.use_sudo, config.silent)
                         .await
                     {
-                        log_error!("{}", e);
+                        log_error!(&server_metadata, UPLOAD_TASK_NAME, "{}", e);
                         return;
                     }
                     let result = commands::upload::run(&config,  &vars, &server_metadata, global_server_pool_clone.clone()).await;
                     if let Err(e) = result {
                         log_error!(
+                            &server_metadata,
+                            UPLOAD_TASK_NAME,
                             "Upload failed for {}@{}: \n\t{}",
                             server_metadata.user,
                             server_metadata.host,
@@ -593,15 +588,15 @@ async fn main() {
                 let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
                     if let Err(e) = global_server_pool_clone
-                        .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
+                        .check_global_remote_temp_dir(&server_metadata, EXECUTE_TASK_NAME, config.use_sudo, config.silent)
                         .await
                     {
-                        log_error!("{}", e);
+                        log_error!(&server_metadata, EXECUTE_TASK_NAME, "{}", e);
                         return;
                     }
                     let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                     if let Err(e) = result {
-                        log_error!(
+                        log_error!(&server_metadata, EXECUTE_TASK_NAME,
                             "Execute failed for {}@{}: \n\t{}",
                             server_metadata.user,
                             server_metadata.host,
@@ -618,15 +613,15 @@ async fn main() {
                 let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
                     if let Err(e) = global_server_pool_clone
-                        .check_global_remote_temp_dir(&server_metadata, config.use_sudo, config.silent)
+                        .check_global_remote_temp_dir(&server_metadata, PATCH_TASK_NAME, config.use_sudo, config.silent)
                         .await
                     {
-                        log_error!("{}", e);
+                        log_error!(&server_metadata, PATCH_TASK_NAME,"{}", e);
                         return;
                     }
                     let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                     if let Err(e) = result {
-                        log_error!(
+                        log_error!(&server_metadata, PATCH_TASK_NAME,
                             "Patch failed for {}@{}: \n\t{}",
                             server_metadata.user,
                             server_metadata.host,
