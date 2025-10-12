@@ -80,9 +80,9 @@ pub async fn run(
     } else {
         let mut content = String::new();
         File::open(script_path)
-            .map_err(|e| format!("Failed to open script '{}'. \n\t{}", config.script, e))?
+            .map_err(|e| format!("Failed to open script '{}'. \n\t> {}", config.script, e))?
             .read_to_string(&mut content)
-            .map_err(|e| format!("Failed to read script '{}'. \n\t{}", config.script, e))?;
+            .map_err(|e| format!("Failed to read script '{}'. \n\t> {}", config.script, e))?;
         log_info!(
             server_metadata,
             EXECUTE_TASK_NAME,

@@ -341,7 +341,7 @@ async fn main() {
                 log_error_with_host!(user.as_str(), host.as_str(), UPLOAD_TASK_NAME,
                     "{}",
                     format!(
-                        "Failed to load properties file '{}'. \n\t{}",
+                        "Failed to load properties file '{}'. \n\t> {}",
                         config.properties_file, e
                     )
                 );
@@ -361,7 +361,7 @@ async fn main() {
                 let result = commands::upload::run(&config,  &mappings, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
                     log_error!(&server_metadata,UPLOAD_TASK_NAME,
-                        "Upload failed: \n\t{}",
+                        "Upload failed: \n\t> {}",
                         e
                     );
                     flush_logs_and_exit(log_handle).await;
@@ -418,9 +418,7 @@ async fn main() {
                 let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
                     log_error!(&server_metadata, EXECUTE_TASK_NAME,
-                        "Execute failed for {}@{}: \n\t{}",
-                        server_metadata.user,
-                        server_metadata.host,
+                        "Execute failed: \n\t> {}",
                         e
                     );
                     flush_logs_and_exit(log_handle).await;
@@ -486,9 +484,7 @@ async fn main() {
                 let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
                     log_error!(&server_metadata,PATCH_TASK_NAME,
-                        "Patch failed for {}@{}: \n\t{}",
-                        server_metadata.user,
-                        server_metadata.host,
+                        "Patch failed: \n\t> {}",
                         e
                     );
                     flush_logs_and_exit(log_handle).await;
@@ -548,7 +544,7 @@ async fn main() {
                     log_error_root!(
                         "{}",
                         format!(
-                            "Failed to load properties file '{}'. \n\t{}",
+                            "Failed to load properties file '{}'. \n\t> {}",
                             config.properties_file, e
                         )
                     );
@@ -569,7 +565,7 @@ async fn main() {
                         log_error!(
                             &server_metadata,
                             UPLOAD_TASK_NAME,
-                            "Upload failed: \n\t{}",
+                            "Upload failed: \n\t> {}",
                             e
                         );
                     }
@@ -592,9 +588,7 @@ async fn main() {
                     let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                     if let Err(e) = result {
                         log_error!(&server_metadata, EXECUTE_TASK_NAME,
-                            "Execute failed for {}@{}: \n\t{}",
-                            server_metadata.user,
-                            server_metadata.host,
+                            "Execute failed: \n\t> {}",
                             e
                         );
                     }
@@ -617,9 +611,7 @@ async fn main() {
                     let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
                     if let Err(e) = result {
                         log_error!(&server_metadata, PATCH_TASK_NAME,
-                            "Patch failed for {}@{}: \n\t{}",
-                            server_metadata.user,
-                            server_metadata.host,
+                            "Patch failed: \n\t> {}",
                             e
                         );
                     }
@@ -631,6 +623,6 @@ async fn main() {
 
     join_all(tasks).await;
     if let Err(e) = global_server_pool.cleanup_pending_servers().await {
-        log::error!("Cleanup temp forder failed: \n\t{}",e);
+        log::error!("Cleanup temp forder failed: \n\t> {}",e);
      }
 }

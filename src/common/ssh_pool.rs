@@ -337,12 +337,12 @@ impl ServerPool {
         let live_session_wrapper = server_pool
             .get_session()
             .await
-            .map_err(|e| format!("Get session error:\n\t{}", e))?;
+            .map_err(|e| format!("Get session error:\n\t> {}", e))?;
 
         let guard = live_session_wrapper
             .get_channel_guard()
             .await
-            .map_err(|e| format!("Get channel error:\n\t{}", e))?;
+            .map_err(|e| format!("Get channel error:\n\t> {}", e))?;
 
         Ok(guard)
     }
@@ -496,7 +496,7 @@ impl ServerPool {
                     );
                     Ok(false)
                 } else {
-                    Err(format!("Failed to check remote path '{}'. \n\t{}", path, e))
+                    Err(format!("Failed to check remote path '{}'. \n\t> {}", path, e))
                 }
             }
         }
@@ -574,14 +574,14 @@ impl ServerPool {
                 .channel
                 .request_pty(true, "xterm", 0, 0, 0, 0, &[])
                 .await
-                .map_err(|e| format!("Failed to request pty for sudo. \n\t{}", e))?;
+                .map_err(|e| format!("Failed to request pty for sudo. \n\t> {}", e))?;
         }
 
         channel_guard
             .channel
             .exec(true, full_cmd.as_bytes().to_vec())
             .await
-            .map_err(|e| format!("Failed to execute command '{}'. \n\t{}", cmd, e))?;
+            .map_err(|e| format!("Failed to execute command '{}'. \n\t> {}", cmd, e))?;
 
         if use_sudo {
             let mut data = Vec::new();
@@ -599,7 +599,7 @@ impl ServerPool {
                 .channel
                 .data(pw_with_newline.as_bytes())
                 .await
-                .map_err(|e| format!("Failed to send sudo password. \n\t{}", e))?;
+                .map_err(|e| format!("Failed to send sudo password. \n\t> {}", e))?;
         }
 
         let mut stdout_buf = String::new();
@@ -653,10 +653,10 @@ impl ServerPool {
                         let mut msg =
                             format!("Command '{}' failed with exit status {}.", cmd, exit_status);
                         if !stdout_str.trim().is_empty() {
-                            msg.push_str(&format!("\n\t{}", stdout_str));
+                            msg.push_str(&format!("\n\t> {}", stdout_str));
                         }
                         if !stderr_str.trim().is_empty() {
-                            msg.push_str(&format!("\n\t{}", stderr_str));
+                            msg.push_str(&format!("\n\t> {}", stderr_str));
                         }
                         return Err(msg);
                     }
@@ -684,7 +684,7 @@ impl ServerPool {
             .channel
             .close()
             .await
-            .map_err(|e| format!("Failed to close channel. \n\t{}", e))?;
+            .map_err(|e| format!("Failed to close channel. \n\t> {}", e))?;
 
         if stdout_buf.ends_with('\n') {
             stdout_buf.pop();
@@ -716,13 +716,13 @@ impl ServerPool {
         if local_file_or_dir.is_dir() {
             for entry in std::fs::read_dir(local_file_or_dir).map_err(|e| {
                 format!(
-                    "Failed to read local directory '{}'. \n\t{}",
+                    "Failed to read local directory '{}'. \n\t> {}",
                     local_file_or_dir.display(),
                     e
                 )
             })? {
                 let entry =
-                    entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
+                    entry.map_err(|e| format!("Error reading directory entry. \n\t> {}", e))?;
                 let sub_path = entry.path();
                 let base_name = get_local_path_base_name(&sub_path)?;
                 let remote_sub = format!("{}/{}", remote_dir, base_name);
@@ -916,13 +916,13 @@ impl ServerPool {
                 .await?;
             for entry in std::fs::read_dir(local_file_or_dir).map_err(|e| {
                 format!(
-                    "Failed to read local directory '{}'. \n\t{}",
+                    "Failed to read local directory '{}'. \n\t> {}",
                     local_file_or_dir.display(),
                     e
                 )
             })? {
                 let entry =
-                    entry.map_err(|e| format!("Error reading directory entry. \n\t{}", e))?;
+                    entry.map_err(|e| format!("Error reading directory entry. \n\t> {}", e))?;
                 let sub_path = entry.path();
 
                 self.do_upload_with_scp_recursive(
@@ -1078,7 +1078,7 @@ impl ServerPool {
 
                     let status = sshpass_cmd
                         .status()
-                        .map_err(|e| format!("Failed to execute rsync via sshpass. \n\t{}", e))?;
+                        .map_err(|e| format!("Failed to execute rsync via sshpass. \n\t> {}", e))?;
 
                     if !status.success() {
                         return Err(format!(
@@ -1157,7 +1157,7 @@ impl ServerPool {
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to remove existing remote {} '{}'. \n\t{}",
+                    "Failed to remove existing remote {} '{}'. \n\t> {}",
                     if is_file { "file" } else { "directory" },
                     remote_path,
                     e
@@ -1204,7 +1204,7 @@ impl ServerPool {
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to check write permission for '{}'. \n\t{}",
+                    "Failed to check write permission for '{}'. \n\t> {}",
                     remote_dir, e
                 )
             })?;
@@ -1241,7 +1241,7 @@ impl ServerPool {
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to create remote directory '{}'. \n\t{}",
+                    "Failed to create remote directory '{}'. \n\t> {}",
                     remote_dir, e
                 )
             })?;

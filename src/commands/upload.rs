@@ -26,13 +26,29 @@ pub async fn run(
         // println!("local_item: {}, remote_dir: {}",local_item, remote_dir);
         let local_file_or_dir = Path::new(&local_item).to_path_buf();
         if !local_file_or_dir.exists() {
-            log_warn!(server_metadata, UPLOAD_TASK_NAME,"Local item '{}' not found. Skipping.", local_item);
+            log_warn!(
+                server_metadata,
+                UPLOAD_TASK_NAME,
+                "Local item '{}' not found. Skipping.",
+                local_item
+            );
             continue;
         }
 
         let remote_dir_resolved = global_server_pool
-            .resolve_remote_path(server_metadata,UPLOAD_TASK_NAME, config.use_sudo, &remote_dir)
-            .await?;
+            .resolve_remote_path(
+                server_metadata,
+                UPLOAD_TASK_NAME,
+                config.use_sudo,
+                &remote_dir,
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "Child Upload Task failed: {} --> {} \n\t> {}",
+                    local_item, remote_dir, e
+                )
+            })?;
         if remote_dir_resolved.is_empty() {
             return Err(format!(
                 "Failed to resolve remote directory '{}'",
@@ -42,11 +58,33 @@ pub async fn run(
 
         // Check if remote directory is writable
         global_server_pool
-            .validate_remote_dir(server_metadata, UPLOAD_TASK_NAME, &remote_dir_resolved, config.use_sudo)
-            .await?;
+            .validate_remote_dir(
+                server_metadata,
+                UPLOAD_TASK_NAME,
+                &remote_dir_resolved,
+                config.use_sudo,
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "Child Upload Task failed: {} --> {} \n\t> {}",
+                    local_item, remote_dir, e
+                )
+            })?;
         global_server_pool
-            .create_remote_dir(server_metadata, UPLOAD_TASK_NAME, &remote_dir_resolved, config.use_sudo)
-            .await?;
+            .create_remote_dir(
+                server_metadata,
+                UPLOAD_TASK_NAME,
+                &remote_dir_resolved,
+                config.use_sudo,
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "Child Upload Task failed: {} --> {} \n\t> {}",
+                    local_item, remote_dir, e
+                )
+            })?;
 
         let local_file_or_dir_clone = local_file_or_dir.clone();
         let remote_dir_clone = remote_dir_resolved.clone();
@@ -73,7 +111,7 @@ pub async fn run(
                 .await
                 .map_err(|e| {
                     format!(
-                        "Failed to upload '{}' to remote directory '{}' . \n\t{}",
+                        "Child Upload Task failed: {} --> {} \n\t> {}",
                         local_file_or_dir_clone.display(),
                         remote_dir_clone,
                         e
@@ -99,6 +137,6 @@ pub async fn run(
         return Err(errors.join("\n\n\t"));
     }
 
-    log_info!(server_metadata,UPLOAD_TASK_NAME,"Upload complete.");
+    log_info!(server_metadata, UPLOAD_TASK_NAME, "Upload complete.");
     Ok(())
 }

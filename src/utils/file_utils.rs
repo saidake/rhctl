@@ -13,13 +13,13 @@ use std::sync::Arc;
 
 pub fn load_yaml_config(path: &str) -> Result<YmlConfig, String> {
     let mut file =
-        File::open(path).map_err(|e| format!("Failed to open config file {}. \n\t{}", path, e))?;
+        File::open(path).map_err(|e| format!("Failed to open config file {}. \n\t> {}", path, e))?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)
-        .map_err(|e| format!("Failed to read config file {}. \n\t{}", path, e))?;
+        .map_err(|e| format!("Failed to read config file {}. \n\t> {}", path, e))?;
     // println!("contents: {:?}", contents);
     serde_yaml::from_str(&contents)
-        .map_err(|e| format!("Failed to parse YAML config {}. \n\t{}", path, e))
+        .map_err(|e| format!("Failed to parse YAML config {}. \n\t> {}", path, e))
 }
 
 pub fn generate_remote_temp_dir(prefix: &str) -> String {
@@ -49,7 +49,7 @@ pub fn log_local_file_info(
         .output()
         .map_err(|e| {
             format!(
-                "Failed to execute ls -al on '{}'. \n\t{}",
+                "Failed to execute ls -al on '{}'. \n\t> {}",
                 local_path.display(),
                 e
             )
@@ -97,9 +97,9 @@ pub fn load_properties(
 ) -> Result<(), String> {
     // println!("vars: {:?}", vars);
     let file = substitute_vars(file, vars)?;
-    let f = File::open(&file).map_err(|e| format!("Error opening file '{}'. \n\t{}", file, e))?;
+    let f = File::open(&file).map_err(|e| format!("Error opening file '{}'. \n\t> {}", file, e))?;
     for (line_num, line) in BufReader::new(f).lines().enumerate() {
-        let line = line.map_err(|e| format!("Error reading line {}. \n\t{}", line_num + 1, e))?;
+        let line = line.map_err(|e| format!("Error reading line {}. \n\t> {}", line_num + 1, e))?;
         let line = line.trim_end_matches(|c| c == '\n' || c == '\r' || c == ' ' || c == '\t');
         if line.trim().is_empty() || line.starts_with('#') {
             continue;

@@ -401,7 +401,7 @@ pub fn log_direct_option(
         let line_to_print = if i == 0 {
             format!("{} {}", prefix, line)
         } else {
-            format!("> {}", line)
+            format!("{}", line)
         };
         execute!(
             stdout(),
