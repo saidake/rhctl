@@ -285,7 +285,7 @@ pub struct LogEntry {
     pub message: String,
 }
 
-pub async fn init_logger() -> (tokio::task::JoinHandle<()>) {
+pub async fn init_logger() -> tokio::task::JoinHandle<()> {
     let (tx, mut rx) = mpsc::channel::<LogEntry>(100);
     *LOG_SENDER.lock().await = Some(tx.clone());
 

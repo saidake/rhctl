@@ -10,7 +10,7 @@ use crate::domain::constants::{EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_N
 use crate::domain::yml_config::{NamedConfig, ServerConfig, TargetConfig, YmlConfig};
 use crate::utils::file_utils::substitute_vars;
 use crate::utils::log_utils::prompt_password_or_exit;
-use crate::{log_error, log_error_direct, log_error_root};
+use crate::{log_error_direct, log_error_root};
 
 // Root level
 pub fn parse_patch_config_from_cmd(

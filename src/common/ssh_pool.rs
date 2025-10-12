@@ -8,22 +8,19 @@ use async_recursion::async_recursion;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use dashmap::DashSet;
-use futures::channel;
-use russh::ChannelId;
-use russh::client::{self, Handle, Msg};
-use russh::{Channel, ChannelMsg};
+use russh::client::{Handle, Msg};
+use russh::ChannelMsg;
 use russh_keys::key::PublicKey;
 use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::io::{self, BufRead, BufReader, Cursor, Read, Write};
+use std::io::{self, BufReader, Cursor, Read, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tokio::task;
 
 #[derive(Debug)]
 pub enum SshError {

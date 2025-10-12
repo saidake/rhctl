@@ -1,7 +1,5 @@
-use ansi_term::Colour;
 use clap::{Parser, Subcommand};
 use futures::future::join_all;
-use log::Level;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
@@ -14,7 +12,7 @@ mod domain;
 mod handlers;
 mod utils;
 
-use crate::common::ssh_pool::{ServerOptions, ServerPool};
+use crate::common::ssh_pool::ServerPool;
 use crate::domain::constants::{EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
 use crate::handlers::command_handler::{
     parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
@@ -22,7 +20,7 @@ use crate::handlers::command_handler::{
 };
 use crate::utils::file_utils::load_properties;
 use crate::utils::file_utils::load_yaml_config;
-use crate::utils::log_utils::{ask_user_and_abort, ask_user_and_abort_option, flush_logs_and_exit, init_logger};
+use crate::utils::log_utils::{ask_user_and_abort_option, flush_logs_and_exit, init_logger};
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
     humantime::parse_duration(s).map_err(|e| format!("Invalid duration '{}': {}", s, e))
