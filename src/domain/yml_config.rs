@@ -133,11 +133,11 @@ pub struct CommonConfig {
     pub server: Option<ServerConfigLimits>,
 }
 
-#[derive(Clone, Deserialize, Default)]
-#[serde(rename_all = "kebab-case")]
-pub struct GlobalConfig {
-    pub max_global_channels: Option<usize>,
-}
+// #[derive(Clone, Deserialize, Default)]
+// #[serde(rename_all = "kebab-case")]
+// pub struct GlobalConfig {
+//     pub max_global_channels: Option<usize>,
+// }
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]

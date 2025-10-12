@@ -10,7 +10,7 @@ use crate::domain::constants::{EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_N
 use crate::domain::yml_config::{NamedConfig, ServerConfig, TargetConfig, YmlConfig};
 use crate::utils::file_utils::substitute_vars;
 use crate::utils::log_utils::prompt_password_or_exit;
-use crate::{log_error_direct, log_error_root};
+use crate::{log_error_with_host_direct, log_error_root};
 
 // Root level
 pub fn parse_patch_config_from_cmd(
@@ -58,19 +58,19 @@ pub fn parse_patch_config_from_cmd(
         silent,
         recover,
         local_path: substitute_vars(&local_path, &cli_vars).unwrap_or_else(|e| {
-            log_error_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
+            log_error_with_host_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
         remote_upload: substitute_vars(&remote_upload, &cli_vars).unwrap_or_else(|e| {
-            log_error_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
+            log_error_with_host_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
         remote_path: substitute_vars(&remote_path, &cli_vars).unwrap_or_else(|e| {
-            log_error_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
+            log_error_with_host_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
         remote_backup: substitute_vars(&remote_backup, &cli_vars).unwrap_or_else(|e| {
-            log_error_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
+            log_error_with_host_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
     }
@@ -116,12 +116,12 @@ pub fn parse_execute_config_from_cmd(
         use_rsync,
         silent,
         script: substitute_vars(&script, &cli_vars).unwrap_or_else(|e| {
-            log_error_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
+            log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
             exit(1);
         }),
         remote_path: substitute_vars(&remote_path.unwrap_or_else(|| "~".to_string()), &cli_vars)
             .unwrap_or_else(|e| {
-                log_error_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
+                log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
                 exit(1);
             }),
     }
@@ -170,7 +170,7 @@ pub fn parse_upload_config_from_cmd(
         use_rsync,
         silent,
         properties_file: substitute_vars(&properties_file, &cli_vars).unwrap_or_else(|e| {
-            log_error_direct!(user, host, UPLOAD_TASK_NAME, "{}", e);
+            log_error_with_host_direct!(user, host, UPLOAD_TASK_NAME, "{}", e);
             exit(1);
         }),
     }
@@ -229,7 +229,7 @@ pub fn parse_upload_configs(
                     silent: upload.silent.or(named_config.silent).unwrap_or(false),
                     properties_file: substitute_vars(&upload.properties_file, var_map)
                         .unwrap_or_else(|e| {
-                            log_error_direct!(
+                            log_error_with_host_direct!(
                                 &server.user,
                                 &server.host,
                                 UPLOAD_TASK_NAME,
@@ -308,7 +308,7 @@ pub fn parse_execute_configs(
                             .unwrap_or(false),
                         silent: execute.silent.or(named_config.silent).unwrap_or(false),
                         script: substitute_vars(script, var_map).unwrap_or_else(|e| {
-                            log_error_direct!(
+                            log_error_with_host_direct!(
                                 &server.user,
                                 &server.host,
                                 EXECUTE_TASK_NAME,
@@ -325,7 +325,7 @@ pub fn parse_execute_configs(
                             var_map,
                         )
                         .unwrap_or_else(|e| {
-                            log_error_direct!(
+                            log_error_with_host_direct!(
                                 &server.user,
                                 &server.host,
                                 EXECUTE_TASK_NAME,
@@ -397,22 +397,22 @@ pub fn parse_patch_configs(
 
                     recover: patch.recover,
                     local_path: substitute_vars(&patch.local_path, var_map).unwrap_or_else(|e| {
-                        log_error_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
+                        log_error_with_host_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
                         exit(1);
                     }),
                     remote_upload: substitute_vars(&patch.remote_upload, var_map).unwrap_or_else(
                         |e| {
-                            log_error_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
+                            log_error_with_host_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
                             exit(1);
                         },
                     ),
                     remote_path: substitute_vars(&patch.remote_path, var_map).unwrap_or_else(|e| {
-                        log_error_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
+                        log_error_with_host_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
                         exit(1);
                     }),
                     remote_backup: substitute_vars(&patch.remote_backup, var_map).unwrap_or_else(
                         |e| {
-                            log_error_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
+                            log_error_with_host_direct!(&server.user, &server.host, PATCH_TASK_NAME, "{}", e);
                             exit(1);
                         },
                     ),

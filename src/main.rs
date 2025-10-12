@@ -338,7 +338,7 @@ async fn main() {
             if let Err(e) =
                 load_properties(config.properties_file.as_str(), &mut mappings, &cli_vars)
             {
-                log_error_direct!(user.as_str(), host.as_str(), UPLOAD_TASK_NAME,
+                log_error_with_host!(user.as_str(), host.as_str(), UPLOAD_TASK_NAME,
                     "{}",
                     format!(
                         "Failed to load properties file '{}'. \n\t{}",
@@ -361,9 +361,7 @@ async fn main() {
                 let result = commands::upload::run(&config,  &mappings, &server_metadata, global_server_pool_clone.clone()).await;
                 if let Err(e) = result {
                     log_error!(&server_metadata,UPLOAD_TASK_NAME,
-                        "Upload failed for {}@{}: \n\t{}",
-                        server_metadata.user,
-                        server_metadata.host,
+                        "Upload failed: \n\t{}",
                         e
                     );
                     flush_logs_and_exit(log_handle).await;
@@ -571,9 +569,7 @@ async fn main() {
                         log_error!(
                             &server_metadata,
                             UPLOAD_TASK_NAME,
-                            "Upload failed for {}@{}: \n\t{}",
-                            server_metadata.user,
-                            server_metadata.host,
+                            "Upload failed: \n\t{}",
                             e
                         );
                     }
