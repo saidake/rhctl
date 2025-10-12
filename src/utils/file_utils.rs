@@ -112,8 +112,10 @@ pub fn load_properties(
                 line
             ));
         }
+        // println!("parts[0].trim(): {}, parts[1].trim(): {}",parts[0].trim(), parts[1].trim());
         let local_file_or_dir = substitute_vars(parts[0].trim(), vars)?;
         let target_path = substitute_vars(parts[1].trim(), vars)?;
+        // println!("local_file_or_dir: {}, target_path: {}",local_file_or_dir, target_path);
         if local_file_or_dir.is_empty() || target_path.is_empty() {
             return Err(format!(
                 "Empty local or target path at line {}: '{}'",

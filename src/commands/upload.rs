@@ -23,6 +23,7 @@ pub async fn run(
     let mut tasks = Vec::new();
 
     for (local_item, remote_dir) in mappings {
+        // println!("local_item: {}, remote_dir: {}",local_item, remote_dir);
         let local_file_or_dir = Path::new(&local_item).to_path_buf();
         if !local_file_or_dir.exists() {
             log_warn!(server_metadata, UPLOAD_TASK_NAME,"Local item '{}' not found. Skipping.", local_item);

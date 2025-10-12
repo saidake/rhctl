@@ -556,6 +556,7 @@ async fn main() {
                     );
                     flush_logs_and_exit(log_handle).await;
                 }
+                // println!("Mappings after load: {:#?}", mappings);
                 let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
                     if let Err(e) = global_server_pool_clone
@@ -565,7 +566,7 @@ async fn main() {
                         log_error!(&server_metadata, UPLOAD_TASK_NAME, "{}", e);
                         return;
                     }
-                    let result = commands::upload::run(&config,  &vars, &server_metadata, global_server_pool_clone.clone()).await;
+                    let result = commands::upload::run(&config,  &mappings, &server_metadata, global_server_pool_clone.clone()).await;
                     if let Err(e) = result {
                         log_error!(
                             &server_metadata,
