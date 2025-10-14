@@ -6,7 +6,7 @@ use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{
     ExecuteCmdConfig, PatchCmdConfig, ServerMetadata, UploadCmdConfig,
 };
-use crate::domain::constants::{EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
+use crate::domain::constants::{DEFAULT_CONNECT_TIMEOUT, DEFAULT_EXECUTE_REMOTE_PATH, DEFAULT_MAX_CHANNELS_PER_SESSION, DEFAULT_MAX_SESSIONS_PER_SERVER, DEFAULT_MAX_SESSION_LIFETIME, DEFAULT_SESSION_ACQUIRE_TIMEOUT, DEFAULT_SSH_PORT, EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
 use crate::domain::yml_config::{NamedConfig, ServerConfig, TargetConfig, YmlConfig};
 use crate::utils::file_utils::substitute_vars;
 use crate::utils::log_utils::prompt_password_or_exit;
@@ -43,15 +43,15 @@ pub fn parse_patch_config_from_cmd(
         server_metadata: ServerMetadata {
             host: host.to_string(),
             user: user.to_string(),
-            ssh_port: ssh_port.unwrap_or(22),
+            ssh_port: ssh_port.unwrap_or(DEFAULT_SSH_PORT),
             password,
             server_key,
 
-            connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
-            max_channels_per_session: max_channels_per_session.unwrap_or(200),
-            max_sessions_per_server: max_sessions_per_server.unwrap_or(200),
-            session_acquire_timeout: session_acquire_timeout.unwrap_or(Duration::from_secs(30)),
-            max_session_lifetime: max_session_lifetime.unwrap_or(Duration::from_secs(600)),
+            connect_timeout: connect_timeout.unwrap_or(DEFAULT_CONNECT_TIMEOUT),
+            max_channels_per_session: max_channels_per_session.unwrap_or(DEFAULT_MAX_CHANNELS_PER_SESSION),
+            max_sessions_per_server: max_sessions_per_server.unwrap_or(DEFAULT_MAX_SESSIONS_PER_SERVER),
+            session_acquire_timeout: session_acquire_timeout.unwrap_or(DEFAULT_SESSION_ACQUIRE_TIMEOUT),
+            max_session_lifetime: max_session_lifetime.unwrap_or(DEFAULT_MAX_SESSION_LIFETIME),
         },
         use_sudo,
         use_rsync,
@@ -102,15 +102,15 @@ pub fn parse_execute_config_from_cmd(
         server_metadata: ServerMetadata {
             host: host.to_string(),
             user: user.to_string(),
-            ssh_port: ssh_port.unwrap_or(22),
+            ssh_port: ssh_port.unwrap_or(DEFAULT_SSH_PORT),
             password,
             server_key,
 
-            connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
-            max_channels_per_session: max_channels_per_session.unwrap_or(200),
-            max_sessions_per_server: max_sessions_per_server.unwrap_or(200),
-            session_acquire_timeout: session_acquire_timeout.unwrap_or(Duration::from_secs(30)),
-            max_session_lifetime: max_session_lifetime.unwrap_or(Duration::from_secs(600)),
+            connect_timeout: connect_timeout.unwrap_or(DEFAULT_CONNECT_TIMEOUT),
+            max_channels_per_session: max_channels_per_session.unwrap_or(DEFAULT_MAX_CHANNELS_PER_SESSION),
+            max_sessions_per_server: max_sessions_per_server.unwrap_or(DEFAULT_MAX_SESSIONS_PER_SERVER),
+            session_acquire_timeout: session_acquire_timeout.unwrap_or(DEFAULT_SESSION_ACQUIRE_TIMEOUT),
+            max_session_lifetime: max_session_lifetime.unwrap_or(DEFAULT_MAX_SESSION_LIFETIME),
         },
         use_sudo,
         use_rsync,
@@ -119,7 +119,7 @@ pub fn parse_execute_config_from_cmd(
             log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
             exit(1);
         }),
-        remote_path: substitute_vars(&remote_path.unwrap_or_else(|| "~".to_string()), &cli_vars)
+        remote_path: substitute_vars(&remote_path.unwrap_or_else(|| DEFAULT_EXECUTE_REMOTE_PATH.to_string()), &cli_vars)
             .unwrap_or_else(|e| {
                 log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
                 exit(1);
@@ -149,22 +149,22 @@ pub fn parse_upload_config_from_cmd(
     max_session_lifetime: Option<Duration>,
     cli_vars: &HashMap<String, String>,
 ) -> UploadCmdConfig {
-    let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(22), &user);
+    let server_key = ServerPool::generate_server_key(&host, ssh_port.unwrap_or(DEFAULT_SSH_PORT), &user);
     let password =
         password.unwrap_or_else(|| prompt_password_or_exit(&user, &host, UPLOAD_TASK_NAME));
     UploadCmdConfig {
         server_metadata: ServerMetadata {
             host: host.to_string(),
             user: user.to_string(),
-            ssh_port: ssh_port.unwrap_or(22),
+            ssh_port: ssh_port.unwrap_or(DEFAULT_SSH_PORT),
             password,
             server_key,
 
-            connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(60)),
-            max_channels_per_session: max_channels_per_session.unwrap_or(200),
-            max_sessions_per_server: max_sessions_per_server.unwrap_or(200),
-            session_acquire_timeout: session_acquire_timeout.unwrap_or(Duration::from_secs(30)),
-            max_session_lifetime: max_session_lifetime.unwrap_or(Duration::from_secs(600)),
+            connect_timeout: connect_timeout.unwrap_or(DEFAULT_CONNECT_TIMEOUT),
+            max_channels_per_session: max_channels_per_session.unwrap_or(DEFAULT_MAX_CHANNELS_PER_SESSION),
+            max_sessions_per_server: max_sessions_per_server.unwrap_or(DEFAULT_MAX_SESSIONS_PER_SERVER),
+            session_acquire_timeout: session_acquire_timeout.unwrap_or(DEFAULT_SESSION_ACQUIRE_TIMEOUT),
+            max_session_lifetime: max_session_lifetime.unwrap_or(DEFAULT_MAX_SESSION_LIFETIME),
         },
         use_sudo,
         use_rsync,
@@ -195,33 +195,33 @@ pub fn parse_upload_configs(
                     server_metadata: ServerMetadata {
                         host: server.host.clone(),
                         user: server.user.clone(),
-                        ssh_port: server.ssh_port.unwrap_or(22),
+                        ssh_port: server.ssh_port.unwrap_or(DEFAULT_SSH_PORT),
                         password,
                         server_key: ServerPool::generate_server_key(
                             &server.host,
-                            server.ssh_port.unwrap_or(22),
+                            server.ssh_port.unwrap_or(DEFAULT_SSH_PORT),
                             &server.user,
                         ),
                         connect_timeout: server
                             .connect_timeout
                             .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
-                            .unwrap_or(Duration::from_secs(60)),
+                            .unwrap_or(DEFAULT_CONNECT_TIMEOUT),
                         max_channels_per_session: server
                             .max_channels_per_session
                             .or_else(|| common.as_ref()?.server.as_ref()?.max_channels_per_session)
-                            .unwrap_or(200),
+                            .unwrap_or(DEFAULT_MAX_CHANNELS_PER_SESSION),
                         max_sessions_per_server: server
                             .max_sessions_per_server
                             .or_else(|| common.as_ref()?.server.as_ref()?.max_sessions_per_server)
-                            .unwrap_or(200),
+                            .unwrap_or(DEFAULT_MAX_SESSIONS_PER_SERVER),
                         session_acquire_timeout: server
                             .session_acquire_timeout
                             .or_else(|| common.as_ref()?.server.as_ref()?.session_acquire_timeout)
-                            .unwrap_or(Duration::from_secs(30)),
+                            .unwrap_or(DEFAULT_SESSION_ACQUIRE_TIMEOUT),
                         max_session_lifetime: server
                             .max_session_lifetime
                             .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
-                            .unwrap_or(Duration::from_secs(600)),
+                            .unwrap_or(DEFAULT_MAX_SESSION_LIFETIME),
                     },
 
                     use_sudo: upload.use_sudo.or(named_config.use_sudo).unwrap_or(false),
@@ -266,39 +266,39 @@ pub fn parse_execute_configs(
                         server_metadata: ServerMetadata {
                             host: server.host.clone(),
                             user: server.user.clone(),
-                            ssh_port: server.ssh_port.unwrap_or(22),
+                            ssh_port: server.ssh_port.unwrap_or(DEFAULT_SSH_PORT),
                             password,
                             server_key: ServerPool::generate_server_key(
                                 &server.host,
-                                server.ssh_port.unwrap_or(22),
+                                server.ssh_port.unwrap_or(DEFAULT_SSH_PORT),
                                 &server.user,
                             ),
                             connect_timeout: server
                                 .connect_timeout
                                 .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
-                                .unwrap_or(Duration::from_secs(60)),
+                                .unwrap_or(DEFAULT_CONNECT_TIMEOUT),
                             max_channels_per_session: server
                                 .max_channels_per_session
                                 .or_else(|| {
                                     common.as_ref()?.server.as_ref()?.max_channels_per_session
                                 })
-                                .unwrap_or(200),
+                                .unwrap_or(DEFAULT_MAX_CHANNELS_PER_SESSION),
                             max_sessions_per_server: server
                                 .max_sessions_per_server
                                 .or_else(|| {
                                     common.as_ref()?.server.as_ref()?.max_sessions_per_server
                                 })
-                                .unwrap_or(200),
+                                .unwrap_or(DEFAULT_MAX_SESSIONS_PER_SERVER),
                             session_acquire_timeout: server
                                 .session_acquire_timeout
                                 .or_else(|| {
                                     common.as_ref()?.server.as_ref()?.session_acquire_timeout
                                 })
-                                .unwrap_or(Duration::from_secs(30)),
+                                .unwrap_or(DEFAULT_SESSION_ACQUIRE_TIMEOUT),
                             max_session_lifetime: server
                                 .max_session_lifetime
                                 .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
-                                .unwrap_or(Duration::from_secs(600)),
+                                .unwrap_or(DEFAULT_MAX_SESSION_LIFETIME),
                         },
 
                         use_sudo: execute.use_sudo.or(named_config.use_sudo).unwrap_or(false),
@@ -321,7 +321,7 @@ pub fn parse_execute_configs(
                             &execute
                                 .remote_path
                                 .clone()
-                                .unwrap_or_else(|| "~".to_string()),
+                                .unwrap_or_else(|| DEFAULT_EXECUTE_REMOTE_PATH.to_string()),
                             var_map,
                         )
                         .unwrap_or_else(|e| {
@@ -362,33 +362,33 @@ pub fn parse_patch_configs(
                     server_metadata: ServerMetadata {
                         host: server.host.clone(),
                         user: server.user.clone(),
-                        ssh_port: server.ssh_port.unwrap_or(22),
+                        ssh_port: server.ssh_port.unwrap_or(DEFAULT_SSH_PORT),
                         password,
                         server_key: ServerPool::generate_server_key(
                             &server.host,
-                            server.ssh_port.unwrap_or(22),
+                            server.ssh_port.unwrap_or(DEFAULT_SSH_PORT),
                             &server.user,
                         ),
                         connect_timeout: server
                             .connect_timeout
                             .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
-                            .unwrap_or(Duration::from_secs(60)),
+                            .unwrap_or(DEFAULT_CONNECT_TIMEOUT),
                         max_channels_per_session: server
                             .max_channels_per_session
                             .or_else(|| common.as_ref()?.server.as_ref()?.max_channels_per_session)
-                            .unwrap_or(200),
+                            .unwrap_or(DEFAULT_MAX_CHANNELS_PER_SESSION),
                         max_sessions_per_server: server
                             .max_sessions_per_server
                             .or_else(|| common.as_ref()?.server.as_ref()?.max_sessions_per_server)
-                            .unwrap_or(200),
+                            .unwrap_or(DEFAULT_MAX_SESSIONS_PER_SERVER),
                         session_acquire_timeout: server
                             .session_acquire_timeout
                             .or_else(|| common.as_ref()?.server.as_ref()?.session_acquire_timeout)
-                            .unwrap_or(Duration::from_secs(30)),
+                            .unwrap_or(DEFAULT_SESSION_ACQUIRE_TIMEOUT),
                         max_session_lifetime: server
                             .max_session_lifetime
                             .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
-                            .unwrap_or(Duration::from_secs(600)),
+                            .unwrap_or(DEFAULT_MAX_SESSION_LIFETIME),
                     },
 
                     use_sudo: patch.use_sudo.or(named_config.use_sudo).unwrap_or(false),
