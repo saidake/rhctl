@@ -8,7 +8,7 @@ common:
     max_session_lifetime: 10m
 
 var-map:
-  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/sbxctl/AAA/assets"
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets"
 group-map:
   dev: ["server1"]
   uat: ["server1"]

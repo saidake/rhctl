@@ -9,7 +9,7 @@ TARGETS=("x86_64-unknown-linux-gnu" "x86_64-apple-darwin" "aarch64-apple-darwin"
 
 for TARGET in "${TARGETS[@]}"; do
   cross build --release --target $TARGET
-  zip -j "sbxctl-${VERSION}-${TARGET}.zip" "target/${TARGET}/release/sbxctl"
+  zip -j "rsctl-${VERSION}-${TARGET}.zip" "target/${TARGET}/release/rsctl"
 done
 
 # Use gh CLI to create release

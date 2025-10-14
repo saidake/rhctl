@@ -2,9 +2,9 @@
 - [Table of Contents](#table-of-contents)
 - [Introduction](#introduction)
 - [Core Commands](#core-commands)
-  - [sbxctl upload](#sbxctl-upload)
-  - [sbxctl execute](#sbxctl-execute)
-  - [sbxctl patch](#sbxctl-patch)
+  - [rsctl upload](#rsctl-upload)
+  - [rsctl execute](#rsctl-execute)
+  - [rsctl patch](#rsctl-patch)
 - [Environment Configuration Helper](#environment-configuration-helper)
   - [Docker and Docker Compose](#docker-and-docker-compose)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host)
@@ -20,15 +20,15 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
 
 # Introduction
-**Sandbox Control (sbxctl)** is a high-performance Rust CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. 
+**Sandbox Control (rsctl)** is a high-performance Rust CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. 
 
 # Core Commands
-## sbxctl upload
+## rsctl upload
 [Back to Top](#table-of-contents)  
 Automates uploading files from a local `assets-root` directory to mapped remote paths, according to rules defined in a `properties` file. This command replicates the functionality of the previous `cpfiles.sh` script.
 
 **Prerequisites**:
-1. Ensure `sbxctl` is built and executable:
+1. Ensure `rsctl` is built and executable:
    ```bash
    cargo build --release
    ```
@@ -51,20 +51,20 @@ Automates uploading files from a local `assets-root` directory to mapped remote 
 **Examples**:
 - Using default settings from `config.yml`:
   ```bash
-  sbxctl --config config.yml upload
+  rsctl --config config.yml upload
   ```
 
   Copies `example1.txt` to `/home/test99/examples` and `example2.txt`, `example3.txt` from `AAA/assets/exampledir` to `/home/test99/examples/targetdir` on the remote server.
 
 - Specifying properties and assets root via CLI:
   ```bash
-  sbxctl --host 192.168.75.128 --user test99 --port 22 upload --properties AAA/config/path-mapping.properties --assets-root AAA/assets
+  rsctl --host 192.168.75.128 --user test99 --port 22 upload --properties AAA/config/path-mapping.properties --assets-root AAA/assets
   ```
   Same as above, but overrides config file settings.
 
 **Usage**:
 ```bash
-sbxctl [--config <config.yml>] [--host <host>] [--user <user>] [--port <port>] [--password <password>] [--use-sudo] [--use-rsync] [--silent] [--log-level <level>] upload [--properties <properties>] [--assets-root <assets-root>]
+rsctl [--config <config.yml>] [--host <host>] [--user <user>] [--port <port>] [--password <password>] [--use-sudo] [--use-rsync] [--silent] [--log-level <level>] upload [--properties <properties>] [--assets-root <assets-root>]
 ```
 - `<properties>`: Path to the properties file defining file mappings (e.g., `AAA/config/path-mapping.properties`).
 - `<assets-root>`: Base directory for local files to upload (e.g., `AAA/assets`).
@@ -84,12 +84,12 @@ example1.txt=~/examples
 exampledir=~/examples/targetdir
 ```
 
-## sbxctl execute
+## rsctl execute
 [Back to Top](#table-of-contents)  
 Executes a local Bash script on a remote server in a specified working directory. This command replicates the functionality of the previous `execr.sh` script, with real-time output streaming.
 
 **Prerequisites**:
-1. Ensure `sbxctl` is built:
+1. Ensure `rsctl` is built:
    ```bash
    cargo build --release
    ```
@@ -99,18 +99,18 @@ Executes a local Bash script on a remote server in a specified working directory
 **Examples**:
 - Using config file:
   ```bash
-  sbxctl --config config.yml execute AAA/assets/example-bash.sh ~/examples
+  rsctl --config config.yml execute AAA/assets/example-bash.sh ~/examples
   ```
   Executes `AAA/assets/example-bash.sh` in `/home/test99/examples` on the remote server.
 
 - Using CLI arguments:
   ```bash
-  sbxctl --host 192.168.75.128 --user test99 --port 22 execute AAA/assets/example-bash.sh ~/examples
+  rsctl --host 192.168.75.128 --user test99 --port 22 execute AAA/assets/example-bash.sh ~/examples
   ```
 
 **Usage**:
 ```bash
-sbxctl [--config <config.yml>] [--host <host>] [--user <user>] [--port <port>] [--password <password>] [--use-sudo] [--use-rsync] [--silent] [--log-level <level>] execute <script> [--remote-path <remote-path>]
+rsctl [--config <config.yml>] [--host <host>] [--user <user>] [--port <port>] [--password <password>] [--use-sudo] [--use-rsync] [--silent] [--log-level <level>] execute <script> [--remote-path <remote-path>]
 ```
 - `<script>`: Path to the local Bash script to execute.
 - `--remote-path`: Remote working directory (default: `~`).
@@ -128,12 +128,12 @@ pwd
 echo "Remote Execution"
 ```
 
-## sbxctl patch
+## rsctl patch
 [Back to Top](#table-of-contents)  
 Safely patches a remote file by uploading a local patch file, backing up the target file, and applying the patch, or recovering from a backup. This command replicates the functionality of the previous `patchr.sh` script.
 
 **Prerequisites**:
-1. Ensure `sbxctl` is built:
+1. Ensure `rsctl` is built:
    ```bash
    cargo build --release
    ```
@@ -144,24 +144,24 @@ Safely patches a remote file by uploading a local patch file, backing up the tar
 **Examples**:
 - Patch mode (using config file):
   ```bash
-  sbxctl --config config.yml patch
+  rsctl --config config.yml patch
   ```
   Patches `/home/test99/examples/example-patch-remote.txt` with `AAA/assets/example-patch.txt`, backing up to `/home/test99/tmp/example-patch-remote.txt.bak`.
 
 - Patch mode (CLI arguments):
   ```bash
-  sbxctl --host 192.168.75.128 --user test99 --port 22 patch --local-patch AAA/assets/example-patch.txt --remote-upload ~/tmp/example-patch.txt.upload --remote-file ~/examples/example-patch-remote.txt --remote-backup ~/tmp/example-patch-remote.txt.bak
+  rsctl --host 192.168.75.128 --user test99 --port 22 patch --local-patch AAA/assets/example-patch.txt --remote-upload ~/tmp/example-patch.txt.upload --remote-file ~/examples/example-patch-remote.txt --remote-backup ~/tmp/example-patch-remote.txt.bak
   ```
 
 - Recover mode:
   ```bash
-  sbxctl --config config.yml patch --recover
+  rsctl --config config.yml patch --recover
   ```
   Restores `/home/test99/examples/example-patch-remote.txt` from `/home/test99/tmp/example-patch-remote.txt.bak`.
 
 **Usage**:
 ```bash
-sbxctl [--config <config.yml>] [--host <host>] [--user <user>] [--port <port>] [--password <password>] [--use-sudo] [--use-rsync] [--silent] [--log-level <level>] patch [--local-patch <local-patch>] [--remote-upload <remote-upload>] [--remote-file <remote-file>] [--remote-backup <remote-backup>] [--recover]
+rsctl [--config <config.yml>] [--host <host>] [--user <user>] [--port <port>] [--password <password>] [--use-sudo] [--use-rsync] [--silent] [--log-level <level>] patch [--local-patch <local-patch>] [--remote-upload <remote-upload>] [--remote-file <remote-file>] [--remote-backup <remote-backup>] [--recover]
 ```
 - `--local-patch`: Path to the local patch file.
 - `--remote-upload`: Temporary remote path for the uploaded patch file.
@@ -185,12 +185,12 @@ Docker is a platform that enables you to package, distribute, and run applicatio
 ### Installing on a Remote Linux Host
 [Back to Top](#table-of-contents)  
 **Prerequisites**:
-1. Configure `config.yml` or CLI arguments for SSH access (see [sbxctl upload](#sbxctl-upload)).
+1. Configure `config.yml` or CLI arguments for SSH access (see [rsctl upload](#rsctl-upload)).
 2. Ensure the remote server has internet access.
 
 **Commands**:
 ```bash
-sbxctl --config config.yml execute ./scripts/docker/install.sh ~/examples
+rsctl --config config.yml execute ./scripts/docker/install.sh ~/examples
 ```
 Installs Docker and Docker Compose on the remote server.
 
@@ -230,14 +230,14 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
 
 **Commands**:
 ```bash
-sbxctl --config config.yml upload --properties ./scripts/aws/cpfiles-env.sh --assets-root ./scripts/aws/assets
-sbxctl --config config.yml execute ./scripts/aws/localstack-start.sh ~/examples
+rsctl --config config.yml upload --properties ./scripts/aws/cpfiles-env.sh --assets-root ./scripts/aws/assets
+rsctl --config config.yml execute ./scripts/aws/localstack-start.sh ~/examples
 ```
 - Uploads `scripts/aws/assets/docker-compose.yml` to `/opt/sandbox/aws` on the remote server.
 - Starts LocalStack service.
 
 ```bash
-sbxctl --config config.yml execute ./scripts/aws/localstack-stop.sh ~/examples
+rsctl --config config.yml execute ./scripts/aws/localstack-stop.sh ~/examples
 ```
 Stops LocalStack service.
 
@@ -274,12 +274,12 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
 
 **Commands**:
 ```bash
-sbxctl --config config.yml execute ./scripts/rocksdb/install.sh ~/examples
+rsctl --config config.yml execute ./scripts/rocksdb/install.sh ~/examples
 ```
 Installs RocksDB.
 
 ```bash
-sbxctl --config config.yml execute ./scripts/rocksdb/uninstall.sh ~/examples
+rsctl --config config.yml execute ./scripts/rocksdb/uninstall.sh ~/examples
 ```
 Uninstalls RocksDB.
 
@@ -293,6 +293,6 @@ Typesense is an open-source, fast, typo-tolerant search engine for building inst
 
 **Commands**:
 ```bash
-sbxctl --config config.yml execute ./scripts/typesense/install.sh ~/examples
+rsctl --config config.yml execute ./scripts/typesense/install.sh ~/examples
 ```
 Installs Typesense.

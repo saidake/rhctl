@@ -1,7 +1,7 @@
 class Sbxctl < Formula
   desc "High-performance Rust CLI for remote SSH operations"
-  homepage "https://github.com/yourusername/sbxctl"
-  url "https://github.com/yourusername/sbxctl/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/yourusername/rsctl"
+  url "https://github.com/yourusername/rsctl/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "compute_sha_here"
   license "MIT"
 
@@ -12,6 +12,6 @@ class Sbxctl < Formula
   end
 
   test do
-    system "#{bin}/sbxctl", "--version"
+    system "#{bin}/rsctl", "--version"
   end
 end

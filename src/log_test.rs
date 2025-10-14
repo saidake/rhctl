@@ -35,7 +35,7 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
 }
 
 #[derive(Parser)]
-#[command(name = "sbxctl")]
+#[command(name = "rsctl")]
 #[command(about = "A high-performance Rust CLI for remote file operations via SSH")]
 #[command(author = "Craig Brown")]
 #[command(version = "1.0.0")]

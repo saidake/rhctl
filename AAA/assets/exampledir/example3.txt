@@ -1,1 +1,1 @@
-sbxctl example file 3
+rsctl example file 3
