@@ -88,22 +88,6 @@ pub async fn run(
                 )
                 .await?;
 
-            // Cleanup
-            log_debug!(
-                &server_metadata,
-                EXECUTE_TASK_NAME,
-                "Cleaning up temporary script '{}'",
-                temp_remote_dir
-            );
-
-            global_server_pool
-                .exec(
-                    &server_metadata,
-                    EXECUTE_TASK_NAME,
-                    &format!("rm -rf {}", temp_remote_dir),
-                    config.use_sudo,
-                )
-                .await?;
         } else {
             // Execute without sudo: read and execute inline
             let mut content = String::new();

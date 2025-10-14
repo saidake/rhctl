@@ -360,6 +360,9 @@ async fn main() {
                     .await
                 {
                     log_error!(&server_metadata,UPLOAD_TASK_NAME,"{}", e);
+                    if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
+                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                    }
                     flush_logs_and_exit(log_handle).await;
                 }
                 let result = commands::upload::run(&config,  &mappings, &server_metadata, global_server_pool_clone.clone()).await;
@@ -368,6 +371,9 @@ async fn main() {
                         "Upload failed: \n\t> {}",
                         e
                     );
+                    if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
+                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                    }
                     flush_logs_and_exit(log_handle).await;
                 }
             });
@@ -420,6 +426,9 @@ async fn main() {
                     .await
                 {
                     log_error!(&server_metadata, EXECUTE_TASK_NAME,"{}", e);
+                    if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
+                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                    }
                     flush_logs_and_exit(log_handle).await;
                 }
                 let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
@@ -428,6 +437,9 @@ async fn main() {
                         "Execute failed: \n\t> {}",
                         e
                     );
+                    if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
+                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                    }
                     flush_logs_and_exit(log_handle).await;
                 }
             });
@@ -486,6 +498,9 @@ async fn main() {
                     .await
                 {
                     log_error!(&server_metadata,PATCH_TASK_NAME,"{}", e);
+                    if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
+                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                    }
                     flush_logs_and_exit(log_handle).await;
                 }
                 let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
@@ -494,6 +509,9 @@ async fn main() {
                         "Patch failed: \n\t> {}",
                         e
                     );
+                    if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
+                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                    }
                     flush_logs_and_exit(log_handle).await;
                 }
             });

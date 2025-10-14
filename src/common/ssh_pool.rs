@@ -515,6 +515,8 @@ impl ServerPool {
             .file_or_dir_exists(server_metadata, task_name, REMOTE_TEMP_SBXCTL_FOLDER, true)
             .await?;
         if remote_temp_sbxctl_folder_exists {
+            log_debug!( server_metadata,
+                task_name,"Clean up temp forder for server: host - {}, user - {}",server_metadata.host, server_metadata.user);
             self.exec(
                 server_metadata,
                 task_name,
