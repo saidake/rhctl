@@ -454,6 +454,92 @@ impl ServerPool {
             .await
     }
 
+    /// Check if any files or directories in `dir_path` match the given `pattern`
+    pub async fn dir_has_pattern(
+        &self,
+        server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
+        dir_path: &str,
+        pattern: &str,
+        use_sudo: bool,
+    ) -> Result<bool, String> {
+        log_debug!(
+            server_metadata,
+            task_name,
+            "Checking if directory '{}' has any content matching pattern '{}'",
+            dir_path,
+            pattern
+        );
+
+        // Use a one-liner shell command to safely check for at least one match
+        // Exit 0 if any file/dir exists, exit 1 otherwise
+        let full_cmd = format!(
+            "sh -c 'for f in {}; do [ -e \"$f\" ] && exit 0; done; exit 1'",
+            pattern
+        );
+
+        let result = self
+            .exec(server_metadata, task_name, &full_cmd, use_sudo)
+            .await;
+
+        match result {
+            Ok(_) => {
+                log_debug!(
+                    server_metadata,
+                    task_name,
+                    "Directory '{}' has content matching '{}': true",
+                    dir_path,
+                    pattern
+                );
+                Ok(true)
+            }
+            Err(e) => {
+                // Exit status 1 means no match
+                if e.contains("exit status 1") {
+                    log_debug!(
+                        server_metadata,
+                        task_name,
+                        "Directory '{}' has no content matching '{}'",
+                        dir_path,
+                        pattern
+                    );
+                    Ok(false)
+                } else {
+                    Err(format!(
+                        "Failed to check directory '{}' for pattern '{}'. \n\t> {}",
+                        dir_path, pattern, e
+                    ))
+                }
+            }
+        }
+    }
+
+    /// Check if directory contains any hidden files (names starting with .)
+    pub async fn dir_has_hidden_items(
+        &self,
+        server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
+        dir_path: &str,
+        use_sudo: bool,
+    ) -> Result<bool, String> {
+        let pattern = format!("{}/.[!.]*", dir_path);
+        self.dir_has_pattern(server_metadata, task_name, dir_path, &pattern, use_sudo)
+            .await
+    }
+
+    /// Check if directory contains any normal (non-hidden) files
+    pub async fn dir_has_normal_items(
+        &self,
+        server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
+        dir_path: &str,
+        use_sudo: bool,
+    ) -> Result<bool, String> {
+        let pattern = format!("{0}/*", dir_path);
+        self.dir_has_pattern(server_metadata, task_name, dir_path, &pattern, use_sudo)
+            .await
+    }
+
     pub async fn check_path(
         &self,
         server_metadata: &Arc<ServerMetadata>,
@@ -515,8 +601,13 @@ impl ServerPool {
             .file_or_dir_exists(server_metadata, task_name, REMOTE_TEMP_SBXCTL_FOLDER, true)
             .await?;
         if remote_temp_sbxctl_folder_exists {
-            log_debug!( server_metadata,
-                task_name,"Clean up temp forder for server: host - {}, user - {}",server_metadata.host, server_metadata.user);
+            log_debug!(
+                server_metadata,
+                task_name,
+                "Clean up temp forder for server: host - {}, user - {}",
+                server_metadata.host,
+                server_metadata.user
+            );
             self.exec(
                 server_metadata,
                 task_name,
@@ -629,12 +720,16 @@ impl ServerPool {
                         partial_stdout_line = partial_stdout_line[line_end + 1..].to_string();
 
                         if print_log {
-                            if !(first_line && use_sudo && line.is_empty()) {
-                                execution_print(server_metadata, task_name, &line, false)?;
-                            }
-                            if first_line && use_sudo {
+                            // Remove the first \n or empty lines from pw_with_newline
+                            if first_line && use_sudo && line.trim().is_empty() {
                                 first_line = false;
+                                continue;
                             }
+                            execution_print(server_metadata, task_name, &line, false)?;
+                        }
+
+                        if first_line && use_sudo {
+                            first_line = false;
                         }
                     }
                 }
@@ -692,9 +787,13 @@ impl ServerPool {
             .await
             .map_err(|e| format!("Failed to close channel. \n\t> {}", e))?;
 
-        if stdout_buf.ends_with('\n') {
-            stdout_buf.pop();
-        }
+        stdout_buf = stdout_buf.trim().to_string();
+        log_debug!(
+            server_metadata,
+            task_name,
+            "Streaming command output: '{}'",
+            stdout_buf
+        );
         Ok(stdout_buf)
     }
 
@@ -711,6 +810,7 @@ impl ServerPool {
         direct_write_if_sudo: bool,
         print_log: bool,
     ) -> Result<(), String> {
+        // println!("upload_file_or_dir_contents_into_dir remote_dir: ---{}---",remote_dir);
         let mut remote_temp_dir: Option<String> = None;
         if use_sudo && server_metadata.user != "root" && !direct_write_if_sudo {
             remote_temp_dir = Some(
@@ -848,13 +948,9 @@ impl ServerPool {
         remote_dir: &str,
         use_sudo: bool,
     ) -> Result<(), String> {
+        // println!("move_and_delete_temp_dir remote_dir: ---{}---",remote_dir);
         let hidden_exists = self
-            .file_or_dir_exists(
-                server_metadata,
-                task_name,
-                &format!("{}/.[!.]*", temp_dir),
-                use_sudo,
-            )
+            .dir_has_hidden_items(server_metadata, task_name, temp_dir, use_sudo)
             .await?;
         if hidden_exists {
             self.exec(
@@ -865,15 +961,10 @@ impl ServerPool {
             )
             .await?;
         }
-
         let normal_exists = self
-            .file_or_dir_exists(
-                server_metadata,
-                task_name,
-                &format!("{0}/*", temp_dir),
-                use_sudo,
-            )
+            .dir_has_normal_items(server_metadata, task_name, temp_dir, use_sudo)
             .await?;
+        // mv will not move hidden items
         if normal_exists {
             self.exec(
                 server_metadata,
