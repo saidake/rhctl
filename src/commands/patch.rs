@@ -121,9 +121,6 @@ pub async fn run(
         .validate_remote_dir(server_metadata, PATCH_TASK_NAME, &parent, config.use_sudo)
         .await?;
     global_server_pool
-        .create_remote_dir(server_metadata, PATCH_TASK_NAME, &parent, config.use_sudo)
-        .await?;
-    global_server_pool
         .upload_file_or_dir_contents_into_dir(
             server_metadata,
             PATCH_TASK_NAME,

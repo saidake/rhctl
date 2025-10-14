@@ -71,20 +71,6 @@ pub async fn run(
                     local_item, remote_dir, e
                 )
             })?;
-        global_server_pool
-            .create_remote_dir(
-                server_metadata,
-                UPLOAD_TASK_NAME,
-                &remote_dir_resolved,
-                config.use_sudo,
-            )
-            .await
-            .map_err(|e| {
-                format!(
-                    "Child Upload Task failed: {} --> {} \n\t> {}",
-                    local_item, remote_dir, e
-                )
-            })?;
 
         let local_file_or_dir_clone = local_file_or_dir.clone();
         let remote_dir_clone = remote_dir_resolved.clone();

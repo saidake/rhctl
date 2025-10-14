@@ -8,8 +8,8 @@ use async_recursion::async_recursion;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use dashmap::DashSet;
-use russh::client::{Handle, Msg};
 use russh::ChannelMsg;
+use russh::client::{Handle, Msg};
 use russh_keys::key::PublicKey;
 use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
@@ -415,7 +415,8 @@ impl ServerPool {
 
     pub async fn cleanup_pending_servers(&self) -> Result<(), String> {
         for server in self.pending_clean_servers.iter() {
-            self.delete_global_temp_dir(&server, SYSTEM_TASK_NAME).await?;
+            self.delete_global_temp_dir(&server, SYSTEM_TASK_NAME)
+                .await?;
         }
         Ok(())
     }
@@ -496,7 +497,10 @@ impl ServerPool {
                     );
                     Ok(false)
                 } else {
-                    Err(format!("Failed to check remote path '{}'. \n\t> {}", path, e))
+                    Err(format!(
+                        "Failed to check remote path '{}'. \n\t> {}",
+                        path, e
+                    ))
                 }
             }
         }
@@ -1147,7 +1151,7 @@ impl ServerPool {
                 )
             };
 
-            ask_user(server_metadata,task_name,&prompt, silent).await?;
+            ask_user(server_metadata, task_name, &prompt, silent).await?;
             self.exec(
                 server_metadata,
                 task_name,
@@ -1192,30 +1196,38 @@ impl ServerPool {
             ));
         }
 
-        log_debug!(
-            server_metadata,
-            task_name,
-            "Checking if remote directory '{}' is writable",
-            remote_dir
-        );
-        let check_cmd = format!("test -w \"{}\"; echo $?", remote_dir);
-        let output = self
-            .exec(server_metadata, task_name, &check_cmd, use_sudo)
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to check write permission for '{}'. \n\t> {}",
-                    remote_dir, e
-                )
-            })?;
-        if output.trim() != "0" {
-            return Err(format!("Directory '{}' is not writable", remote_dir));
+        if self
+            .dir_exists(server_metadata, task_name, remote_dir, use_sudo)
+            .await?
+        {
+            log_debug!(
+                server_metadata,
+                task_name,
+                "Checking if remote directory '{}' is writable",
+                remote_dir
+            );
+            let check_cmd = format!("test -w \"{}\"; echo $?", remote_dir);
+            let output = self
+                .exec(server_metadata, task_name, &check_cmd, use_sudo)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to check write permission for '{}'. \n\t> {}",
+                        remote_dir, e
+                    )
+                })?;
+            if output.trim() != "0" {
+                return Err(format!("Directory '{}' is not writable", remote_dir));
+            }
+        } else {
+            self.create_remote_dir(server_metadata, task_name, remote_dir, use_sudo)
+                .await?;
         }
 
         Ok(())
     }
 
-    pub async fn create_remote_dir(
+    pub async fn create_remote_dir_if_not_exists(
         &self,
         server_metadata: &Arc<ServerMetadata>,
         task_name: &str,
@@ -1228,6 +1240,17 @@ impl ServerPool {
         {
             return Ok(());
         }
+        self.create_remote_dir(server_metadata, task_name, remote_dir, use_sudo)
+            .await
+    }
+
+    async fn create_remote_dir(
+        &self,
+        server_metadata: &Arc<ServerMetadata>,
+        task_name: &str,
+        remote_dir: &str,
+        use_sudo: bool,
+    ) -> Result<(), String> {
         let cmd = if use_sudo {
             format!(
                 "mkdir -p \"{}\"; chown {} \"{}\"; chmod 700 \"{}\"",
@@ -1262,8 +1285,13 @@ impl ServerPool {
             "Uploading to temporary path '{}' with sudo",
             temp_dir
         );
-        self.create_remote_dir(server_metadata, task_name, temp_dir.as_str(), use_sudo)
-            .await?;
+        self.create_remote_dir_if_not_exists(
+            server_metadata,
+            task_name,
+            temp_dir.as_str(),
+            use_sudo,
+        )
+        .await?;
         Ok(temp_dir)
     }
 }
