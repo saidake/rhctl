@@ -17,6 +17,7 @@ pub const LOG_DEBUG: &str = "DEBUG";
 pub const LOG_REMOTE: &str = "REMOTE";
 pub const LOG_LOCAL: &str = "LOCAL";
 pub const LOG_ASK: &str = "ASK";
+pub const LOG_SHUTDOWN: &str = "SHUTDOWN";
 
 pub const LOG_TASK_NAME_WIDTH: usize = 7;
 pub const LOG_LEVEL_WIDTH: usize = 6;
