@@ -97,7 +97,8 @@ pub struct ExecuteConfig {
     pub silent: Option<bool>,
 
     pub scripts: Vec<String>,        // now array of scripts
-    pub remote_path: Option<String>, // optional working directory
+    pub work_path: Option<String>, // optional working directory
+    pub mode: Option<String>, 
 
     #[serde(default)]
     pub target_servers: Vec<String>,

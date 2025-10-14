@@ -13,7 +13,7 @@ mod handlers;
 mod utils;
 
 use crate::common::ssh_pool::ServerPool;
-use crate::domain::constants::{EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
+use crate::domain::constants::{DEFAULT_EXECUTE_MODE, DEFAULT_EXECUTE_WORK_PATH, EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
 use crate::handlers::command_handler::{
     parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
     parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
@@ -31,6 +31,7 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
 #[command(about = "A high-performance Rust CLI for remote file operations via SSH")]
 #[command(author = "Craig Brown")]
 #[command(override_usage = "rsctl [COMMAND] [OPTIONS]")]
+#[command(version = "1.0.0")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -124,11 +125,14 @@ enum Commands {
         password: Option<String>,
 
         #[arg(long, help = "Local bash script file")]
-        script: String,
+        script: Vec<String>,
 
-        #[arg(long, default_value = "~", help = "Remote working path")]
-        remote_path: Option<String>,
+        #[arg(long, default_value = DEFAULT_EXECUTE_WORK_PATH, help = "Remote working path")]
+        work_path: Option<String>,
 
+        
+        #[arg(long, default_value = DEFAULT_EXECUTE_MODE, help = "Execution mode: 'sync' (run sequentially) or 'async' (run concurrently)")]
+        mode: Option<String>,
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
@@ -375,7 +379,8 @@ async fn main() {
             user,
             password,
             script,
-            remote_path,
+            work_path,
+            mode,
 
             use_sudo,
             use_rsync,
@@ -387,13 +392,15 @@ async fn main() {
             max_session_lifetime,
             ..
         } => {
+            // println!("script: {:#?}",script);
             let config = parse_execute_config_from_cmd(
                 &host,
                 &user,
                 ssh_port,
                 password,
-                &script,
-                remote_path,
+                script,
+                work_path,
+                mode,
 
                 use_sudo,
                 use_rsync,

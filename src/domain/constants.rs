@@ -32,4 +32,5 @@ pub const DEFAULT_MAX_SESSIONS_PER_SERVER: usize = 200;
 pub const DEFAULT_SESSION_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_MAX_SESSION_LIFETIME: Duration = Duration::from_secs(600);
 
-pub const DEFAULT_EXECUTE_REMOTE_PATH: &str = "~";
+pub const DEFAULT_EXECUTE_WORK_PATH: &str = "~";
+pub const DEFAULT_EXECUTE_MODE: &str = "sync";

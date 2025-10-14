@@ -10,17 +10,21 @@ common:
 var-map:
   ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets"
 group-map:
-  dev: ["server1"]
-  uat: ["server1"]
+  dev: ["test-server1", "test-server2"]
 
 servers:
-  - name: "server1"
+  - name: "test-server1"
     host: "192.168.75.128"
     user: "test99"
     ssh-port: 22
     password: "testpwd"
     connect_timeout: 60s  # You can overwrite common config in this command.
-
+  - name: "test-server2"
+    host: "192.168.75.129"
+    user: "test99"
+    ssh-port: 22
+    password: "testpwd"
+    connect_timeout: 60s  # You can overwrite common config in this command.
 configs:   
   - name: "dev-deploy"   
     
@@ -33,8 +37,8 @@ configs:
       - properties-file: "AAA/config/path-mapping.properties"
 
         # Specify servers or groups.
-        target-servers: ["server1"] 
-        # target-groups: ["dev"]
+        # target-servers: ["test-server1","test-server2"] 
+        target-groups: ["dev"]
         
         # You can overwrite common config in this command.
         # use-sudo: false
@@ -46,11 +50,14 @@ configs:
         remote-upload: "/tmp/example-patch.txt.upload"
         remote-path: "~/examples/example-patch-remote.txt"
         remote-backup: "/tmp/example-patch-remote.txt.bak"
-        target-servers: ["server1"]  
+        # target-servers: ["test-server1","test-server2"]  
+        target-groups: ["dev"]
 
     execute:
       - remote-path: "~"
         scripts: 
           - "AAA/assets/example-bash.sh"
-        target-servers: ["server1"]  
+        mode: sync
+        # target-servers: ["test-server1","test-server2"]  
+        target-groups: ["dev"]
 

@@ -27,8 +27,10 @@ pub struct ExecuteCmdConfig {
     #[serde(default)]
     pub silent: bool,
 
-    pub script: String,
-    pub remote_path: String,
+    pub scripts: Vec<String>,
+
+    pub mode: String,
+    pub work_path: String,
 }
 
 
