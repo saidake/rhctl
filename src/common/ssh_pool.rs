@@ -3,7 +3,7 @@ use crate::domain::constants::{REMOTE_TEMP_SBXCTL_FOLDER, SYSTEM_TASK_NAME};
 use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
 use crate::utils::log_utils::ask_user;
 use crate::utils::ssh_utils::execution_print;
-use crate::{log_debug, log_info};
+use crate::{log_debug, log_info, log_warn};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -1167,6 +1167,23 @@ impl ServerPool {
                     e
                 )
             })?;
+            if silent {
+                log_warn!(
+                    server_metadata,
+                    task_name,
+                    "Remote {} has been overwritten: '{}'",
+                    if is_file { "file" } else { "directory" },
+                    remote_path
+                );
+            } else {
+                log_info!(
+                    server_metadata,
+                    task_name,
+                    "Remote {} has been overwritten: '{}'",
+                    if is_file { "file" } else { "directory" },
+                    remote_path
+                );
+            }
             return Ok(());
         }
 
