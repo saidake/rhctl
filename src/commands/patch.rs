@@ -139,14 +139,15 @@ pub async fn run(
         PATCH_TASK_NAME,
         "Upload completed. Printing uploaded file info:"
     );
-    global_server_pool
-        .exec_with_log(
+    let item_info = global_server_pool
+        .exec(
             server_metadata,
             PATCH_TASK_NAME,
             &format!("ls -al {}", resolved_upload),
             config.use_sudo,
         )
         .await?;
+    log_info!(server_metadata, PATCH_TASK_NAME, "{}",item_info);
 
     log_info!(
         server_metadata,
@@ -169,14 +170,16 @@ pub async fn run(
         PATCH_TASK_NAME,
         "Remote file info before backup:"
     );
-    global_server_pool
-        .exec_with_log(
+
+    let item_info = global_server_pool
+        .exec(
             server_metadata,
             PATCH_TASK_NAME,
             &format!("ls -al {}", resolved_file),
             config.use_sudo,
         )
         .await?;
+    log_info!(server_metadata, PATCH_TASK_NAME, "{}",item_info);
     ask_user(
         server_metadata,
         PATCH_TASK_NAME,
@@ -204,14 +207,15 @@ pub async fn run(
         PATCH_TASK_NAME,
         "Backup completed. Printing backup file info:"
     );
-    global_server_pool
-        .exec_with_log(
+    let item_info = global_server_pool
+        .exec(
             server_metadata,
             PATCH_TASK_NAME,
             &format!("ls -al {}", resolved_backup),
             config.use_sudo,
         )
         .await?;
+    log_info!(server_metadata, PATCH_TASK_NAME, "{}",item_info);
     log_info!(
         server_metadata,
         PATCH_TASK_NAME,
@@ -255,14 +259,15 @@ pub async fn run(
         PATCH_TASK_NAME,
         "Overwrite completed. Final file info:"
     );
-    global_server_pool
-        .exec_with_log(
+    let item_info = global_server_pool
+        .exec(
             server_metadata,
             PATCH_TASK_NAME,
             &format!("ls -al {}", resolved_file),
             config.use_sudo,
         )
         .await?;
+    log_info!(server_metadata, PATCH_TASK_NAME, "{}",item_info);
     log_info!(server_metadata, PATCH_TASK_NAME, "Patch complete");
     Ok(())
 }
