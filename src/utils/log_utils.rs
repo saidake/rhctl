@@ -132,7 +132,12 @@ macro_rules! log_error_direct {
     };
 }
 
-
+#[macro_export]
+macro_rules! log_info_direct {
+    ($($arg:tt)*) => {
+        $crate::utils::log_utils::log_direct_option(None, None, None, $crate::domain::constants::LOG_INFO, &format!($($arg)*));
+    };
+}
 #[macro_export]
 macro_rules! log_warn_root {
     ($($arg:tt)*) => {

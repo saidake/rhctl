@@ -344,15 +344,37 @@ async fn main() {
             if let Err(e) =
                 load_properties(config.properties_file.as_str(), &mut mappings, &cli_vars)
             {
-                log_error_with_host!(user.as_str(), host.as_str(), UPLOAD_TASK_NAME,
+                log_error_with_host_direct!(user.as_str(), host.as_str(), UPLOAD_TASK_NAME,
                     "{}",
                     format!(
                         "Failed to load properties file '{}'. \n\t> {}",
                         config.properties_file, e
                     )
                 );
-                flush_logs_and_exit(log_handle).await;
+                exit(1);
             }
+
+            log_info_direct!("Starting initial TCP connectivity check for server...");
+            let (_, _, result) =
+            ServerPool::check_single_server_by_info(host.clone(), ssh_port.unwrap_or(DEFAULT_SSH_PORT), None)
+                .await;
+            match result {
+                Ok(_) => {}
+                Err(e) => {
+           
+                log_error_with_host_direct!(
+                    user.as_str(),
+                    host.as_str(),
+                    UPLOAD_TASK_NAME,
+                    "{}",
+                    format!("Failed to check server connection: \n\t> {}",  e)
+                );
+                exit(1);
+            }
+            }
+
+      
+
             // println!("test---------");
             let server_metadata=Arc::new(config.server_metadata.clone());
             let global_server_pool_clone = global_server_pool.clone();
@@ -420,6 +442,27 @@ async fn main() {
                 max_session_lifetime,
                 &cli_vars,
             );
+
+            log_info_direct!("Starting initial TCP connectivity check for server...");
+            let (_, _, result) =
+            ServerPool::check_single_server_by_info(host.clone(), ssh_port.unwrap_or(DEFAULT_SSH_PORT), None)
+                .await;
+            match result {
+                Ok(_) => {}
+                Err(e) => {
+           
+                log_error_with_host_direct!(
+                    user.as_str(),
+                    host.as_str(),
+                    EXECUTE_TASK_NAME,
+                    "{}",
+                    format!("Failed to check server connection: \n\t> {}",  e)
+                );
+                exit(1);
+            }
+            }
+
+
             let server_metadata=Arc::new(config.server_metadata.clone());
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
@@ -492,6 +535,25 @@ async fn main() {
 
                 &cli_vars,
             );
+
+            log_info_direct!("Starting initial TCP connectivity check for server...");
+            let (_, _, result) =
+            ServerPool::check_single_server_by_info(host.clone(), ssh_port.unwrap_or(DEFAULT_SSH_PORT), None)
+                .await;
+            match result {
+                Ok(_) => {}
+                Err(e) => {
+           
+                log_error_with_host_direct!(
+                    user.as_str(),
+                    host.as_str(),
+                    PATCH_TASK_NAME,
+                    "{}",
+                    format!("Failed to check server connection: \n\t> {}",  e)
+                );
+                exit(1);
+            }
+            }
             let server_metadata=Arc::new(config.server_metadata.clone());
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
@@ -552,6 +614,7 @@ async fn main() {
                 ).await;
             }
 
+            log_info_direct!("Starting initial TCP connectivity check for servers...");
             let failed_servers = global_server_pool
             .check_servers_and_update_known_hosts( yml_config.servers.clone())
             .await;
@@ -584,7 +647,7 @@ async fn main() {
             parse_patch_configs(&named_config, &yml_config, &failed_servers, &server_config_map);
 
             // Spawn threads for upload commands
-            for (config, vars) in upload_configs {
+            for (config, _) in upload_configs {
             let server_metadata=Arc::new(config.server_metadata.clone());
                 let mut mappings = HashMap::new();
                 if let Err(e) = load_properties(

@@ -383,7 +383,13 @@ impl ServerPool {
         let mut futures = FuturesUnordered::new();
 
         for server in servers {
-            let fut = task::spawn(Self::check_single_server(server));
+            let host = server.host.clone();
+            let name = server.name.clone();
+            let fut = task::spawn(Self::check_single_server_by_info(
+                host,
+                server.ssh_port.unwrap_or(DEFAULT_SSH_PORT),
+                Some(name),
+            ));
             futures.push(fut);
         }
 
@@ -391,15 +397,19 @@ impl ServerPool {
 
         while let Some(res) = futures.next().await {
             match res {
-                Ok((server, result)) => {
+                Ok((server_name, server_host, result)) => {
                     if let Err(e) = result {
-                        log_warn_direct!(
-                            "Server '{}' ({}) failed: \n\t> {}",
-                            server.name,
-                            server.host,
-                            e
-                        );
-                        failed_server_names.insert(server.name);
+                        if let Some(name) = &server_name {
+                            log_warn_direct!(
+                                "Server '{}' ({}) failed: \n\t> {}",
+                                name,
+                                server_host,
+                                e
+                            );
+                        } else {
+                            log_warn_direct!("Server ({}) failed: \n\t> {}", server_host, e);
+                        }
+                        failed_server_names.insert(server_name.unwrap());
                     }
                 }
                 Err(e) => {
@@ -414,26 +424,19 @@ impl ServerPool {
         failed_server_names
     }
 
-    /// Connect to one SSH server and fetch its public key.
-    async fn check_single_server(server: ServerConfig) -> (ServerConfig, Result<(), String>) {
-        let addr = format!(
-            "{}:{}",
-            server.host,
-            server.ssh_port.unwrap_or(DEFAULT_SSH_PORT)
-        );
-
+    /// Connect to a single SSH server by host, port, and name, and fetch its public key.
+    pub async fn check_single_server_by_info(
+        host: String,
+        port: u16,
+        name: Option<String>,
+    ) -> (Option<String>, String, Result<(), String>) {
+        let addr = format!("{}:{}", host, port);
         let res = match timeout(DEFAULT_SSH_HANDSHAKE_TIMEOUT, TcpStream::connect(&addr)).await {
             Ok(Ok(stream)) => {
-                // Try to extract SSH host key (the very first step in SSH handshake)
+                // Try to extract SSH host key
                 match Self::fetch_ssh_host_key(stream).await {
                     Ok(key) => {
-                        if let Err(e) = Self::add_host_to_known_hosts(
-                            &server.host,
-                            server.ssh_port.unwrap_or(DEFAULT_SSH_PORT),
-                            &key,
-                        )
-                        .await
-                        {
+                        if let Err(e) = Self::add_host_to_known_hosts(&host, port, &key).await {
                             Err(format!("Failed to write known_hosts: {}", e))
                         } else {
                             Ok(())
@@ -443,10 +446,10 @@ impl ServerPool {
                 }
             }
             Ok(Err(e)) => Err(format!("Connection error: {}", e)),
-            Err(_) => Err("Connection timed out".to_string()),
+            Err(_) => Err("Initial connection timed out".to_string()),
         };
 
-        (server, res)
+        (name, host.to_string(), res)
     }
 
     /// Fetch SSH public key from a remote host.
