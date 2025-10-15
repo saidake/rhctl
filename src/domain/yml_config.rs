@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use serde::Deserialize;
 use std::{collections::HashMap, time::Duration};
 
@@ -52,7 +53,24 @@ pub struct ServerConfig {
     #[serde(default, with = "humantime_serde")]
     pub max_session_lifetime: Option<Duration>,  
 }
+// Implement Hash and Eq based on name+host+port (you can adjust the key)
+impl PartialEq for ServerConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name &&
+        self.host == other.host &&
+        self.ssh_port == other.ssh_port
+    }
+}
 
+impl Eq for ServerConfig {}
+
+impl Hash for ServerConfig {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.host.hash(state);
+        self.ssh_port.hash(state);
+    }
+}
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct UploadConfig {
@@ -160,7 +178,7 @@ pub struct YmlConfig {
     // list of servers
     pub common: Option<CommonConfig>,
     
-    pub servers: Option<Vec<ServerConfig>>,
+    pub servers: Vec<ServerConfig>,
     // group name -> server names
     pub group_map: Option<HashMap<String, Vec<String>>>,
 

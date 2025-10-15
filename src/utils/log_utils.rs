@@ -125,7 +125,26 @@ macro_rules! log_error_root {
         $crate::utils::log_utils::log_host_to_bg_handler(None, None, None, $crate::domain::constants::LOG_ERROR, &format!($($arg)*));
     };
 }
+#[macro_export]
+macro_rules! log_error_direct {
+    ($($arg:tt)*) => {
+        $crate::utils::log_utils::log_direct_option(None, None, None, $crate::domain::constants::LOG_ERROR, &format!($($arg)*));
+    };
+}
 
+
+#[macro_export]
+macro_rules! log_warn_root {
+    ($($arg:tt)*) => {
+        $crate::utils::log_utils::log_host_to_bg_handler(None, None, None, $crate::domain::constants::LOG_WARN, &format!($($arg)*));
+    };
+}
+#[macro_export]
+macro_rules! log_warn_direct {
+    ($($arg:tt)*) => {
+        $crate::utils::log_utils::log_direct_option(None, None, None, $crate::domain::constants::LOG_WARN, &format!($($arg)*));
+    };
+}
 /// Macro for warn log
 #[macro_export]
 macro_rules! log_warn {

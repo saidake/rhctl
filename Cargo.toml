@@ -31,6 +31,8 @@ crossterm = "0.27"
 russh = "0.46"
 russh-keys = "0.46"
 async-trait = "0.1.89"
+dirs-next = "2"
+base64 = "0.22"
 
 [build-dependencies]
 # If needed for build scripts

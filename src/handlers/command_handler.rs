@@ -1,18 +1,23 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::exit;
+use std::sync::Arc;
 use std::time::Duration;
 
+use crate::commands::execute;
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{
     ExecuteCmdConfig, PatchCmdConfig, ServerMetadata, UploadCmdConfig,
 };
 use crate::domain::constants::{
-    DEFAULT_CONNECT_TIMEOUT, DEFAULT_EXECUTE_MODE, DEFAULT_EXECUTE_WORK_PATH, DEFAULT_MAX_CHANNELS_PER_SESSION, DEFAULT_MAX_SESSIONS_PER_SERVER, DEFAULT_MAX_SESSION_LIFETIME, DEFAULT_SESSION_ACQUIRE_TIMEOUT, DEFAULT_SSH_PORT, EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME
+    DEFAULT_CONNECT_TIMEOUT, DEFAULT_EXECUTE_MODE, DEFAULT_EXECUTE_WORK_PATH,
+    DEFAULT_MAX_CHANNELS_PER_SESSION, DEFAULT_MAX_SESSION_LIFETIME,
+    DEFAULT_MAX_SESSIONS_PER_SERVER, DEFAULT_SESSION_ACQUIRE_TIMEOUT, DEFAULT_SSH_PORT,
+    EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME,
 };
 use crate::domain::yml_config::{NamedConfig, ServerConfig, TargetConfig, YmlConfig};
 use crate::utils::file_utils::substitute_vars;
 use crate::utils::log_utils::prompt_password_or_exit;
-use crate::{log_error_root, log_error_with_host_direct};
+use crate::{log_error_direct, log_error_root, log_error_with_host_direct, log_warn_direct, log_warn_root};
 
 // Root level
 pub fn parse_patch_config_from_cmd(
@@ -201,9 +206,22 @@ pub fn parse_upload_config_from_cmd(
 pub fn parse_upload_configs(
     named_config: &NamedConfig,
     yml_config: &YmlConfig,
+    failed_servers: &HashSet<String>,
+    server_config_map: &HashMap<String, ServerConfig>,
 ) -> Vec<(UploadCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
-    let servers = resolve_servers(named_config, yml_config);
+    let mut servers: HashSet<ServerConfig> = HashSet::new();
+    for upload in &named_config.upload {
+        collect_servers(
+            &server_config_map,
+            &mut servers,
+            upload,
+            yml_config,
+            failed_servers,
+            UPLOAD_TASK_NAME,
+            &named_config.name,
+        );
+    }
     let var_map = &yml_config.var_map;
     let common = &yml_config.common;
 
@@ -242,7 +260,7 @@ pub fn parse_upload_configs(
                             .unwrap_or(DEFAULT_SESSION_ACQUIRE_TIMEOUT),
                         max_session_lifetime: server
                             .max_session_lifetime
-                            .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
+                            .or_else(|| common.as_ref()?.server.as_ref()?.max_session_lifetime)
                             .unwrap_or(DEFAULT_MAX_SESSION_LIFETIME),
                     },
 
@@ -271,9 +289,22 @@ pub fn parse_upload_configs(
 pub fn parse_execute_configs(
     named_config: &NamedConfig,
     yml_config: &YmlConfig,
+    failed_servers: &HashSet<String>,
+    server_config_map: &HashMap<String, ServerConfig>,
 ) -> Vec<(ExecuteCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
-    let servers = resolve_servers(named_config, yml_config);
+    let mut servers: HashSet<ServerConfig> = HashSet::new();
+    for execute in &named_config.execute {
+        collect_servers(
+            &server_config_map,
+            &mut servers,
+            execute,
+            yml_config,
+            failed_servers,
+            EXECUTE_TASK_NAME,
+            &named_config.name,
+        );
+    }
     let var_map = &yml_config.var_map;
     let common = &yml_config.common;
 
@@ -312,7 +343,7 @@ pub fn parse_execute_configs(
                             .unwrap_or(DEFAULT_SESSION_ACQUIRE_TIMEOUT),
                         max_session_lifetime: server
                             .max_session_lifetime
-                            .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
+                            .or_else(|| common.as_ref()?.server.as_ref()?.max_session_lifetime)
                             .unwrap_or(DEFAULT_MAX_SESSION_LIFETIME),
                     },
 
@@ -322,7 +353,9 @@ pub fn parse_execute_configs(
                         .or(named_config.use_rsync)
                         .unwrap_or(false),
                     silent: execute.silent.or(named_config.silent).unwrap_or(false),
-                    scripts: execute.scripts.clone()
+                    scripts: execute
+                        .scripts
+                        .clone()
                         .into_iter()
                         .map(|s| {
                             substitute_vars(&s, var_map).unwrap_or_else(|e| {
@@ -337,7 +370,10 @@ pub fn parse_execute_configs(
                             })
                         })
                         .collect(),
-                    mode: execute.mode.clone().unwrap_or(DEFAULT_EXECUTE_MODE.to_string()),
+                    mode: execute
+                        .mode
+                        .clone()
+                        .unwrap_or(DEFAULT_EXECUTE_MODE.to_string()),
                     work_path: substitute_vars(
                         &execute
                             .work_path
@@ -366,9 +402,22 @@ pub fn parse_execute_configs(
 pub fn parse_patch_configs(
     named_config: &NamedConfig,
     yml_config: &YmlConfig,
+    failed_servers: &HashSet<String>,
+    server_config_map: &HashMap<String, ServerConfig>,
 ) -> Vec<(PatchCmdConfig, HashMap<String, String>)> {
     let mut configs = Vec::new();
-    let servers = resolve_servers(named_config, yml_config);
+    let mut servers: HashSet<ServerConfig> = HashSet::new();
+    for patch in &named_config.patch {
+        collect_servers(
+            &server_config_map,
+            &mut servers,
+            patch,
+            yml_config,
+            failed_servers,
+            PATCH_TASK_NAME,
+            &named_config.name,
+        );
+    }
     let var_map = &yml_config.var_map;
     let common = &yml_config.common;
 
@@ -407,7 +456,7 @@ pub fn parse_patch_configs(
                             .unwrap_or(DEFAULT_SESSION_ACQUIRE_TIMEOUT),
                         max_session_lifetime: server
                             .max_session_lifetime
-                            .or_else(|| common.as_ref()?.server.as_ref()?.connect_timeout)
+                            .or_else(|| common.as_ref()?.server.as_ref()?.max_session_lifetime)
                             .unwrap_or(DEFAULT_MAX_SESSION_LIFETIME),
                     },
 
@@ -468,73 +517,76 @@ pub fn parse_patch_configs(
     configs
 }
 
-fn resolve_servers(named_config: &NamedConfig, yml_config: &YmlConfig) -> Vec<ServerConfig> {
-    let mut servers = Vec::new();
-    let server_map: std::collections::HashMap<String, ServerConfig> = yml_config
-        .servers
-        .as_ref()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .map(|s| (s.name.clone(), s.clone()))
-        .collect();
-
-    for upload in &named_config.upload {
-        collect_servers(&server_map, &mut servers, upload, yml_config);
-    }
-    for patch in &named_config.patch {
-        collect_servers(&server_map, &mut servers, patch, yml_config);
-    }
-    for execute in &named_config.execute {
-        collect_servers(&server_map, &mut servers, execute, yml_config);
-    }
-
-    servers
-}
-
+/// Collect all servers for a given target config, skipping failed ones.
+/// Returns the updated HashSet of ServerConfig.
 fn collect_servers<T: TargetConfig>(
-    server_map: &std::collections::HashMap<String, ServerConfig>,
-    servers: &mut Vec<ServerConfig>,
-    config: &T,
+    server_map: &HashMap<String, ServerConfig>,
+    servers: &mut HashSet<ServerConfig>,
+    config: &T, // e.g., named_config.upload
     yml_config: &YmlConfig,
-) {
+    failed_servers: &HashSet<String>,
+    task_name: &str,
+    config_name: &str,
+) -> HashSet<ServerConfig> {
+    // Add direct target servers
     for server_name in config.target_servers() {
-        if let Some(server) = server_map.get(server_name) {
-            if !servers
-                .iter()
-                .any(|s: &ServerConfig| s.name == *server_name)
-            {
-                servers.push(server.clone());
-            }
-        } else {
-            log_error_root!("Server '{}' not found in servers list", server_name);
-            exit(1);
+        if failed_servers.contains(server_name) {
+            log_warn_root!(
+                "Skip failed server '{}' for {} tasks in config '{}' ",
+                server_name,
+                task_name,
+                config_name
+            );
+            continue;
         }
-    }
-
-    if let Some(group_map) = &yml_config.group_map {
-        for group_name in config.target_groups() {
-            if let Some(group_servers) = group_map.get(group_name) {
-                for server_name in group_servers {
-                    if let Some(server) = server_map.get(server_name) {
-                        if !servers
-                            .iter()
-                            .any(|s: &ServerConfig| s.name == *server_name)
-                        {
-                            servers.push(server.clone());
-                        }
-                    } else {
-                        log_error_root!(
-                            "Server '{}' in group '{}' not found in servers list",
-                            server_name,
-                            group_name
-                        );
-                        exit(1);
-                    }
-                }
-            } else {
-                log_error_root!("Group '{}' not found in group_map list", group_name);
+        match server_map.get(server_name) {
+            Some(server) => {
+                servers.insert(server.clone());
+            }
+            None => {
+                log_error_direct!("Server '{}' not found in servers list", server_name);
                 exit(1);
             }
         }
     }
+
+    // Add servers from groups
+    if let Some(group_map) = &yml_config.group_map {
+        for group_name in config.target_groups() {
+            match group_map.get(group_name) {
+                Some(group_servers) => {
+                    for server_name in group_servers {
+                        if failed_servers.contains(server_name) {
+                            log_warn_direct!(
+                                "Skip failed server '{}' for {} tasks in config '{}' ",
+                                server_name,
+                                task_name,
+                                config_name
+                            );
+                            continue;
+                        }
+                        match server_map.get(server_name) {
+                            Some(server) => {
+                                servers.insert(server.clone());
+                            }
+                            None => {
+                                log_error_direct!(
+                                    "Server '{}' in group '{}' not found in servers list",
+                                    server_name,
+                                    group_name
+                                );
+                                exit(1);
+                            }
+                        }
+                    }
+                }
+                None => {
+                    log_error_direct!("Group '{}' not found in group_map list", group_name);
+                    exit(1);
+                }
+            }
+        }
+    }
+
+    servers.clone()
 }

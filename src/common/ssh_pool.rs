@@ -1,26 +1,40 @@
 use crate::domain::cmd_params::ServerMetadata;
-use crate::domain::constants::{REMOTE_TEMP_SBXCTL_FOLDER, SYSTEM_TASK_NAME};
+use crate::domain::constants::{
+    DEFAULT_SSH_HANDSHAKE_TIMEOUT, DEFAULT_SSH_PORT, REMOTE_TEMP_SBXCTL_FOLDER, SYSTEM_TASK_NAME,
+};
+use crate::domain::yml_config::ServerConfig;
 use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
-use crate::utils::log_utils::ask_user;
+use crate::utils::log_utils::{ask_user, flush_logs_and_exit};
 use crate::utils::ssh_utils::execution_print;
-use crate::{log_debug, log_info, log_warn};
+use crate::{log_debug, log_error_direct, log_info, log_warn, log_warn_direct, log_warn_root};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose};
 use dashmap::DashMap;
 use dashmap::DashSet;
+use dirs_next as dirs;
+use futures::stream::{FuturesUnordered, StreamExt};
 use russh::ChannelMsg;
+use russh::client::{self, Config, Handler};
 use russh::client::{Handle, Msg};
+use russh_keys::PublicKeyBase64;
 use russh_keys::key::PublicKey;
+use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::{self, BufReader, Cursor, Read, Write};
 use std::path::Path;
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+use tokio::sync::oneshot;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::task::{self, JoinHandle};
+use tokio::time::timeout;
 
 #[derive(Debug)]
 pub enum SshError {
@@ -65,6 +79,48 @@ impl russh::client::Handler for Client {
         &mut self,
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
+        // println!("server_public_key: {}",server_public_key.fingerprint());
+        Ok(true)
+    }
+}
+
+#[derive(Clone)]
+struct DummyHandler {
+    captured_key: Arc<Mutex<Option<PublicKey>>>,
+    notify: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+}
+
+impl DummyHandler {
+    fn new() -> (Self, oneshot::Receiver<()>) {
+        let (tx, rx) = oneshot::channel();
+        let handler = Self {
+            captured_key: Arc::new(Mutex::new(None)),
+            notify: Arc::new(Mutex::new(Some(tx))),
+        };
+        (handler, rx)
+    }
+
+    fn take_key(&self) -> Option<PublicKey> {
+        self.captured_key.lock().unwrap().clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl Handler for DummyHandler {
+    type Error = SshError;
+
+    async fn check_server_key(
+        &mut self,
+        server_public_key: &PublicKey,
+    ) -> Result<bool, Self::Error> {
+        // Store key
+        *self.captured_key.lock().unwrap() = Some(server_public_key.clone());
+
+        // Notify the waiter
+        if let Some(tx) = self.notify.lock().unwrap().take() {
+            let _ = tx.send(());
+        }
+
         Ok(true)
     }
 }
@@ -317,6 +373,156 @@ impl ServerPool {
         port.hash(&mut hasher);
         username.hash(&mut hasher);
         hasher.finish()
+    }
+
+    /// Check connectivity to many servers in parallel and record their SSH host keys.
+    pub async fn check_servers_and_update_known_hosts(
+        &self,
+        servers: Vec<ServerConfig>,
+    ) -> HashSet<String> {
+        let mut futures = FuturesUnordered::new();
+
+        for server in servers {
+            let fut = task::spawn(Self::check_single_server(server));
+            futures.push(fut);
+        }
+
+        let mut failed_server_names = HashSet::new();
+
+        while let Some(res) = futures.next().await {
+            match res {
+                Ok((server, result)) => {
+                    if let Err(e) = result {
+                        log_warn_direct!(
+                            "Server '{}' ({}) failed: \n\t> {}",
+                            server.name,
+                            server.host,
+                            e
+                        );
+                        failed_server_names.insert(server.name);
+                    }
+                }
+                Err(e) => {
+                    // The task itself panicked or was cancelled
+                    log_error_direct!("Task error: \n\t> {}", e);
+                    exit(1);
+                    // Optional: can't get server name here
+                }
+            }
+        }
+
+        failed_server_names
+    }
+
+    /// Connect to one SSH server and fetch its public key.
+    async fn check_single_server(server: ServerConfig) -> (ServerConfig, Result<(), String>) {
+        let addr = format!(
+            "{}:{}",
+            server.host,
+            server.ssh_port.unwrap_or(DEFAULT_SSH_PORT)
+        );
+
+        let res = match timeout(DEFAULT_SSH_HANDSHAKE_TIMEOUT, TcpStream::connect(&addr)).await {
+            Ok(Ok(stream)) => {
+                // Try to extract SSH host key (the very first step in SSH handshake)
+                match Self::fetch_ssh_host_key(stream).await {
+                    Ok(key) => {
+                        if let Err(e) = Self::add_host_to_known_hosts(
+                            &server.host,
+                            server.ssh_port.unwrap_or(DEFAULT_SSH_PORT),
+                            &key,
+                        )
+                        .await
+                        {
+                            Err(format!("Failed to write known_hosts: {}", e))
+                        } else {
+                            Ok(())
+                        }
+                    }
+                    Err(e) => Err(format!("Failed to fetch SSH key: {}", e)),
+                }
+            }
+            Ok(Err(e)) => Err(format!("Connection error: {}", e)),
+            Err(_) => Err("Connection timed out".to_string()),
+        };
+
+        (server, res)
+    }
+
+    /// Fetch SSH public key from a remote host.
+    /// This is a lightweight TCP-level handshake to read the server's identification and key.
+    async fn fetch_ssh_host_key(stream: TcpStream) -> Result<PublicKey, String> {
+        let config = Arc::new(Config::default());
+        let (handler, rx) = DummyHandler::new();
+        let handler_ref = handler.clone();
+
+        // Connect: russh::client::connect_stream returns a Handle
+        let handle = russh::client::connect_stream(config, stream, handler)
+            .await
+            .map_err(|e| format!("SSH handshake error: {}", e))?;
+
+        // Wait for the check_server_key callback notification
+        let _ = timeout(Duration::from_secs(10), rx)
+            .await
+            .map_err(|_| "Timed out waiting for server key".to_string())?;
+
+        handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await
+            .ok();
+
+        handler_ref
+            .take_key()
+            .ok_or_else(|| "Server did not send key".to_string())
+    }
+
+    /// Asynchronously append a host key to ~/.ssh/known_hosts
+    pub async fn add_host_to_known_hosts(
+        host: &str,
+        port: u16,
+        key: &PublicKey,
+    ) -> std::io::Result<()> {
+        // Get home directory
+        let mut path = dirs::home_dir().ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Home directory not found",
+        ))?;
+        path.push(".ssh");
+        tokio::fs::create_dir_all(&path).await.ok();
+        path.push("known_hosts");
+
+        // Encode the public key
+        let encoded_key = key.public_key_base64();
+        let line_to_add = format!("[{}]:{} {} {}\n", host, port, key.name(), encoded_key);
+
+        // If file exists, check if the same entry already exists
+        let mut file_exists = false;
+        let mut file_content = String::new();
+        if tokio::fs::metadata(&path).await.is_ok() {
+            file_exists = true;
+            let mut file = tokio::fs::File::open(&path).await?;
+            file.read_to_string(&mut file_content).await?;
+        }
+
+        // Check if same host+key already exists
+        let already_exists = file_content
+            .lines()
+            .any(|line| line.trim() == line_to_add.trim());
+
+        if already_exists {
+            // Already stored, skip writing
+            return Ok(());
+        }
+
+        // Append the new entry
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .await?;
+        file.write_all(line_to_add.as_bytes()).await?;
+
+        Ok(())
     }
 
     async fn get_session_pool(&self, server_metadata: &Arc<ServerMetadata>) -> Arc<SessionPool> {

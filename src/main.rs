@@ -1,7 +1,8 @@
 use clap::{Parser, Subcommand};
 use futures::future::join_all;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
+use std::process::exit;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -13,7 +14,8 @@ mod handlers;
 mod utils;
 
 use crate::common::ssh_pool::ServerPool;
-use crate::domain::constants::{DEFAULT_EXECUTE_MODE, DEFAULT_EXECUTE_WORK_PATH, EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
+use crate::domain::constants::{DEFAULT_EXECUTE_MODE, DEFAULT_EXECUTE_WORK_PATH, DEFAULT_SSH_PORT, EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
+use crate::domain::yml_config::ServerConfig;
 use crate::handlers::command_handler::{
     parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
     parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
@@ -290,7 +292,7 @@ async fn main() {
         .filter_module("russh_keys", log::LevelFilter::Info)
         .init();
 
-    let log_handle = init_logger().await;
+    let log_handle: JoinHandle<()> = init_logger().await;
 
     // Thread handles for parallel execution
     let mut tasks: Vec<JoinHandle<()>> = Vec::new();
@@ -547,15 +549,39 @@ async fn main() {
                 ask_user_and_abort_option(None, None,
                 "CLI --var arguments are ignored when using YAML config. Using vars from YAML instead, Continue?",
                 false,
-            ).await;
+                ).await;
             }
+
+            let failed_servers = global_server_pool
+            .check_servers_and_update_known_hosts( yml_config.servers.clone())
+            .await;
+
+            if yml_config.servers.len()==failed_servers.len() {
+                log_error_root!("All servers failed or no valid servers found.");
+                flush_logs_and_exit(log_handle).await;
+            }else if !failed_servers.is_empty()  {
+                 ask_user_and_abort_option(
+                    None,
+                    None,
+                    "There are some servers with failed connection. Continue with remaining servers?",
+                    false,
+                )
+                .await;
+                // yml_config.servers.retain(|s| !failed_servers.iter().any(|f| f.host == s.host && f.ssh_port == s.ssh_port));
+            }
+            let server_config_map: std::collections::HashMap<String, ServerConfig> = yml_config
+                .servers
+                .iter()
+                .map(|s| (s.name.clone(), s.clone()))
+                .collect();
+
             // Parse all command configs with vars
             let upload_configs = 
-            parse_upload_configs(&named_config, &yml_config);
+            parse_upload_configs(&named_config, &yml_config, &failed_servers, &server_config_map);
             let execute_configs = 
-            parse_execute_configs(&named_config, &yml_config);
+            parse_execute_configs(&named_config, &yml_config, &failed_servers, &server_config_map);
             let patch_configs = 
-            parse_patch_configs(&named_config, &yml_config);
+            parse_patch_configs(&named_config, &yml_config, &failed_servers, &server_config_map);
 
             // Spawn threads for upload commands
             for (config, vars) in upload_configs {

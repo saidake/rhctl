@@ -29,9 +29,9 @@ configs:
   - name: "dev-deploy"   
     
     # Common config
-    use-sudo: false    
-    use-rsync: false
-    silent: false
+    use-sudo: true    
+    use-rsync: true
+    silent: true
     
     upload:
       - properties-file: "AAA/config/path-mapping.properties"

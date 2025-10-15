@@ -11,7 +11,7 @@ pub const PATCH_TASK_NAME: &str = "PATCH";
 pub const SYSTEM_TASK_NAME: &str = "SYSTEM";
 
 
-// >>> Log info
+// Log info
 pub const LOG_INFO: &str = "INFO";
 pub const LOG_ERROR: &str = "ERROR";
 pub const LOG_WARN: &str = "WARN";
@@ -24,7 +24,7 @@ pub const LOG_SHUTDOWN: &str = "SHUTDOWN";
 pub const LOG_TASK_NAME_WIDTH: usize = 7;
 pub const LOG_LEVEL_WIDTH: usize = 6;
 
-// >>> Default Config
+// Default Config
 pub const DEFAULT_SSH_PORT: u16 = 22;
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_MAX_CHANNELS_PER_SESSION: usize = 200;
@@ -34,3 +34,7 @@ pub const DEFAULT_MAX_SESSION_LIFETIME: Duration = Duration::from_secs(600);
 
 pub const DEFAULT_EXECUTE_WORK_PATH: &str = "~";
 pub const DEFAULT_EXECUTE_MODE: &str = "sync";
+
+// Connection Config
+pub const DEFAULT_SSH_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+
