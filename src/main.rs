@@ -372,7 +372,7 @@ async fn main() {
                 exit(1);
             }
             }
-
+            log_info_direct!("Target server is healthy.");
       
 
             // println!("test---------");
@@ -461,6 +461,7 @@ async fn main() {
                 exit(1);
             }
             }
+            log_info_direct!("Target server is healthy.");
 
 
             let server_metadata=Arc::new(config.server_metadata.clone());
@@ -554,6 +555,10 @@ async fn main() {
                 exit(1);
             }
             }
+            log_info_direct!("Target server is healthy.");
+
+
+
             let server_metadata=Arc::new(config.server_metadata.clone());
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
@@ -631,6 +636,8 @@ async fn main() {
                 )
                 .await;
                 // yml_config.servers.retain(|s| !failed_servers.iter().any(|f| f.host == s.host && f.ssh_port == s.ssh_port));
+            }else if failed_servers.is_empty() {
+                log_info_direct!("All servers are healthy.");
             }
             let server_config_map: std::collections::HashMap<String, ServerConfig> = yml_config
                 .servers

@@ -133,7 +133,7 @@ pub async fn run(
         // Check for any failures
         for result in results {
             if let Err(e) = result {
-                log_error_with_host_direct!(&server_metadata.user, &server_metadata.host, EXECUTE_TASK_NAME, "{}", e);
+                // log_error_with_host_direct!(&server_metadata.user, &server_metadata.host, EXECUTE_TASK_NAME, "{}", e);
                 return Err(e);
             }
         }
@@ -141,7 +141,7 @@ pub async fn run(
         // Run scripts sequentially
         for script in &config.scripts {
             if let Err(e) = execute_single(script.clone(), server_metadata.clone(), global_server_pool.clone()).await {
-                log_error_with_host_direct!(&server_metadata.user, &server_metadata.host, EXECUTE_TASK_NAME, "{}", e);
+                // log_error_with_host_direct!(&server_metadata.user, &server_metadata.host, EXECUTE_TASK_NAME, "{}", e);
                 return Err(e);
             }
         }

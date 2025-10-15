@@ -485,6 +485,7 @@ impl ServerPool {
         port: u16,
         key: &PublicKey,
     ) -> std::io::Result<()> {
+        // println!("add_host_to_known_hosts: {}", host);
         // Get home directory
         let mut path = dirs::home_dir().ok_or(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -496,7 +497,11 @@ impl ServerPool {
 
         // Encode the public key
         let encoded_key = key.public_key_base64();
-        let line_to_add = format!("[{}]:{} {} {}\n", host, port, key.name(), encoded_key);
+        let line_to_add = if port == DEFAULT_SSH_PORT {
+            format!("{} {} {}\n", host, key.name(), encoded_key)
+        } else {
+            format!("[{}]:{} {} {}\n", host, port, key.name(), encoded_key)
+        };
 
         // If file exists, check if the same entry already exists
         let mut file_exists = false;
@@ -508,11 +513,12 @@ impl ServerPool {
         }
 
         // Check if same host+key already exists
-        let already_exists = file_content
-            .lines()
-            .any(|line| line.trim() == line_to_add.trim());
-
+        let already_exists = file_content.lines().any(|line| {
+            let line = line.trim();
+            line.starts_with(host) || line.starts_with(&format!("[{}]:{}", host, port))
+        });
         if already_exists {
+            // println!("key already exists, skip: {}", line_to_add);
             // Already stored, skip writing
             return Ok(());
         }
