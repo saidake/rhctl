@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::process::exit;
-use std::sync::Arc;
 use std::time::Duration;
 
-use crate::commands::execute;
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{
     ExecuteCmdConfig, PatchCmdConfig, ServerMetadata, UploadCmdConfig,
@@ -17,7 +15,7 @@ use crate::domain::constants::{
 use crate::domain::yml_config::{NamedConfig, ServerConfig, TargetConfig, YmlConfig};
 use crate::utils::file_utils::substitute_vars;
 use crate::utils::log_utils::prompt_password_or_exit;
-use crate::{log_error_direct, log_error_root, log_error_with_host_direct, log_warn_direct, log_warn_root};
+use crate::{log_error_direct, log_error_with_host_direct, log_warn_direct, log_warn_root};
 
 // Root level
 pub fn parse_patch_config_from_cmd(

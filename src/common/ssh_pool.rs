@@ -4,18 +4,17 @@ use crate::domain::constants::{
 };
 use crate::domain::yml_config::ServerConfig;
 use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
-use crate::utils::log_utils::{ask_user, flush_logs_and_exit};
+use crate::utils::log_utils::ask_user;
 use crate::utils::ssh_utils::execution_print;
-use crate::{log_debug, log_error_direct, log_info, log_warn, log_warn_direct, log_warn_root};
+use crate::{log_debug, log_error_direct, log_info, log_warn, log_warn_direct};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
-use base64::{Engine as _, engine::general_purpose};
 use dashmap::DashMap;
 use dashmap::DashSet;
 use dirs_next as dirs;
 use futures::stream::{FuturesUnordered, StreamExt};
 use russh::ChannelMsg;
-use russh::client::{self, Config, Handler};
+use russh::client::{Config, Handler};
 use russh::client::{Handle, Msg};
 use russh_keys::PublicKeyBase64;
 use russh_keys::key::PublicKey;
@@ -33,7 +32,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tokio::task::{self, JoinHandle};
+use tokio::task::{self};
 use tokio::time::timeout;
 
 #[derive(Debug)]

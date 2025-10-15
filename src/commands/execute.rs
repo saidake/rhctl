@@ -7,7 +7,7 @@ use futures::future::join_all; // Added for async parallel execution
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{ExecuteCmdConfig, ServerMetadata};
 use crate::domain::constants::EXECUTE_TASK_NAME;
-use crate::{log_debug, log_info, log_error_with_host_direct};
+use crate::{log_debug, log_info};
 
 pub async fn run(
     config: &ExecuteCmdConfig,

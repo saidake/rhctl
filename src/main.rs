@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use futures::future::join_all;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::Write;
 use std::process::exit;
 use std::sync::Arc;
