@@ -17,17 +17,12 @@
 # Start LocalStack Service.
 #
 # Prerequisites:
-#    1. Configure variables in `scripts/AAA/config/server.sh`:
-#         - REMOTE_HOST
-#         - REMOTE_USER
-#         - REMOTE_SSH_PORT (default: 22)
-#         - REMOTE_PWD
-#    2. **Docker** and **Docker Compose** have been installed on the remote server. 
+#    1. **Docker** and **Docker Compose** have been installed on the remote server. 
 #        (see [Docker and Docker Compose / Installing on a Remote Linux Host](#installing-on-a-remote-linux-host)).
 #
 # Author: Craig Brown
-# Since : 1.3.1
-# Date  : July 20, 2025
+# Since : 1.0.0
+# Date  : October 16, 2025
 # ************************************************************************************
 
 COMPOSE_DIR="/opt/sandbox/aws"

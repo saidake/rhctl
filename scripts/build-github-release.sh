@@ -1,6 +1,5 @@
 #!/bin/bash
 # Automated script for GitHub releases
-# Assumes cargo cross for cross-compilation
 
 set -e
 

@@ -20,8 +20,8 @@ REM Prerequisites:
 REM   1. Open the Command Prompt with administrator privileges and navigate to the project root directory.
 REM 
 REM Author: Craig Brown
-REM Since: 1.3.3
-REM Date: August 5, 2025
+REM Since: 1.0.0
+REM Date: October 16, 2025
 REM ************************************************************************************
 
 @echo off

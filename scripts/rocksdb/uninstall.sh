@@ -10,16 +10,9 @@
 # ************************************************************************************
 # Uninstall script for RocksDB
 #
-# Prerequisites:
-#    1. Configure variables in `scripts/AAA/config/server.sh`:
-#         - REMOTE_HOST
-#         - REMOTE_USER
-#         - REMOTE_SSH_PORT (default: 22)
-#         - REMOTE_PWD
-#
 # Author: Craig Brown
-# Since: 1.3.4
-# Date: August 15, 2025
+# Since : 1.0.0
+# Date  : October 16, 2025
 # ************************************************************************************
 # ================================================================== Required Configurations
 INSTALL_PREFIX="/usr/local/rocksdb"

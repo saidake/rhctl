@@ -16,8 +16,8 @@
  * Structs mapped from the YAML configuration file.
  * 
  * Author: Craig Brown
- * Date: October 16, 2025
  * Since: 1.0.0
+ * Date: October 16, 2025
  */
 use std::hash::{Hash, Hasher};
 use serde::Deserialize;

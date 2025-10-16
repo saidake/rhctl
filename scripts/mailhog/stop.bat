@@ -21,8 +21,8 @@ REM   1. **Docker Desktop** is installed and running locally.
 REM      (see [Docker Desktop / Installing on Local Windows](#installing-on-local-windows)).
 REM 
 REM Author: Craig Brown
-REM Since: 1.3.3
-REM Date: August 5, 2025
+REM Since: 1.0.0
+REM Date: October 16, 2025
 REM ************************************************************************************
 
 echo [INFO] Checking if MailHog container is running...

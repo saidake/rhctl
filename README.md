@@ -1,10 +1,11 @@
 # Table of Contents
 - [Table of Contents](#table-of-contents)
 - [Introduction](#introduction)
-- [Core Commands](#core-commands)
-  - [rsctl upload](#rsctl-upload)
+- [Commands](#commands)
   - [rsctl execute](#rsctl-execute)
+  - [rsctl upload](#rsctl-upload)
   - [rsctl patch](#rsctl-patch)
+  - [rsctl run](#rsctl-run)
 - [Environment Configuration Helper](#environment-configuration-helper)
   - [Docker and Docker Compose](#docker-and-docker-compose)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host)
@@ -20,163 +21,321 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
 
 # Introduction
-**Sandbox Control (rsctl)** is a high-performance Rust CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. 
-
-# Core Commands
-## rsctl upload
-[Back to Top](#table-of-contents)  
-Automates uploading files from a local `assets-root` directory to mapped remote paths, according to rules defined in a `properties` file. This command replicates the functionality of the previous `cpfiles.sh` script.
-
-**Prerequisites**:
-1. Ensure `rsctl` is built and executable:
-   ```bash
-   cargo build --release
-   ```
-2. Configure server variables in a YAML configuration file (e.g., `config.yml`):
-   ```yaml
-   remote:
-     host: "192.168.75.128"
-     user: "test99"
-     ssh_port: 22
-     password: "testpwd"
-   upload:
-     properties_file: "AAA/config/path-mapping.properties"
-     assets_root: "AAA/assets"
-     use_rsync: false
-     use_sudo: false
-     silent: false
-   ```
-3. Alternatively, provide configuration via CLI arguments (`--host`, `--user`, `--port`, `--password`).
-
-**Examples**:
-- Using default settings from `config.yml`:
-  ```bash
-  rsctl --config config.yml upload
-  ```
-
-  Copies `example1.txt` to `/home/test99/examples` and `example2.txt`, `example3.txt` from `AAA/assets/exampledir` to `/home/test99/examples/targetdir` on the remote server.
-
-- Specifying properties and assets root via CLI:
-  ```bash
-  rsctl --host 192.168.75.128 --user test99 --port 22 upload --properties AAA/config/path-mapping.properties --assets-root AAA/assets
-  ```
-  Same as above, but overrides config file settings.
-
-**Usage**:
-```bash
-rsctl [--config <config.yml>] [--host <host>] [--user <user>] [--port <port>] [--password <password>] [--use-sudo] [--use-rsync] [--silent] [--log-level <level>] upload [--properties <properties>] [--assets-root <assets-root>]
-```
-- `<properties>`: Path to the properties file defining file mappings (e.g., `AAA/config/path-mapping.properties`).
-- `<assets-root>`: Base directory for local files to upload (e.g., `AAA/assets`).
-
-**Options**:
-- `--use-rsync`: Use `rsync` for uploading instead of `scp` if available (default: `false`).
-- `--use-sudo`: Execute commands with `sudo` privileges on the remote server (default: `false`). Note: With `sudo`, `~` resolves to `/root`.
-- `--silent`: Suppress confirmation prompts (auto-approve overwrites) (default: `false`).
-- `--log-level`: Set logging level (`debug`, `info`, `warn`, `error`) (default: `info`).  
-<br/>
-- `--properties`: Path to the properties file (overrides config file).
-- `--assets-root`: Base directory for local files (overrides config file).
-
-**Properties File Format** (e.g., `AAA/config/path-mapping.properties`):
-```
-example1.txt=~/examples
-exampledir=~/examples/targetdir
-```
-
+**Remote Server Control (rsctl)** is a high-performance Rust CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. 
+# Commands
 ## rsctl execute
 [Back to Top](#table-of-contents)  
-Executes a local Bash script on a remote server in a specified working directory. This command replicates the functionality of the previous `execr.sh` script, with real-time output streaming.
+Runs one or more local Bash scripts on a remote server in a specified working directory.
 
-**Prerequisites**:
-1. Ensure `rsctl` is built:
-   ```bash
-   cargo build --release
-   ```
-2. Configure server variables in `config.yml` (as shown above) or via CLI arguments.
-3. Ensure the local Bash script exists (e.g., `AAA/assets/example-bash.sh`).
-
-**Examples**:
-- Using config file:
-  ```bash
-  rsctl --config config.yml execute AAA/assets/example-bash.sh ~/examples
-  ```
-  Executes `AAA/assets/example-bash.sh` in `/home/test99/examples` on the remote server.
-
-- Using CLI arguments:
-  ```bash
-  rsctl --host 192.168.75.128 --user test99 --port 22 execute AAA/assets/example-bash.sh ~/examples
-  ```
-
-**Usage**:
+**Usage**
 ```bash
-rsctl [--config <config.yml>] [--host <host>] [--user <user>] [--port <port>] [--password <password>] [--use-sudo] [--use-rsync] [--silent] [--log-level <level>] execute <script> [--remote-path <remote-path>]
+rsctl execute \
+  --host <host> \
+  --user <user> \
+  [--ssh-port <port>] \
+  [--password <pass>] \
+  --script <script1> \
+  [--script <script2> ...] \
+  [--work-path <path>] \
+  [--mode sync|async] \
+  [options]
 ```
-- `<script>`: Path to the local Bash script to execute.
-- `--remote-path`: Remote working directory (default: `~`).
-
-**Options**:
-- `--use-rsync`: Use `rsync` for uploading the script in `sudo` mode (default: `false`).
-- `--use-sudo`: Execute the script with `sudo` privileges (uploads script to a temporary path) (default: `false`).
-- `--silent`: Suppress confirmation prompts (default: `false`).
-- `--log-level`: Set logging level (`debug`, `info`, `warn`, `error`) (default: `info`).
+**Example**:
+```bash
+rsctl execute \
+  --host 192.168.75.128 \
+  --user test99 \
+  --password testpwd \
+  --script AAA/assets/example-bash1.sh \
+  --script AAA/assets/example-bash2.sh \
+  --mode async
+```
 
 **Example Script** (e.g., `AAA/assets/example-bash.sh`):
 ```bash
 #!/bin/bash
 pwd
-echo "Remote Execution"
+echo "Remote Execution 1.1"
+sleep 6
+echo "Remote Execution 1.2"
 ```
+
+**Required Parameters**:
+- `--host <ip/hostname>`: Remote host IP or hostname
+- `--user <username>`: Remote username
+- `--script <path>`: Local bash script file (supports multiple)
+
+**Optional Parameters**:
+- `--mode <sync|async>`: Execution mode: 'sync' (run sequentially) or 'async' (run concurrently).
+- `--work-path <path>`: Remote working directory where the bash script will be executed (defaults to the user's home directory: ~).
+
+- `--password <password>`: Remote password.
+- `--ssh-port <port>`: Remote SSH port (default: 22).
+
+- `--use-sudo`: Run operations with sudo (default: false).
+- `--use-rsync`: Prefer rsync over scp if available (default: false).
+- `--silent`: Suppress prompts. Warning: Use with caution; all overwrite and delete operations will be assumed confirmed (default: false).
+
+- `--connect-timeout <duration>`: Maximum time allowed to establish a connection to the remote server.  
+  Example duration values: `20s`, `5m`, `1h`
+
+- `--max-sessions-per-server <num>`: Maximum number of active SSH sessions allowed per server.
+- `--max-channels-per-session <num>`: Maximum number of concurrent channels allowed per SSH session. 
+- `--session-acquire-timeout <duration>`: Maximum time to wait for acquiring a session from the session pool.  
+  Example duration values: `20s`, `5m`, `1h`
+- `--max-session-lifetime <duration>`: Maximum lifetime of an SSH session before it is automatically closed.  
+  Example duration values: `20s`, `5m`, `1h`
+
+**Optional Global Parameters**:
+- `--log_level <level>`: Set log level (debug, info, warn, error; default: info).
+- `--var KEY=VALUE`: Provide global variables used in the provided paths (multiple allowed; overrides in YAML mode are ignored).  
+  Example:
+  ```bash
+  rsctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script '${ASSETS_ROOT}/example-bash1.sh' \
+    --script '${ASSETS_ROOT}/example-bash2.sh' \
+    --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets \
+    --mode async
+  ```
+
+
+## rsctl upload
+[Back to Top](#table-of-contents)  
+Upload multiple files or contents under a directory into a remote directory based on a properties-file.
+
+**Usage**
+```bash
+rsctl upload \
+  --host <host> \
+  --user <user> \
+  [--ssh-port <port>] \
+  [--password <pass>] \
+  --properties-file <props> \
+  [options]
+```
+
+**Properties File Format**:
+```properties
+AAA/assets/example1.txt=~/examples
+AAA/assets/exampledir=~/examples/targetdir
+```
+Maps local files or directories to target directories on the remote server. Format: `local_path=remote_directory`
+
+**Example**:
+```bash
+rsctl upload \
+  --host 192.168.75.128 \
+  --user test99 \
+  --properties-file AAA/config/path-mapping.properties
+```
+
+**Required Parameters**:
+- `--host <ip/hostname>`: Remote host IP or hostname
+- `--user <username>`: Remote username
+- `--properties-file <path>`: Required; defines mappings.
+
+**Optional Parameters**:
+- `--password <password>`: Remote password
+- `--ssh-port <port>`: Remote SSH port (default: 22)
+
+- `--use-sudo`: Run operations with sudo (default: false).
+- `--use-rsync`: Prefer rsync over scp if available (default: false).
+- `--silent`: Suppress prompts. Warning: Use with caution; all overwrite and delete operations will be assumed confirmed (default: false).
+
+- `--connect-timeout <duration>`: Maximum time allowed to establish a connection to the remote server.  
+  Example duration values: `20s`, `5m`, `1h`
+
+- `--max-sessions-per-server <num>`: Maximum number of active SSH sessions allowed per server.
+- `--max-channels-per-session <num>`: Maximum number of concurrent channels allowed per SSH session. 
+- `--session-acquire-timeout <duration>`: Maximum time to wait for acquiring a session from the session pool.  
+  Example duration values: `20s`, `5m`, `1h`
+- `--max-session-lifetime <duration>`: Maximum lifetime of an SSH session before it is automatically closed.  
+  Example duration values: `20s`, `5m`, `1h`
+
+**Optional Global Parameters**:
+- `--log_level <level>`: Set log level (debug, info, warn, error; default: info).
+- `--var KEY=VALUE`: Provide global variables used in the provided paths (multiple allowed; overrides in YAML mode are ignored).  
+  Example:  
+    ```properties
+    ${ASSETS_ROOT}/example1.txt=~/examples
+    ${ASSETS_ROOT}/exampledir=~/examples/targetdir
+    ```
+    ```bash
+    rsctl upload \
+      --host 192.168.75.128 \
+      --user test99 \
+      --ssh-port 22 \
+      --password testpwd \
+      --use-sudo \
+      --properties-file AAA/assets/path-mapping.properties \
+      --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets
+    ```
 
 ## rsctl patch
 [Back to Top](#table-of-contents)  
-Safely patches a remote file by uploading a local patch file, backing up the target file, and applying the patch, or recovering from a backup. This command replicates the functionality of the previous `patchr.sh` script.
+Safely patches a remote file by uploading a local patch file, backing up the target file, and applying the patch, or recovering from a backup. 
 
-**Prerequisites**:
-1. Ensure `rsctl` is built:
-   ```bash
-   cargo build --release
-   ```
-2. Configure server variables in `config.yml` (as shown above) or via CLI arguments.
-3. Ensure the local patch file exists (e.g., `AAA/assets/example-patch.txt`).
-4. [Optional] Create a test file on the remote server (e.g., `~/examples/example-patch-remote.txt`).
+**Usage**
+```bash
+rsctl patch \
+  --host <host> \
+  --user <user> \
+  [--ssh-port <port>] \
+  [--password <pass>] \
+  --local-path <path> \
+  --remote-upload <path> \
+  --remote-path <path> \
+  --remote-backup <path> \
+  [--recover] \
+  [options]
+```
+Steps (Patch Mode):
+1. Upload `local-path` to `remote-upload`.
+2. Backup `remote-path` to `remote-backup`.
+3. Overwrite `remote-path` with `remote-upload`.
 
-**Examples**:
-- Patch mode (using config file):
-  ```bash
-  rsctl --config config.yml patch
-  ```
-  Patches `/home/test99/examples/example-patch-remote.txt` with `AAA/assets/example-patch.txt`, backing up to `/home/test99/tmp/example-patch-remote.txt.bak`.
+Steps (Recover Mode):
+1. Restore `remote-path` from `remote-backup`.
 
-- Patch mode (CLI arguments):
-  ```bash
-  rsctl --host 192.168.75.128 --user test99 --port 22 patch --local-patch AAA/assets/example-patch.txt --remote-upload ~/tmp/example-patch.txt.upload --remote-file ~/examples/example-patch-remote.txt --remote-backup ~/tmp/example-patch-remote.txt.bak
-  ```
+**Example**:
+```bash
+rsctl patch \
+  --host 192.168.75.128 \
+  --user test99 \
+  --password testpwd \
+  --local-path "AAA/assets/example-patch.txt" \
+  --remote-upload "/tmp/example-patch.txt.upload" \
+  --remote-path "~/examples/example-patch-remote.txt" \
+  --remote-backup "/tmp/example-patch-remote.txt.bak" 
+```
 
-- Recover mode:
-  ```bash
-  rsctl --config config.yml patch --recover
-  ```
-  Restores `/home/test99/examples/example-patch-remote.txt` from `/home/test99/tmp/example-patch-remote.txt.bak`.
+**Required Parameters**:
+- `--host <ip/hostname>`: Remote host IP or hostname.
+- `--user <username>`: Remote username.
+- `--local-path <path>`: Local source file.
+- `--remote-upload <path>`: Remote path to upload the local source file.
+- `--remote-path <path>`: Remote target file to apply the patch to.
+- `--remote-backup <path>`: Backup path for the remote target file before patching.
+
+**Optional Parameters**:
+- `--recover`: Recover the remote target file from its backup after a patching.
+- `--password <password>`: Remote password
+- `--ssh-port <port>`: Remote SSH port (default: 22)
+
+- `--use-sudo`: Run operations with sudo (default: false).
+- `--use-rsync`: Prefer rsync over scp if available (default: false).
+- `--silent`: Suppress prompts. Warning: Use with caution; all **overwrite** and **delete** operations will be assumed confirmed (default: false).
+
+- `--connect-timeout <duration>`: Maximum time allowed to establish a connection to the remote server.  
+  Example duration values: `20s`, `5m`, `1h`
+
+- `--max-sessions-per-server <num>`: Maximum number of active SSH sessions allowed per server.
+- `--max-channels-per-session <num>`: Maximum number of concurrent channels allowed per SSH session. 
+- `--session-acquire-timeout <duration>`: Maximum time to wait for acquiring a session from the session pool.  
+  Example duration values: `20s`, `5m`, `1h`
+- `--max-session-lifetime <duration>`: Maximum lifetime of an SSH session before it is automatically closed.  
+  Example duration values: `20s`, `5m`, `1h`
+
+
+
+## rsctl run
+[Back to Top](#table-of-contents)  
+Run batch operations defined in YAML config file. Supports multiple upload/execute/patch tasks across servers/groups in parallel.
 
 **Usage**:
 ```bash
-rsctl [--config <config.yml>] [--host <host>] [--user <user>] [--port <port>] [--password <password>] [--use-sudo] [--use-rsync] [--silent] [--log-level <level>] patch [--local-patch <local-patch>] [--remote-upload <remote-upload>] [--remote-file <remote-file>] [--remote-backup <remote-backup>] [--recover]
+rsctl run --config <yml-file-path> --config-name <name>
 ```
-- `--local-patch`: Path to the local patch file.
-- `--remote-upload`: Temporary remote path for the uploaded patch file.
-- `--remote-file`: Remote file to patch.
-- `--remote-backup`: Path for the backup file.
-- `--recover`: Restore from backup (default: `false`).
-- `--use-rsync`, `--use-sudo`, `--silent`, `--log-level`: Same as above.
+**Example**:
+```bash
+rsctl run  --config config.yml --config-name dev-deploy
+```
 
-**Steps (Patch Mode)**:
-1. Upload `local-patch` to `remote-upload`.
-2. Backup `remote-file` to `remote-backup`.
-3. Overwrite `remote-file` with `remote-upload`.
+**YAML Configuration File Format**:
+```yaml
+# Server-specific configuration
+# Can override common config values per server
+servers:
+  - name: "test-server1"
+    host: "192.168.75.128"
+    user: "test99"
+    ssh-port: 22
+    password: "testpwd"
+    connect_timeout: 60s  # Overrides common server config if specified
+  - name: "test-server2"
+    host: "192.168.75.129"
+    user: "test99"
+    ssh-port: 22
+    password: "testpwd"
+    connect_timeout: 60s  
 
-**Steps (Recover Mode)**:
-1. Restore `remote-file` from `remote-backup`.
+# Command configurations
+# Define sets of upload, patch, execute operations
+configs:   
+  - name: "dev-deploy"   
+    
+    # General command options (applied to all operations in this config)
+    use-sudo: false
+    use-rsync: false
+    silent: false
+    
+    upload:
+      - properties-file: "AAA/config/path-mapping.properties"
+
+        # Specify which servers or groups this command targets
+        target-servers: ["test-server1","test-server2"] 
+        # target-groups: ["dev"]
+        
+        # Override common/general options for this command
+        # use-sudo: false
+        # use-rsync: false
+        # silent: false
+
+    patch:
+      - local-path: "AAA/assets/example-patch.txt"
+        remote-upload: "/tmp/example-patch.txt.upload"
+        remote-path: "~/examples/example-patch-remote.txt"
+        remote-backup: "/tmp/example-patch-remote.txt.bak"
+        target-servers: ["test-server1","test-server2"]  
+        # target-groups: ["dev"]
+
+    execute:
+      - remote-path: "~"
+        scripts: 
+          - "AAA/assets/example-bash1.sh"
+          - "AAA/assets/example-bash2.sh"
+        mode: sync
+        target-servers: ["test-server1","test-server2"]  
+        # target-groups: ["dev"]
+
+# Common configuration (Optional)
+# Applies to all servers unless overridden in individual server or command configs.
+common:
+  server:
+    connect_timeout: 60s  
+    max_channels_per_session: 200
+    max_sessions_per_server: 2000
+    session_acquire_timeout: 30s
+    max_session_lifetime: 10m
+
+# Global variables  (Optional)
+# Provide global variables used in the provided paths. 
+# Can be referenced in paths using ${VAR_NAME}
+var-map:
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets"
+
+# Group mapping  (Optional)
+# Assign servers to logical groups for easier targeting
+group-map:
+  dev: ["test-server1", "test-server2"]
+```
+
+**Required Parameters**:
+- `--config <path>`: Path to YAML configuration file
+- `--config-name <username>`: Name of the configuration inside the YAML file to use
 
 # Environment Configuration Helper
 ## Docker and Docker Compose
@@ -184,25 +343,25 @@ Docker is a platform that enables you to package, distribute, and run applicatio
 
 ### Installing on a Remote Linux Host
 [Back to Top](#table-of-contents)  
-**Prerequisites**:
-1. Configure `config.yml` or CLI arguments for SSH access (see [rsctl upload](#rsctl-upload)).
-2. Ensure the remote server has internet access.
-
 **Commands**:
-```bash
-rsctl --config config.yml execute ./scripts/docker/install.sh ~/examples
-```
-Installs Docker and Docker Compose on the remote server.
+* Installs Docker and Docker Compose on the remote server.
+  ```bash
+  rsctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/docker/install.sh \
+    --use-sudo
+  ```
 
 **Example Success Output**:
 ```
-[INFO] Connecting to test99@192.168.75.128:22
-[INFO] Executing script in '/home/test99/examples'
-...
-[INFO] Docker installed successfully: Docker version 28.3.2, build 578ccf6
-...
-[INFO] Docker Compose installed successfully: Docker Compose version v2.38.2
-[INFO] Execution complete.
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Docker installed successfully: Docker version 28.5.1, build e180ab8
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Downloading latest Docker Compose binary...
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Docker Compose binary already exists, skipping download.
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Verifying Docker Compose installation...
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Docker Compose installed successfully: Docker Compose version v2.39.1
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Installation complete.
 ```
 
 ## Docker Desktop
@@ -213,11 +372,11 @@ Docker Desktop is an easy-to-install application for building, sharing, and runn
 **Prerequisites**:
 1. Open Command Prompt with administrator privileges and navigate to the project root directory.
 
-**Commands**:
-```bash
-call scripts\docker\install.bat
-```
-Installs Docker Desktop locally on Windows.
+**Command**:
+* Installs Docker Desktop locally on Windows.
+  ```bash
+  call scripts\docker\install.bat
+  ```
 
 ## AWS LocalStack
 LocalStack is a local AWS cloud stack emulator for testing AWS services.
@@ -225,22 +384,39 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
 ### Installing on a Remote Linux Host
 [Back to Top](#table-of-contents)  
 **Prerequisites**:
-1. Configure `config.yml` or CLI arguments for SSH access.
-2. Docker and Docker Compose are installed on the remote server (see [Docker and Docker Compose](#docker-and-docker-compose)).
+1. Docker and Docker Compose are installed on the remote server (see [Docker and Docker Compose](#docker-and-docker-compose)).
 
-**Commands**:
-```bash
-rsctl --config config.yml upload --properties ./scripts/aws/cpfiles-env.sh --assets-root ./scripts/aws/assets
-rsctl --config config.yml execute ./scripts/aws/localstack-start.sh ~/examples
-```
-- Uploads `scripts/aws/assets/docker-compose.yml` to `/opt/sandbox/aws` on the remote server.
-- Starts LocalStack service.
-
-```bash
-rsctl --config config.yml execute ./scripts/aws/localstack-stop.sh ~/examples
-```
-Stops LocalStack service.
-
+**Commands** (YAML/Run Mode Example):
+* Uploads `scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
+  ```bash
+  rsctl \
+    upload \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --properties-file scripts/aws/config/path-mapping.properties \
+    --use-sudo
+  ```
+* Start LocalStack.
+  ```bash
+  rsctl \
+    execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/aws/localstack-start.sh \
+    --use-sudo
+  ```
+* Stop LocalStack.
+  ```bash
+  rsctl \
+    execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/aws/localstack-stop.sh \
+    --use-sudo
+  ```
 ## MailHog
 MailHog is a lightweight email testing tool that acts as a local SMTP server.
 
@@ -250,15 +426,14 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 1. Docker Desktop is installed and running (see [Docker Desktop](#docker-desktop)).
 
 **Commands**:
-```bash
-call scripts\mailhog\start.bat
-```
-Installs and runs the MailHog Docker image.
-
-```bash
-call scripts\mailhog\stop.bat
-```
-Stops the MailHog Docker image.
+* Installs and runs the MailHog Docker image.
+  ```bash
+  call scripts\mailhog\start.bat
+  ```
+* Stops the MailHog Docker image.
+  ```bash
+  call scripts\mailhog\stop.bat
+  ```
 
 **Access**:
 - SMTP server: http://localhost:1025
@@ -269,30 +444,41 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
 
 ### Installing on a Remote Linux Host
 [Back to Top](#table-of-contents)  
-**Prerequisites**:
-1. Configure `config.yml` or CLI arguments for SSH access.
-
 **Commands**:
-```bash
-rsctl --config config.yml execute ./scripts/rocksdb/install.sh ~/examples
-```
-Installs RocksDB.
-
-```bash
-rsctl --config config.yml execute ./scripts/rocksdb/uninstall.sh ~/examples
-```
-Uninstalls RocksDB.
+* Installs RocksDB.
+  ```bash
+  rsctl \
+    execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/rocksdb/install.sh \
+    --use-sudo
+  ```
+* Uninstalls RocksDB.
+  ```bash
+  rsctl \
+    execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/rocksdb/uninstall.sh \
+    --use-sudo
+  ```
 
 ## Typesense
 Typesense is an open-source, fast, typo-tolerant search engine for building instant search experiences.
 
 ### Installing on a Remote Linux Host
 [Back to Top](#table-of-contents)  
-**Prerequisites**:
-1. Configure `config.yml` or CLI arguments for SSH access.
-
 **Commands**:
-```bash
-rsctl --config config.yml execute ./scripts/typesense/install.sh ~/examples
-```
-Installs Typesense.
+* Installs Typesense.
+  ```bash
+  rsctl \
+    execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/typesense/install.sh \
+    --use-sudo
+  ```

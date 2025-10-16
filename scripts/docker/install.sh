@@ -24,16 +24,9 @@
 #    [INFO] Docker Compose installed successfully: Docker Compose version v2.38.2
 #    [INFO] Installation complete.
 #
-# Prerequisites:
-#    1. Configure variables in `scripts/AAA/config/server.sh`:
-#         - REMOTE_HOST
-#         - REMOTE_USER
-#         - REMOTE_SSH_PORT (default: 22)
-#         - REMOTE_PWD
-# 
 # Author: Craig Brown
-# Since: 1.3.1
-# Date: July 20, 2025
+# Since : 1.0.0
+# Date  : October 16, 2025
 # ************************************************************************************
 
 set -e

@@ -16,8 +16,8 @@
  * Patch a file in remote server.
  * 
  * Author: Craig Brown
- * Date: October 16, 2025
  * Since: 1.0.0
+ * Date: October 16, 2025
  */
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

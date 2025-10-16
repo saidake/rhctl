@@ -17,8 +17,8 @@
  * or yml configuration file, to be used in upload, patch, and other tasks.
  * 
  * Author: Craig Brown
- * Date: October 16, 2025
  * Since: 1.0.0
+ * Date: October 16, 2025
  */
 use std::time::Duration;
 

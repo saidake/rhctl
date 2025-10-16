@@ -16,8 +16,8 @@
  * File operation utils.
  * 
  * Author: Craig Brown
- * Date: October 16, 2025
  * Since: 1.0.0
+ * Date: October 16, 2025
  */
 use crate::domain::cmd_params::ServerMetadata;
 use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;

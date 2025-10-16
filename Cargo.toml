@@ -2,9 +2,9 @@
 name = "rsctl"
 version = "1.0.0"
 edition = "2024"
-description = "High-performance Rust CLI for remote SSH operations"
+description = "High-performance Rust CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. "
 authors = ["Craig Brown <craigbrowndev@gmail.com>"]
-license = "MIT"
+license = "Apache 2.0"
 repository = "https://github.com/saidake/rsctl"
 homepage = "https://github.com/saidake/rsctl"
 readme = "README.md"

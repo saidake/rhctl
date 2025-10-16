@@ -16,8 +16,8 @@
  * Upload a file or directory contents into a remote server directory.
  * 
  * Author: Craig Brown
- * Date: October 16, 2025
  * Since: 1.0.0
+ * Date: October 16, 2025
  */
 
 use futures::future::join_all;

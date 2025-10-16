@@ -16,8 +16,8 @@
  * Main entry point of the application.
  * 
  * Author: Craig Brown
- * Date: October 16, 2025
  * Since: 1.0.0
+ * Date: October 16, 2025
  */
 use clap::{Parser, Subcommand};
 use futures::future::join_all;
@@ -70,7 +70,7 @@ struct Cli {
         long,
         global = true, 
         value_parser = parse_var, 
-        help = "Global variable in KEY=VALUE format, can be specified multiple times")]
+        help = "Provide global variables used in the provided paths in KEY=VALUE format, can be specified multiple times")]
     var: Vec<(String, String)>,
 }
 
@@ -114,22 +114,27 @@ enum Commands {
 
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
+        #[arg(help = "Maximum time allowed to establish a connection to the remote server.")]
         connect_timeout: Option<Duration>,
 
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
-        max_channels_per_session: Option<usize>,
-
-        #[arg(long)]
-        #[arg(value_parser = parse_duration)]
+        #[arg(help = "Maximum number of active SSH sessions allowed per server.")]
         max_sessions_per_server: Option<usize>,
 
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
+        #[arg(help = "Maximum number of concurrent channels allowed per SSH session.")]
+        max_channels_per_session: Option<usize>,
+
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        #[arg(help = "Maximum time to wait for acquiring a session from the session pool.")]
         session_acquire_timeout: Option<Duration>,
 
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
+        #[arg(help = "Maximum lifetime of an SSH session before it is automatically closed.")]
         max_session_lifetime: Option<Duration>,
     },
 
@@ -147,10 +152,14 @@ enum Commands {
         #[arg(long, help = "Remote password")]
         password: Option<String>,
 
-        #[arg(long, help = "Local bash script file")]
+        #[arg(long, help = "Local bash script file (supports multiple)")]
         script: Vec<String>,
 
-        #[arg(long, default_value = DEFAULT_EXECUTE_WORK_PATH, help = "Remote working path")]
+        #[arg(
+            long,
+            default_value = DEFAULT_EXECUTE_WORK_PATH,
+            help = "Remote working directory where the bash script will be executed (defaults to the user's home directory: ~)"
+        )]
         work_path: Option<String>,
 
         
@@ -180,11 +189,11 @@ enum Commands {
 
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
-        max_channels_per_session: Option<usize>,
+        max_sessions_per_server: Option<usize>,
 
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
-        max_sessions_per_server: Option<usize>,
+        max_channels_per_session: Option<usize>,
 
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
@@ -212,18 +221,17 @@ enum Commands {
         #[arg(long, help = "Local source file")]
         local_path: String,
 
-        #[arg(long, help = "Remote upload path for patch")]
+        #[arg(long, help = "Remote path to upload the local source file")]
         remote_upload: String,
 
-        #[arg(long, help = "Remote target file to patch")]
+        #[arg(long, help = "Remote target file to apply the patch to")]
         remote_path: String,
 
-        #[arg(long, help = "Remote backup file path")]
+        #[arg(long, help = "Backup path for the remote target file before patching")]
         remote_backup: String,
 
-        #[arg(long, default_value = "false", help = "Recover from backup")]
+        #[arg(long, default_value = "false", help = "Recover the remote target file from its backup after patching")]
         recover: bool,
-
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
@@ -245,14 +253,14 @@ enum Commands {
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
         connect_timeout: Option<Duration>,
+        
+        #[arg(long)]
+        #[arg(value_parser = parse_duration)]
+        max_sessions_per_server: Option<usize>,
 
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
         max_channels_per_session: Option<usize>,
-
-        #[arg(long)]
-        #[arg(value_parser = parse_duration)]
-        max_sessions_per_server: Option<usize>,
 
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
