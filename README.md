@@ -114,6 +114,7 @@ echo "Remote Execution 1.2"
 ## rsctl upload
 [Back to Top](#table-of-contents)  
 Upload multiple files or all contents of a directory to a remote directory in parallel, based on a properties file.
+
 ![](./docs/assets/cmd/upload.svg) 
 
 **Usage**
@@ -132,7 +133,13 @@ rsctl upload \
 AAA/assets/example1.txt=~/examples
 AAA/assets/exampledir=~/examples/targetdir
 ```
-Maps local files or directories to target directories on the remote server. Format: `local_path=remote_directory`
+Format: `<local-path>=<remote-directory>`    
+
+Maps local files or directories to target directories on the remote server.   
+
+Note: The right-hand side must be a **directory**, not a file path. If it does not exist, it will be created automatically.  
+Note: The file or the contents of the local directory on the left will be uploaded **into** the specified remote directory on the right.
+
 
 **Example**:
 ```bash
@@ -187,6 +194,7 @@ rsctl upload \
 ## rsctl patch
 [Back to Top](#table-of-contents)  
 Safely patches a remote file by uploading a local patch file, backing up the target file, and applying the patch, or recovering from a backup. 
+
 ![](./docs/assets/cmd/patch.svg) 
 
 **Usage**

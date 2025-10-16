@@ -22,8 +22,7 @@
  */
 use crate::domain::cmd_params::ServerMetadata;
 use crate::domain::constants::{
-    DEFAULT_SSH_HANDSHAKE_TIMEOUT, DEFAULT_SSH_PORT, REMOTE_TEMP_SBXCTL_FOLDER, SUDO_ERR_MSG,
-    SYSTEM_TASK_NAME,
+    DANGEROUS_PATHS, DEFAULT_SSH_HANDSHAKE_TIMEOUT, DEFAULT_SSH_PORT, REMOTE_TEMP_SBXCTL_FOLDER, SUDO_ERR_MSG, SYSTEM_TASK_NAME
 };
 use crate::domain::yml_config::ServerConfig;
 use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
@@ -1498,6 +1497,12 @@ impl ServerPool {
             };
 
             ask_user(server_metadata, task_name, &prompt, silent).await?;
+            if DANGEROUS_PATHS.contains(&remote_path) {
+                return Err(format!(
+                    "Refusing to delete critical system path: '{}'",
+                    remote_path
+                ));
+            }
             self.exec(
                 server_metadata,
                 task_name,
