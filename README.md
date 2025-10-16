@@ -1,6 +1,16 @@
+# rsctl (Remote Server Control)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/saidake/rsctl?sort=semver)
+
+<img src="docs/assets/logo.png" width="100">
+
+----
+**rsctl (Remote Server Control)** is a high-performance CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. also including environment configuration bash or batch scripts.
+# Preview
+![](./docs/assets/cmd/execute.gif) 
 # Table of Contents
+- [rsctl (Remote Server Control)](#rsctl-remote-server-control)
+- [Preview](#preview)
 - [Table of Contents](#table-of-contents)
-- [Introduction](#introduction)
 - [Commands](#commands)
   - [rsctl execute](#rsctl-execute)
   - [rsctl upload](#rsctl-upload)
@@ -20,8 +30,6 @@
   - [Typesense](#typesense)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
 
-# Introduction
-**Remote Server Control (rsctl)** is a high-performance Rust CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. 
 # Commands
 ## rsctl execute
 [Back to Top](#table-of-contents)  
@@ -48,10 +56,11 @@ rsctl execute \
   --password testpwd \
   --script AAA/assets/example-bash1.sh \
   --script AAA/assets/example-bash2.sh \
-  --mode async
+  --mode async \
+  --use-sudo
 ```
 
-**Example Script** (e.g., `AAA/assets/example-bash.sh`):
+**Example Script** (e.g., `AAA/assets/example-bash1.sh`):
 ```bash
 #!/bin/bash
 pwd
@@ -104,7 +113,8 @@ echo "Remote Execution 1.2"
 
 ## rsctl upload
 [Back to Top](#table-of-contents)  
-Upload multiple files or contents under a directory into a remote directory based on a properties-file.
+Upload multiple files or all contents of a directory to a remote directory in parallel, based on a properties file.
+![](./docs/assets/cmd/upload.svg) 
 
 **Usage**
 ```bash
@@ -177,6 +187,7 @@ rsctl upload \
 ## rsctl patch
 [Back to Top](#table-of-contents)  
 Safely patches a remote file by uploading a local patch file, backing up the target file, and applying the patch, or recovering from a backup. 
+![](./docs/assets/cmd/patch.svg) 
 
 **Usage**
 ```bash
@@ -389,8 +400,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
 **Commands** (YAML/Run Mode Example):
 * Uploads `scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
   ```bash
-  rsctl \
-    upload \
+  rsctl upload \
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
@@ -399,8 +409,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   ```
 * Start LocalStack.
   ```bash
-  rsctl \
-    execute \
+  rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
@@ -409,8 +418,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   ```
 * Stop LocalStack.
   ```bash
-  rsctl \
-    execute \
+  rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
@@ -447,8 +455,7 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
 **Commands**:
 * Installs RocksDB.
   ```bash
-  rsctl \
-    execute \
+  rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
@@ -457,8 +464,7 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
   ```
 * Uninstalls RocksDB.
   ```bash
-  rsctl \
-    execute \
+  rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
@@ -474,8 +480,7 @@ Typesense is an open-source, fast, typo-tolerant search engine for building inst
 **Commands**:
 * Installs Typesense.
   ```bash
-  rsctl \
-    execute \
+  rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
