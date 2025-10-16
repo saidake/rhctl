@@ -354,7 +354,7 @@ group-map:
 
 **Required Parameters**:
 - `--config <path>`: Path to YAML configuration file
-- `--config-name <username>`: Name of the configuration inside the YAML file to use
+- `--config-name <name>`: Name of the configuration inside the YAML file to use
 
 # Environment Configuration Helper
 ## Docker and Docker Compose
