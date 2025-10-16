@@ -16,8 +16,8 @@
  * Global constants.
  * 
  * Author: Craig Brown
- * Date: October 16, 2025
  * Since: 1.0.0
+ * Date: October 16, 2025
  */
 use std::time::Duration;
 
@@ -59,3 +59,5 @@ pub const DEFAULT_EXECUTE_MODE: &str = "sync";
 // Connection Config
 pub const DEFAULT_SSH_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
+// Error Handle
+pub const SUDO_ERR_MSG: &str = "sudo: a password is required";

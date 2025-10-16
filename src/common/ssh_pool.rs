@@ -17,12 +17,13 @@
  * multiple servers.
  *
  * Author: Craig Brown
- * Date: October 16, 2025
  * Since: 1.0.0
+ * Date: October 16, 2025
  */
 use crate::domain::cmd_params::ServerMetadata;
 use crate::domain::constants::{
-    DEFAULT_SSH_HANDSHAKE_TIMEOUT, DEFAULT_SSH_PORT, REMOTE_TEMP_SBXCTL_FOLDER, SYSTEM_TASK_NAME,
+    DEFAULT_SSH_HANDSHAKE_TIMEOUT, DEFAULT_SSH_PORT, REMOTE_TEMP_SBXCTL_FOLDER, SUDO_ERR_MSG,
+    SYSTEM_TASK_NAME,
 };
 use crate::domain::yml_config::ServerConfig;
 use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
@@ -993,13 +994,23 @@ impl ServerPool {
                     if exit_status != 0 {
                         let stdout_str = String::from_utf8_lossy(&stdout_collected);
                         let stderr_str = String::from_utf8_lossy(&stderr_collected);
-                        let mut msg =
-                            format!("Command '{}' failed with exit status {}.", cmd, exit_status);
-                        if !stdout_str.trim().is_empty() {
-                            msg.push_str(&format!("\n\t> {}", stdout_str));
-                        }
-                        if !stderr_str.trim().is_empty() {
-                            msg.push_str(&format!("\n\t> {}", stderr_str));
+                        let mut msg: String;
+                        if stderr_str.contains(SUDO_ERR_MSG) {
+                            msg = format!(
+                                "Detected 'sudo' at the start of a command line, but 'use_sudo' is not enabled. Enable 'use_sudo' to run commands with sudo. \n\t> Command line: \n{}",
+                                cmd
+                            );
+                        } else {
+                            msg = format!(
+                                "Command failed with exit status {}. \n\t> Command line: \n{}",
+                                exit_status, cmd
+                            );
+                            if !stdout_str.trim().is_empty() {
+                                msg.push_str(&format!("\nRemote Output:\n\t{}", stdout_str));
+                            }
+                            if !stderr_str.trim().is_empty() {
+                                msg.push_str(&format!("\nRemote Error:\n\t{}", stderr_str));
+                            }
                         }
                         return Err(msg);
                     }
