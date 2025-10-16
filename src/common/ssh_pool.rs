@@ -13,9 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  * **************************************************************************
- * An SSH connection pool for managing sessions and channels across 
+ * An SSH connection pool for managing sessions and channels across
  * multiple servers.
- * 
+ *
  * Author: Craig Brown
  * Date: October 16, 2025
  * Since: 1.0.0
@@ -901,7 +901,13 @@ impl ServerPool {
         } else {
             cmd.to_string()
         };
-
+        log_debug!(
+            server_metadata,
+            task_name,
+            "Full command: {} (sudo: {})",
+            full_cmd,
+            use_sudo
+        );
         if use_sudo {
             channel_guard
                 .channel

@@ -14,7 +14,7 @@
  * limitations under the License.
  * **************************************************************************
  * Execute a bash file in remote server.
- * 
+ *
  * Author: Craig Brown
  * Date: October 16, 2025
  * Since: 1.0.0
@@ -24,11 +24,11 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
-use futures::future::join_all; // Added for async parallel execution
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{ExecuteCmdConfig, ServerMetadata};
 use crate::domain::constants::EXECUTE_TASK_NAME;
 use crate::{log_debug, log_info};
+use futures::future::join_all; // Added for async parallel execution
 
 pub async fn run(
     config: &ExecuteCmdConfig,
@@ -43,11 +43,13 @@ pub async fn run(
     // Helper async closure for single script execution
     let execute_single = |script: String,
                           server_metadata: Arc<ServerMetadata>,
-                          global_server_pool: Arc<ServerPool>|
-     async move {
+                          global_server_pool: Arc<ServerPool>| async move {
         let script_path = Path::new(&script);
         if !script_path.exists() || !script_path.is_file() {
-            return Err(format!("Script file '{}' does not exist or is not a file", script));
+            return Err(format!(
+                "Script file '{}' does not exist or is not a file",
+                script
+            ));
         }
 
         let script_name = script_path
@@ -161,13 +163,23 @@ pub async fn run(
     } else {
         // Run scripts sequentially
         for script in &config.scripts {
-            if let Err(e) = execute_single(script.clone(), server_metadata.clone(), global_server_pool.clone()).await {
+            if let Err(e) = execute_single(
+                script.clone(),
+                server_metadata.clone(),
+                global_server_pool.clone(),
+            )
+            .await
+            {
                 // log_error_with_host_direct!(&server_metadata.user, &server_metadata.host, EXECUTE_TASK_NAME, "{}", e);
                 return Err(e);
             }
         }
     }
 
-    log_info!(server_metadata, EXECUTE_TASK_NAME, "All scripts executed successfully.");
+    log_info!(
+        server_metadata,
+        EXECUTE_TASK_NAME,
+        "All scripts executed successfully."
+    );
     Ok(())
 }

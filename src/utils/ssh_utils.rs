@@ -14,7 +14,7 @@
  * limitations under the License.
  * **************************************************************************
  * SSH operation utils.
- * 
+ *
  * Author: Craig Brown
  * Date: October 16, 2025
  * Since: 1.0.0
@@ -29,11 +29,24 @@ pub fn execution_print(
     line: &str,
     is_stderr: bool,
 ) -> Result<(), String> {
-    if is_stderr {
-        log_error!(server_metadata,task_name,"{}", line);
-        // std::process::exit(1);
-    } else {
-        log_remote!(server_metadata,task_name,"{}", line);
+    //     let debug_line: String = line.chars().map(|c| match c {
+    //     '\r' => "\\r".to_string(),
+    //     '\n' => "\\n".to_string(),
+    //     other => other.to_string(),
+    // }).collect();
+    // println!("[DEBUG RAW LINE] {}", debug_line);
+
+    let mut line_clean = line.trim_matches('\r');
+
+    if let Some(pos) = line_clean.rfind('\r') {
+        line_clean = &line_clean[pos + 1..];
     }
+
+    if is_stderr {
+        log_error!(server_metadata, task_name, "{}", line_clean);
+    } else {
+        log_remote!(server_metadata, task_name, "{}", line_clean);
+    }
+
     Ok(())
 }
