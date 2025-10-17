@@ -53,7 +53,6 @@ rsctl execute \
 rsctl execute \
   --host 192.168.75.128 \
   --user test99 \
-  --password testpwd \
   --script AAA/assets/example-bash1.sh \
   --script AAA/assets/example-bash2.sh \
   --mode async \
@@ -103,7 +102,6 @@ echo "Remote Execution 1.2"
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --password testpwd \
     --script '${ASSETS_ROOT}/example-bash1.sh' \
     --script '${ASSETS_ROOT}/example-bash2.sh' \
     --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets \
@@ -185,7 +183,6 @@ rsctl upload \
       --host 192.168.75.128 \
       --user test99 \
       --ssh-port 22 \
-      --password testpwd \
       --use-sudo \
       --properties-file AAA/assets/path-mapping.properties \
       --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets
@@ -224,7 +221,6 @@ Steps (Recover Mode):
 rsctl patch \
   --host 192.168.75.128 \
   --user test99 \
-  --password testpwd \
   --local-path "AAA/assets/example-patch.txt" \
   --remote-upload "/tmp/example-patch.txt.upload" \
   --remote-path "~/examples/example-patch-remote.txt" \
@@ -368,7 +364,6 @@ Docker is a platform that enables you to package, distribute, and run applicatio
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --password testpwd \
     --script scripts/docker/install.sh \
     --use-sudo
   ```
@@ -411,7 +406,6 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   rsctl upload \
     --host 192.168.75.128 \
     --user test99 \
-    --password testpwd \
     --properties-file scripts/aws/config/path-mapping.properties \
     --use-sudo
   ```
@@ -420,7 +414,6 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --password testpwd \
     --script scripts/aws/localstack-start.sh \
     --use-sudo
   ```
@@ -429,7 +422,6 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --password testpwd \
     --script scripts/aws/localstack-stop.sh \
     --use-sudo
   ```
@@ -466,7 +458,6 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --password testpwd \
     --script scripts/rocksdb/install.sh \
     --use-sudo
   ```
@@ -475,7 +466,6 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --password testpwd \
     --script scripts/rocksdb/uninstall.sh \
     --use-sudo
   ```
@@ -491,7 +481,6 @@ Typesense is an open-source, fast, typo-tolerant search engine for building inst
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --password testpwd \
     --script scripts/typesense/install.sh \
     --use-sudo
   ```
