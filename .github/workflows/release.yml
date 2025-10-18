@@ -19,10 +19,10 @@ jobs:
         with:
           toolchain: stable
           override: true
+      - name: Add Linux target
+        run: rustup target add ${{ matrix.target }}
       - name: Build ${{ matrix.target }}
-        run: |
-          rustup target add ${{ matrix.target }}
-          cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }}
       - name: Rename Linux binary
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
@@ -41,6 +41,10 @@ jobs:
         with:
           toolchain: stable
           override: true
+      - name: Add macOS targets
+        run: |
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
       - name: Build macOS x86_64
         run: cargo build --release --target x86_64-apple-darwin
       - name: Build macOS ARM64
