@@ -13,7 +13,7 @@ jobs:
         target: [x86_64-unknown-linux-musl]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -28,14 +28,14 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           mv target/${{ matrix.target }}/release/rsctl rsctl-v${VERSION}-linux-x86_64
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: rsctl-linux
           path: rsctl-v*-linux-x86_64
   build-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -51,7 +51,7 @@ jobs:
           mv target/x86_64-apple-darwin/release/rsctl rsctl-v${VERSION}-macos-x86_64
           mv target/aarch64-apple-darwin/release/rsctl rsctl-v${VERSION}-macos-arm64
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: rsctl-macos
           path: |
