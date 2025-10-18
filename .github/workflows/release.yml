@@ -1,0 +1,63 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-musl]
+
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Add Linux target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Rename Linux binary
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          mv target/${{ matrix.target }}/release/rsctl rsctl-v${VERSION}-linux-x86_64
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rsctl-linux
+          path: rsctl-v*-linux-x86_64
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Add macOS targets
+        run: |
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
+      - name: Build macOS x86_64
+        run: cargo build --release --target x86_64-apple-darwin
+      - name: Build macOS ARM64
+        run: cargo build --release --target aarch64-apple-darwin
+      - name: Rename macOS binaries
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          mv target/x86_64-apple-darwin/release/rsctl rsctl-v${VERSION}-macos-x86_64
+          mv target/aarch64-apple-darwin/release/rsctl rsctl-v${VERSION}-macos-arm64
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rsctl-macos
+          path: |
+            rsctl-v*-macos-x86_64
+            rsctl-v*-macos-arm64

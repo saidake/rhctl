@@ -1,0 +1,75 @@
+# Server-specific configuration
+# Can override common config values per server
+servers:
+  - name: "test-server1"
+    host: "192.168.75.128"
+    user: "test99"
+    ssh-port: 22
+    password: "testpwd"
+    connect_timeout: 60s  # Overrides common server config if specified
+  - name: "test-server2"
+    host: "192.168.75.129"
+    user: "test99"
+    ssh-port: 22
+    password: "testpwd"
+    connect_timeout: 60s  
+
+# Command configurations
+# Define sets of upload, patch, execute operations
+configs:   
+  - name: "dev-deploy"   
+    
+    # General command options (applied to all operations in this config)
+    use-sudo: false
+    use-rsync: false
+    silent: false
+    
+    upload:
+      - properties-file: "AAA/config/path-mapping.properties"
+
+        # Specify which servers or groups this command targets
+        target-servers: ["test-server1","test-server2"] 
+        # target-groups: ["dev"]
+        
+        # Override common/general options for this command
+        # use-sudo: false
+        # use-rsync: false
+        # silent: false
+
+    patch:
+      - local-path: "AAA/assets/example-patch.txt"
+        remote-upload: "/tmp/example-patch.txt.upload"
+        remote-path: "~/examples/example-patch-remote.txt"
+        remote-backup: "/tmp/example-patch-remote.txt.bak"
+        target-servers: ["test-server1","test-server2"]  
+        # target-groups: ["dev"]
+
+    execute:
+      - remote-path: "~"
+        scripts: 
+          - "AAA/assets/example-bash1.sh"
+          - "AAA/assets/example-bash2.sh"
+        mode: sync
+        target-servers: ["test-server1","test-server2"]  
+        # target-groups: ["dev"]
+
+# Common configuration (Optional)
+# Applies to all servers unless overridden in individual server or command configs.
+common:
+  server:
+    connect_timeout: 60s  
+    max_channels_per_session: 200
+    max_sessions_per_server: 2000
+    session_acquire_timeout: 30s
+    max_session_lifetime: 10m
+
+# Global variables  (Optional)
+# Provide global variables used in the provided paths. 
+# Can be referenced in paths using ${VAR_NAME}
+var-map:
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets"
+
+# Group mapping  (Optional)
+# Assign servers to logical groups for easier targeting
+group-map:
+  dev: ["test-server1", "test-server2"]
