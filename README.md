@@ -1,5 +1,6 @@
 # rsctl (Remote Server Control)
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/saidake/rsctl?sort=semver)
+![Build Status](https://github.com/saidake/rsctl/actions/workflows/release.yml/badge.svg)
 
 <img src="docs/assets/logo.png" width="100">
 
