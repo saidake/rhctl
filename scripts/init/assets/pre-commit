@@ -1,0 +1,7 @@
+#!/bin/sh
+cd main
+cargo fmt --all -- --check
+if [ $? -ne 0 ]; then
+    echo "🚨 Code is not formatted. Run 'cargo fmt' before committing."
+    exit 1
+fi
