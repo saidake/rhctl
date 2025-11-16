@@ -2,12 +2,12 @@
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/saidake/rsctl?sort=semver)
 ![Build Status](https://github.com/saidake/rsctl/actions/workflows/release.yml/badge.svg)
 
-<img src="docs/assets/logo.png" width="100">
+<img src="AAA/docs/assets/logo.png" width="100">
 
 ----
 **rsctl (Remote Server Control)** is a high-performance CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. also including environment configuration bash or batch scripts.
 # Preview
-![](./docs/assets/cmd/execute.gif) 
+![](./AAA/AAA/docs/assets/cmd/execute.gif) 
 # Table of Contents
 - [rsctl (Remote Server Control)](#rsctl-remote-server-control)
 - [Preview](#preview)
@@ -114,7 +114,7 @@ echo "Remote Execution 1.2"
 [Back to Top](#table-of-contents)  
 Upload multiple files or all contents of a directory to a remote directory in parallel, based on a properties file.
 
-![](./docs/assets/cmd/upload.svg) 
+![](./AAA/AAA/docs/assets/cmd/upload.svg) 
 
 **Usage**
 ```bash
@@ -193,7 +193,7 @@ rsctl upload \
 [Back to Top](#table-of-contents)  
 Safely patches a remote file by uploading a local patch file, backing up the target file, and applying the patch, or recovering from a backup. 
 
-![](./docs/assets/cmd/patch.svg) 
+![](./AAA/AAA/docs/assets/cmd/patch.svg) 
 
 **Usage**
 ```bash
@@ -365,7 +365,7 @@ Docker is a platform that enables you to package, distribute, and run applicatio
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script scripts/docker/install.sh \
+    --script AAA/scripts/docker/install.sh \
     --use-sudo
   ```
 
@@ -390,7 +390,7 @@ Docker Desktop is an easy-to-install application for building, sharing, and runn
 **Command**:
 * Installs Docker Desktop locally on Windows.
   ```bash
-  call scripts\docker\install.bat
+  call AAA\scripts\docker\install.bat
   ```
 
 ## AWS LocalStack
@@ -402,12 +402,12 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
 1. Docker and Docker Compose are installed on the remote server (see [Docker and Docker Compose](#docker-and-docker-compose)).
 
 **Commands** (YAML/Run Mode Example):
-* Uploads `scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
+* Uploads `AAA/scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
   ```bash
   rsctl upload \
     --host 192.168.75.128 \
     --user test99 \
-    --properties-file scripts/aws/config/path-mapping.properties \
+    --properties-file AAA/scripts/aws/config/path-mapping.properties \
     --use-sudo
   ```
 * Start LocalStack.
@@ -415,7 +415,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script scripts/aws/localstack-start.sh \
+    --script AAA/scripts/aws/localstack-start.sh \
     --use-sudo
   ```
 * Stop LocalStack.
@@ -423,7 +423,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script scripts/aws/localstack-stop.sh \
+    --script AAA/scripts/aws/localstack-stop.sh \
     --use-sudo
   ```
 ## MailHog
@@ -437,11 +437,11 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 **Commands**:
 * Installs and runs the MailHog Docker image.
   ```bash
-  call scripts\mailhog\start.bat
+  call AAA\scripts\mailhog\start.bat
   ```
 * Stops the MailHog Docker image.
   ```bash
-  call scripts\mailhog\stop.bat
+  call AAA\scripts\mailhog\stop.bat
   ```
 
 **Access**:
@@ -459,7 +459,7 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script scripts/rocksdb/install.sh \
+    --script AAA/scripts/rocksdb/install.sh \
     --use-sudo
   ```
 * Uninstalls RocksDB.
@@ -467,7 +467,7 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script scripts/rocksdb/uninstall.sh \
+    --script AAA/scripts/rocksdb/uninstall.sh \
     --use-sudo
   ```
 
@@ -482,6 +482,6 @@ Typesense is an open-source, fast, typo-tolerant search engine for building inst
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script scripts/typesense/install.sh \
+    --script AAA/scripts/typesense/install.sh \
     --use-sudo
   ```
