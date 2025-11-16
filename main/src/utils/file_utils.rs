@@ -15,7 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * **************************************************************************
  * File operation utils.
- * 
+ *
  * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
@@ -34,8 +34,8 @@ use std::process::Command;
 use std::sync::Arc;
 
 pub fn load_yaml_config(path: &str) -> Result<YmlConfig, String> {
-    let mut file =
-        File::open(path).map_err(|e| format!("Failed to open config file {}. \n\t> {}", path, e))?;
+    let mut file = File::open(path)
+        .map_err(|e| format!("Failed to open config file {}. \n\t> {}", path, e))?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)
         .map_err(|e| format!("Failed to read config file {}. \n\t> {}", path, e))?;

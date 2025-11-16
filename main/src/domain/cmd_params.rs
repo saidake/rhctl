@@ -16,7 +16,7 @@
  * **************************************************************************
  * The final parsed parameter structs derived from the original CLI arguments
  * or yml configuration file, to be used in upload, patch, and other tasks.
- * 
+ *
  * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
@@ -42,7 +42,6 @@ pub struct UploadCmdConfig {
 pub struct ExecuteCmdConfig {
     pub server_metadata: ServerMetadata,
 
-
     #[serde(default)]
     pub use_rsync: bool,
     #[serde(default)]
@@ -55,7 +54,6 @@ pub struct ExecuteCmdConfig {
     pub mode: String,
     pub work_path: String,
 }
-
 
 #[derive(Clone, Deserialize, Default)]
 pub struct PatchCmdConfig {
@@ -76,7 +74,7 @@ pub struct PatchCmdConfig {
     pub remote_backup: String,
 }
 
-#[derive(Clone, Deserialize, Default,PartialEq, Eq, Hash)]
+#[derive(Clone, Deserialize, Default, PartialEq, Eq, Hash)]
 
 pub struct ServerMetadata {
     pub server_key: u64,
@@ -90,5 +88,5 @@ pub struct ServerMetadata {
     pub max_channels_per_session: usize,
     pub max_sessions_per_server: usize,
     pub session_acquire_timeout: Duration,
-    pub max_session_lifetime: Duration
+    pub max_session_lifetime: Duration,
 }

@@ -3,7 +3,7 @@
 # bash ./scripts/init/setup-hooks.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR=$SCRIPT_DIR/..
+ROOT_DIR=$SCRIPT_DIR/../..
 
 HOOK_DIR="$ROOT_DIR/.git/hooks"
 HOOK_PATH="$HOOK_DIR/pre-commit"

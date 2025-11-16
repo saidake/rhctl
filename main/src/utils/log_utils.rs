@@ -15,14 +15,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * **************************************************************************
  * Log operation utils.
- * 
+ *
  * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
  */
 use crate::domain::cmd_params::ServerMetadata;
 use crate::domain::constants::{
-    LOG_ASK, LOG_DEBUG, LOG_ERROR, LOG_INFO, LOG_LEVEL_WIDTH, LOG_LOCAL, LOG_REMOTE, LOG_SHUTDOWN, LOG_TASK_NAME_WIDTH, LOG_WARN, USER_ABORTED_MESSAGE
+    LOG_ASK, LOG_DEBUG, LOG_ERROR, LOG_INFO, LOG_LEVEL_WIDTH, LOG_LOCAL, LOG_REMOTE, LOG_SHUTDOWN,
+    LOG_TASK_NAME_WIDTH, LOG_WARN, USER_ABORTED_MESSAGE,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
@@ -348,7 +349,7 @@ pub async fn init_logger() -> tokio::task::JoinHandle<()> {
         while let Some(entry) = rx.recv().await {
             if entry.level == LOG_SHUTDOWN {
                 stdout.flush().ok();
-                break; 
+                break;
             }
 
             match entry.level.as_str() {
@@ -514,13 +515,15 @@ pub fn print_ask_with_info(
 pub async fn flush_logs_and_exit(logger_handle: tokio::task::JoinHandle<()>) -> ! {
     if let Some(tx_arc) = LOG_SENDER.get() {
         let tx = tx_arc.clone();
-        let _ = tx.send(LogEntry {
-            user: None,
-            host: None,
-            task_name: None,
-            level: LOG_SHUTDOWN.to_string(),
-            message: String::new(),
-        }).await;
+        let _ = tx
+            .send(LogEntry {
+                user: None,
+                host: None,
+                task_name: None,
+                level: LOG_SHUTDOWN.to_string(),
+                message: String::new(),
+            })
+            .await;
     }
     let _ = logger_handle.await;
     std::process::exit(1);

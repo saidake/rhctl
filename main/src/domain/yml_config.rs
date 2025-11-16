@@ -15,15 +15,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * **************************************************************************
  * Structs mapped from the YAML configuration file.
- * 
+ *
  * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
  */
-use std::hash::{Hash, Hasher};
 use serde::Deserialize;
+use std::hash::{Hash, Hasher};
 use std::{collections::HashMap, time::Duration};
-
 
 pub trait TargetConfig {
     fn target_servers(&self) -> &Vec<String>;
@@ -67,20 +66,18 @@ pub struct ServerConfig {
     pub password: Option<String>,
 
     #[serde(default, with = "humantime_serde")]
-    pub connect_timeout: Option<Duration>, 
+    pub connect_timeout: Option<Duration>,
     pub max_channels_per_session: Option<usize>,
     pub max_sessions_per_server: Option<usize>,
     #[serde(default, with = "humantime_serde")]
-    pub session_acquire_timeout: Option<Duration>, 
+    pub session_acquire_timeout: Option<Duration>,
     #[serde(default, with = "humantime_serde")]
-    pub max_session_lifetime: Option<Duration>,  
+    pub max_session_lifetime: Option<Duration>,
 }
 // Implement Hash and Eq based on name+host+port (you can adjust the key)
 impl PartialEq for ServerConfig {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name &&
-        self.host == other.host &&
-        self.ssh_port == other.ssh_port
+        self.name == other.name && self.host == other.host && self.ssh_port == other.ssh_port
     }
 }
 
@@ -136,9 +133,9 @@ pub struct ExecuteConfig {
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
 
-    pub scripts: Vec<String>,        // now array of scripts
+    pub scripts: Vec<String>,      // now array of scripts
     pub work_path: Option<String>, // optional working directory
-    pub mode: Option<String>, 
+    pub mode: Option<String>,
 
     #[serde(default)]
     pub target_servers: Vec<String>,
@@ -163,13 +160,11 @@ pub struct NamedConfig {
     pub execute: Vec<ExecuteConfig>,
 }
 
-
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct CommonConfig {
     // #[serde(default)]
     // pub global: Option<GlobalConfig>,
-
     #[serde(default)]
     pub server: Option<ServerConfigLimits>,
 }
@@ -184,29 +179,28 @@ pub struct CommonConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct ServerConfigLimits {
     #[serde(default, with = "humantime_serde")]
-    pub connect_timeout: Option<Duration>, 
+    pub connect_timeout: Option<Duration>,
     pub max_channels_per_session: Option<usize>,
     pub max_sessions_per_server: Option<usize>,
     #[serde(default, with = "humantime_serde")]
-    pub session_acquire_timeout: Option<Duration>, 
+    pub session_acquire_timeout: Option<Duration>,
     #[serde(default, with = "humantime_serde")]
-    pub max_session_lifetime: Option<Duration>,  
+    pub max_session_lifetime: Option<Duration>,
 }
-
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct YmlConfig {
     // list of servers
     pub common: Option<CommonConfig>,
-    
+
     pub servers: Vec<ServerConfig>,
     // group name -> server names
     pub group_map: Option<HashMap<String, Vec<String>>>,
 
     // multiple deployment configs
     pub configs: Option<Vec<NamedConfig>>,
-    
+
     #[serde(default)]
     pub var_map: HashMap<String, String>,
 }

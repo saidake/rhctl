@@ -15,7 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * **************************************************************************
  * Patch a file in remote server.
- * 
+ *
  * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
@@ -169,7 +169,7 @@ pub async fn run(
             config.use_sudo,
         )
         .await?;
-    log_info!(server_metadata, PATCH_TASK_NAME, "{}",item_info);
+    log_info!(server_metadata, PATCH_TASK_NAME, "{}", item_info);
 
     log_info!(
         server_metadata,
@@ -201,7 +201,7 @@ pub async fn run(
             config.use_sudo,
         )
         .await?;
-    log_info!(server_metadata, PATCH_TASK_NAME, "{}",item_info);
+    log_info!(server_metadata, PATCH_TASK_NAME, "{}", item_info);
     ask_user(
         server_metadata,
         PATCH_TASK_NAME,
@@ -237,7 +237,7 @@ pub async fn run(
             config.use_sudo,
         )
         .await?;
-    log_info!(server_metadata, PATCH_TASK_NAME, "{}",item_info);
+    log_info!(server_metadata, PATCH_TASK_NAME, "{}", item_info);
     log_info!(
         server_metadata,
         PATCH_TASK_NAME,
@@ -289,7 +289,7 @@ pub async fn run(
             config.use_sudo,
         )
         .await?;
-    log_info!(server_metadata, PATCH_TASK_NAME, "{}",item_info);
+    log_info!(server_metadata, PATCH_TASK_NAME, "{}", item_info);
     log_info!(server_metadata, PATCH_TASK_NAME, "Patch complete");
     Ok(())
 }

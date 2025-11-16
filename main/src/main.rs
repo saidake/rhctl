@@ -15,7 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * **************************************************************************
  * Main entry point of the application.
- * 
+ *
  * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
@@ -36,7 +36,10 @@ mod handlers;
 mod utils;
 
 use crate::common::ssh_pool::ServerPool;
-use crate::domain::constants::{DEFAULT_EXECUTE_MODE, DEFAULT_EXECUTE_WORK_PATH, DEFAULT_SSH_PORT, EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME};
+use crate::domain::constants::{
+    DEFAULT_EXECUTE_MODE, DEFAULT_EXECUTE_WORK_PATH, DEFAULT_SSH_PORT, EXECUTE_TASK_NAME,
+    PATCH_TASK_NAME, UPLOAD_TASK_NAME,
+};
 use crate::domain::yml_config::ServerConfig;
 use crate::handlers::command_handler::{
     parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
@@ -69,8 +72,8 @@ struct Cli {
 
     #[arg(
         long,
-        global = true, 
-        value_parser = parse_var, 
+        global = true,
+        value_parser = parse_var,
         help = "Provide global variables used in the provided paths in KEY=VALUE format, can be specified multiple times")]
     var: Vec<(String, String)>,
 }
@@ -93,8 +96,6 @@ enum Commands {
 
         #[arg(long, help = "Path to properties file")]
         properties_file: String,
-
-
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
@@ -163,7 +164,6 @@ enum Commands {
         )]
         work_path: Option<String>,
 
-        
         #[arg(long, default_value = DEFAULT_EXECUTE_MODE, help = "Execution mode: 'sync' (run sequentially) or 'async' (run concurrently)")]
         mode: Option<String>,
 
@@ -231,7 +231,11 @@ enum Commands {
         #[arg(long, help = "Backup path for the remote target file before patching")]
         remote_backup: String,
 
-        #[arg(long, default_value = "false", help = "Recover the remote target file from its backup after patching")]
+        #[arg(
+            long,
+            default_value = "false",
+            help = "Recover the remote target file from its backup after patching"
+        )]
         recover: bool,
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
@@ -254,7 +258,7 @@ enum Commands {
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
         connect_timeout: Option<Duration>,
-        
+
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
         max_sessions_per_server: Option<usize>,
@@ -270,8 +274,6 @@ enum Commands {
         #[arg(long)]
         #[arg(value_parser = parse_duration)]
         max_session_lifetime: Option<Duration>,
-
-
     },
 
     #[command(about = "Run using YAML configuration file")]
@@ -308,9 +310,7 @@ async fn main() {
 
     // Initialize logging
     env_logger::Builder::new()
-        .format(|buf, record| {
-            writeln!(buf, "{}", record.args())
-        })
+        .format(|buf, record| writeln!(buf, "{}", record.args()))
         .filter_level(match log_level {
             "debug" => log::LevelFilter::Debug,
             "info" => log::LevelFilter::Info,
@@ -358,7 +358,6 @@ async fn main() {
                 ssh_port,
                 password,
                 &properties_file,
-
                 use_sudo,
                 use_rsync,
                 silent,
@@ -367,14 +366,16 @@ async fn main() {
                 max_sessions_per_server,
                 session_acquire_timeout,
                 max_session_lifetime,
-
                 &cli_vars,
             );
             let mut mappings = HashMap::new();
             if let Err(e) =
                 load_properties(config.properties_file.as_str(), &mut mappings, &cli_vars)
             {
-                log_error_with_host_direct!(user.as_str(), host.as_str(), UPLOAD_TASK_NAME,
+                log_error_with_host_direct!(
+                    user.as_str(),
+                    host.as_str(),
+                    UPLOAD_TASK_NAME,
                     "{}",
                     format!(
                         "Failed to load properties file '{}'. \n\t> {}",
@@ -385,48 +386,62 @@ async fn main() {
             }
 
             log_info_direct!("Starting initial TCP connectivity check for server...");
-            let (_, _, result) =
-            ServerPool::check_single_server_by_info(host.clone(), ssh_port.unwrap_or(DEFAULT_SSH_PORT), None)
-                .await;
+            let (_, _, result) = ServerPool::check_single_server_by_info(
+                host.clone(),
+                ssh_port.unwrap_or(DEFAULT_SSH_PORT),
+                None,
+            )
+            .await;
             match result {
                 Ok(_) => {}
                 Err(e) => {
-           
-                log_error_with_host_direct!(
-                    user.as_str(),
-                    host.as_str(),
-                    UPLOAD_TASK_NAME,
-                    "{}",
-                    format!("Failed to check server connection: \n\t> {}",  e)
-                );
-                exit(1);
-            }
+                    log_error_with_host_direct!(
+                        user.as_str(),
+                        host.as_str(),
+                        UPLOAD_TASK_NAME,
+                        "{}",
+                        format!("Failed to check server connection: \n\t> {}", e)
+                    );
+                    exit(1);
+                }
             }
             log_info_direct!("Target server is healthy.");
-      
 
             // println!("test---------");
-            let server_metadata=Arc::new(config.server_metadata.clone());
+            let server_metadata = Arc::new(config.server_metadata.clone());
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
                 if let Err(e) = global_server_pool_clone
-                    .check_global_remote_temp_dir(&server_metadata,UPLOAD_TASK_NAME, config.use_sudo, config.silent)
+                    .check_global_remote_temp_dir(
+                        &server_metadata,
+                        UPLOAD_TASK_NAME,
+                        config.use_sudo,
+                        config.silent,
+                    )
                     .await
                 {
-                    log_error!(&server_metadata,UPLOAD_TASK_NAME,"{}", e);
+                    log_error!(&server_metadata, UPLOAD_TASK_NAME, "{}", e);
                     if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
-                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                        log::error!("Cleanup temp forder failed: \n\t> {}", e);
                     }
                     flush_logs_and_exit(log_handle).await;
                 }
-                let result = commands::upload::run(&config,  &mappings, &server_metadata, global_server_pool_clone.clone()).await;
+                let result = commands::upload::run(
+                    &config,
+                    &mappings,
+                    &server_metadata,
+                    global_server_pool_clone.clone(),
+                )
+                .await;
                 if let Err(e) = result {
-                    log_error!(&server_metadata,UPLOAD_TASK_NAME,
+                    log_error!(
+                        &server_metadata,
+                        UPLOAD_TASK_NAME,
                         "Upload failed: \n\t> {}",
                         e
                     );
                     if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
-                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                        log::error!("Cleanup temp forder failed: \n\t> {}", e);
                     }
                     flush_logs_and_exit(log_handle).await;
                 }
@@ -461,7 +476,6 @@ async fn main() {
                 script,
                 work_path,
                 mode,
-
                 use_sudo,
                 use_rsync,
                 silent,
@@ -474,47 +488,60 @@ async fn main() {
             );
 
             log_info_direct!("Starting initial TCP connectivity check for server...");
-            let (_, _, result) =
-            ServerPool::check_single_server_by_info(host.clone(), ssh_port.unwrap_or(DEFAULT_SSH_PORT), None)
-                .await;
+            let (_, _, result) = ServerPool::check_single_server_by_info(
+                host.clone(),
+                ssh_port.unwrap_or(DEFAULT_SSH_PORT),
+                None,
+            )
+            .await;
             match result {
                 Ok(_) => {}
                 Err(e) => {
-           
-                log_error_with_host_direct!(
-                    user.as_str(),
-                    host.as_str(),
-                    EXECUTE_TASK_NAME,
-                    "{}",
-                    format!("Failed to check server connection: \n\t> {}",  e)
-                );
-                exit(1);
-            }
+                    log_error_with_host_direct!(
+                        user.as_str(),
+                        host.as_str(),
+                        EXECUTE_TASK_NAME,
+                        "{}",
+                        format!("Failed to check server connection: \n\t> {}", e)
+                    );
+                    exit(1);
+                }
             }
             log_info_direct!("Target server is healthy.");
 
-
-            let server_metadata=Arc::new(config.server_metadata.clone());
+            let server_metadata = Arc::new(config.server_metadata.clone());
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
                 if let Err(e) = global_server_pool_clone
-                    .check_global_remote_temp_dir(&server_metadata, EXECUTE_TASK_NAME, config.use_sudo, config.silent)
+                    .check_global_remote_temp_dir(
+                        &server_metadata,
+                        EXECUTE_TASK_NAME,
+                        config.use_sudo,
+                        config.silent,
+                    )
                     .await
                 {
-                    log_error!(&server_metadata, EXECUTE_TASK_NAME,"{}", e);
+                    log_error!(&server_metadata, EXECUTE_TASK_NAME, "{}", e);
                     if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
-                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                        log::error!("Cleanup temp forder failed: \n\t> {}", e);
                     }
                     flush_logs_and_exit(log_handle).await;
                 }
-                let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
+                let result = commands::execute::run(
+                    &config,
+                    &server_metadata,
+                    global_server_pool_clone.clone(),
+                )
+                .await;
                 if let Err(e) = result {
-                    log_error!(&server_metadata, EXECUTE_TASK_NAME,
+                    log_error!(
+                        &server_metadata,
+                        EXECUTE_TASK_NAME,
                         "Execute failed: \n\t> {}",
                         e
                     );
                     if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
-                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                        log::error!("Cleanup temp forder failed: \n\t> {}", e);
                     }
                     flush_logs_and_exit(log_handle).await;
                 }
@@ -532,7 +559,7 @@ async fn main() {
             remote_path,
             remote_backup,
             recover,
-            
+
             use_sudo,
             use_rsync,
             silent,
@@ -548,13 +575,11 @@ async fn main() {
                 &user,
                 ssh_port,
                 password,
-
                 recover,
                 &local_path,
                 &remote_upload,
                 &remote_path,
                 &remote_backup,
-                
                 use_sudo,
                 use_rsync,
                 silent,
@@ -563,53 +588,64 @@ async fn main() {
                 max_sessions_per_server,
                 session_acquire_timeout,
                 max_session_lifetime,
-
                 &cli_vars,
             );
 
             log_info_direct!("Starting initial TCP connectivity check for server...");
-            let (_, _, result) =
-            ServerPool::check_single_server_by_info(host.clone(), ssh_port.unwrap_or(DEFAULT_SSH_PORT), None)
-                .await;
+            let (_, _, result) = ServerPool::check_single_server_by_info(
+                host.clone(),
+                ssh_port.unwrap_or(DEFAULT_SSH_PORT),
+                None,
+            )
+            .await;
             match result {
                 Ok(_) => {}
                 Err(e) => {
-           
-                log_error_with_host_direct!(
-                    user.as_str(),
-                    host.as_str(),
-                    PATCH_TASK_NAME,
-                    "{}",
-                    format!("Failed to check server connection: \n\t> {}",  e)
-                );
-                exit(1);
-            }
+                    log_error_with_host_direct!(
+                        user.as_str(),
+                        host.as_str(),
+                        PATCH_TASK_NAME,
+                        "{}",
+                        format!("Failed to check server connection: \n\t> {}", e)
+                    );
+                    exit(1);
+                }
             }
             log_info_direct!("Target server is healthy.");
 
-
-
-            let server_metadata=Arc::new(config.server_metadata.clone());
+            let server_metadata = Arc::new(config.server_metadata.clone());
             let global_server_pool_clone = global_server_pool.clone();
             let handle = tokio::spawn(async move {
-                if let Err(e) = 
-                global_server_pool_clone.check_global_remote_temp_dir(&server_metadata,PATCH_TASK_NAME, config.use_sudo, config.silent)
+                if let Err(e) = global_server_pool_clone
+                    .check_global_remote_temp_dir(
+                        &server_metadata,
+                        PATCH_TASK_NAME,
+                        config.use_sudo,
+                        config.silent,
+                    )
                     .await
                 {
-                    log_error!(&server_metadata,PATCH_TASK_NAME,"{}", e);
+                    log_error!(&server_metadata, PATCH_TASK_NAME, "{}", e);
                     if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
-                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                        log::error!("Cleanup temp forder failed: \n\t> {}", e);
                     }
                     flush_logs_and_exit(log_handle).await;
                 }
-                let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
+                let result = commands::patch::run(
+                    &config,
+                    &server_metadata,
+                    global_server_pool_clone.clone(),
+                )
+                .await;
                 if let Err(e) = result {
-                    log_error!(&server_metadata,PATCH_TASK_NAME,
+                    log_error!(
+                        &server_metadata,
+                        PATCH_TASK_NAME,
                         "Patch failed: \n\t> {}",
                         e
                     );
                     if let Err(e) = global_server_pool_clone.cleanup_pending_servers().await {
-                        log::error!("Cleanup temp forder failed: \n\t> {}",e);
+                        log::error!("Cleanup temp forder failed: \n\t> {}", e);
                     }
                     flush_logs_and_exit(log_handle).await;
                 }
@@ -651,14 +687,14 @@ async fn main() {
 
             log_info_direct!("Starting initial TCP connectivity check for servers...");
             let failed_servers = global_server_pool
-            .check_servers_and_update_known_hosts( yml_config.servers.clone())
-            .await;
+                .check_servers_and_update_known_hosts(yml_config.servers.clone())
+                .await;
 
-            if yml_config.servers.len()==failed_servers.len() {
+            if yml_config.servers.len() == failed_servers.len() {
                 log_error_root!("All servers failed or no valid servers found.");
                 flush_logs_and_exit(log_handle).await;
-            }else if !failed_servers.is_empty()  {
-                 ask_user_and_abort_option(
+            } else if !failed_servers.is_empty() {
+                ask_user_and_abort_option(
                     None,
                     None,
                     "There are some servers with failed connection. Continue with remaining servers?",
@@ -666,7 +702,7 @@ async fn main() {
                 )
                 .await;
                 // yml_config.servers.retain(|s| !failed_servers.iter().any(|f| f.host == s.host && f.ssh_port == s.ssh_port));
-            }else if failed_servers.is_empty() {
+            } else if failed_servers.is_empty() {
                 log_info_direct!("All servers are healthy.");
             }
             let server_config_map: std::collections::HashMap<String, ServerConfig> = yml_config
@@ -676,16 +712,28 @@ async fn main() {
                 .collect();
 
             // Parse all command configs with vars
-            let upload_configs = 
-            parse_upload_configs(&named_config, &yml_config, &failed_servers, &server_config_map);
-            let execute_configs = 
-            parse_execute_configs(&named_config, &yml_config, &failed_servers, &server_config_map);
-            let patch_configs = 
-            parse_patch_configs(&named_config, &yml_config, &failed_servers, &server_config_map);
+            let upload_configs = parse_upload_configs(
+                &named_config,
+                &yml_config,
+                &failed_servers,
+                &server_config_map,
+            );
+            let execute_configs = parse_execute_configs(
+                &named_config,
+                &yml_config,
+                &failed_servers,
+                &server_config_map,
+            );
+            let patch_configs = parse_patch_configs(
+                &named_config,
+                &yml_config,
+                &failed_servers,
+                &server_config_map,
+            );
 
             // Spawn threads for upload commands
             for (config, _) in upload_configs {
-            let server_metadata=Arc::new(config.server_metadata.clone());
+                let server_metadata = Arc::new(config.server_metadata.clone());
                 let mut mappings = HashMap::new();
                 if let Err(e) = load_properties(
                     config.properties_file.as_str(),
@@ -705,13 +753,24 @@ async fn main() {
                 let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
                     if let Err(e) = global_server_pool_clone
-                        .check_global_remote_temp_dir(&server_metadata,UPLOAD_TASK_NAME, config.use_sudo, config.silent)
+                        .check_global_remote_temp_dir(
+                            &server_metadata,
+                            UPLOAD_TASK_NAME,
+                            config.use_sudo,
+                            config.silent,
+                        )
                         .await
                     {
                         log_error!(&server_metadata, UPLOAD_TASK_NAME, "{}", e);
                         return;
                     }
-                    let result = commands::upload::run(&config,  &mappings, &server_metadata, global_server_pool_clone.clone()).await;
+                    let result = commands::upload::run(
+                        &config,
+                        &mappings,
+                        &server_metadata,
+                        global_server_pool_clone.clone(),
+                    )
+                    .await;
                     if let Err(e) = result {
                         log_error!(
                             &server_metadata,
@@ -726,19 +785,31 @@ async fn main() {
 
             // Spawn threads for execute commands
             for (config, _) in execute_configs {
-                let server_metadata=Arc::new(config.server_metadata.clone());
+                let server_metadata = Arc::new(config.server_metadata.clone());
                 let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
                     if let Err(e) = global_server_pool_clone
-                        .check_global_remote_temp_dir(&server_metadata, EXECUTE_TASK_NAME, config.use_sudo, config.silent)
+                        .check_global_remote_temp_dir(
+                            &server_metadata,
+                            EXECUTE_TASK_NAME,
+                            config.use_sudo,
+                            config.silent,
+                        )
                         .await
                     {
                         log_error!(&server_metadata, EXECUTE_TASK_NAME, "{}", e);
                         return;
                     }
-                    let result = commands::execute::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
+                    let result = commands::execute::run(
+                        &config,
+                        &server_metadata,
+                        global_server_pool_clone.clone(),
+                    )
+                    .await;
                     if let Err(e) = result {
-                        log_error!(&server_metadata, EXECUTE_TASK_NAME,
+                        log_error!(
+                            &server_metadata,
+                            EXECUTE_TASK_NAME,
                             "Execute failed: \n\t> {}",
                             e
                         );
@@ -749,19 +820,31 @@ async fn main() {
 
             // Spawn threads for patch commands
             for (config, _) in patch_configs {
-                let server_metadata=Arc::new(config.server_metadata.clone());
+                let server_metadata = Arc::new(config.server_metadata.clone());
                 let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {
                     if let Err(e) = global_server_pool_clone
-                        .check_global_remote_temp_dir(&server_metadata, PATCH_TASK_NAME, config.use_sudo, config.silent)
+                        .check_global_remote_temp_dir(
+                            &server_metadata,
+                            PATCH_TASK_NAME,
+                            config.use_sudo,
+                            config.silent,
+                        )
                         .await
                     {
-                        log_error!(&server_metadata, PATCH_TASK_NAME,"{}", e);
+                        log_error!(&server_metadata, PATCH_TASK_NAME, "{}", e);
                         return;
                     }
-                    let result = commands::patch::run(&config, &server_metadata, global_server_pool_clone.clone()).await;
+                    let result = commands::patch::run(
+                        &config,
+                        &server_metadata,
+                        global_server_pool_clone.clone(),
+                    )
+                    .await;
                     if let Err(e) = result {
-                        log_error!(&server_metadata, PATCH_TASK_NAME,
+                        log_error!(
+                            &server_metadata,
+                            PATCH_TASK_NAME,
                             "Patch failed: \n\t> {}",
                             e
                         );
@@ -774,6 +857,6 @@ async fn main() {
 
     join_all(tasks).await;
     if let Err(e) = global_server_pool.cleanup_pending_servers().await {
-        log::error!("Cleanup temp forder failed: \n\t> {}",e);
-     }
+        log::error!("Cleanup temp forder failed: \n\t> {}", e);
+    }
 }

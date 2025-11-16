@@ -15,7 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * **************************************************************************
  * Global constants.
- * 
+ *
  * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
@@ -25,12 +25,10 @@ use std::{collections::HashSet, time::Duration};
 pub static REMOTE_TEMP_SBXCTL_FOLDER: &str = "/tmp/rsctl";
 pub static USER_ABORTED_MESSAGE: &str = "Operation aborted by user";
 
-
 pub const UPLOAD_TASK_NAME: &str = "UPLOAD";
 pub const EXECUTE_TASK_NAME: &str = "EXECUTE";
 pub const PATCH_TASK_NAME: &str = "PATCH";
 pub const SYSTEM_TASK_NAME: &str = "SYSTEM";
-
 
 // Log info
 pub const LOG_INFO: &str = "INFO";
@@ -62,24 +60,10 @@ pub const DEFAULT_SSH_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 // Error Handle
 pub const SUDO_ERR_MSG: &str = "sudo: a password is required";
 
-pub static DANGEROUS_PATHS: once_cell::sync::Lazy<HashSet<&'static str>> = once_cell::sync::Lazy::new(|| {
-    HashSet::from([
-        "",
-        "/",
-        "/home",
-        "/root",
-        "/etc",
-        "/usr",
-        "/bin",
-        "/sbin",
-        "/var",
-        "/tmp",
-        "/lib",
-        "/lib64",
-        "/opt",
-        "/dev",
-        "/proc",
-        "/sys",
-        "~",
-    ])
-});
+pub static DANGEROUS_PATHS: once_cell::sync::Lazy<HashSet<&'static str>> =
+    once_cell::sync::Lazy::new(|| {
+        HashSet::from([
+            "", "/", "/home", "/root", "/etc", "/usr", "/bin", "/sbin", "/var", "/tmp", "/lib",
+            "/lib64", "/opt", "/dev", "/proc", "/sys", "~",
+        ])
+    });

@@ -111,7 +111,6 @@ pub async fn run(
                     config.use_sudo,
                 )
                 .await?;
-
         } else {
             // Execute without sudo: read and execute inline
             let mut content = String::new();
