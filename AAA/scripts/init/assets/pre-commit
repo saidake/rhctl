@@ -1,8 +1,0 @@
-#!/bin/sh
-REPO_ROOT=$(git rev-parse --show-toplevel)
-
-cargo fmt --all --manifest-path "$REPO_ROOT/main/Cargo.toml" -- --check
-if [ $? -ne 0 ]; then
-    echo "🚨 Code is not formatted. Run 'cargo fmt' in the main folder before committing."
-    exit 1
-fi
