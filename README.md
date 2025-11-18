@@ -2,12 +2,12 @@
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/saidake/rsctl?sort=semver)
 ![Build Status](https://github.com/saidake/rsctl/actions/workflows/release.yml/badge.svg)
 
-<img src="AAA/docs/assets/logo.png" width="100">
+<img src="docs/assets/logo.png" width="100">
 
 ----
 **rsctl (Remote Server Control)** is a high-performance CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. also including environment configuration bash or batch scripts.
 # Preview
-![](./AAA/AAA/docs/assets/cmd/execute.gif) 
+![](./docs/assets/cmd/execute.gif) 
 # Table of Contents
 - [rsctl (Remote Server Control)](#rsctl-remote-server-control)
 - [Preview](#preview)
@@ -54,13 +54,13 @@ rsctl execute \
 rsctl execute \
   --host 192.168.75.128 \
   --user test99 \
-  --script AAA/assets/example-bash1.sh \
-  --script AAA/assets/example-bash2.sh \
+  --script assets/example-bash1.sh \
+  --script assets/example-bash2.sh \
   --mode async \
   --use-sudo
 ```
 
-**Example Script** (e.g., `AAA/assets/example-bash1.sh`):
+**Example Script** (e.g., `assets/example-bash1.sh`):
 ```bash
 #!/bin/bash
 pwd
@@ -105,7 +105,7 @@ echo "Remote Execution 1.2"
     --user test99 \
     --script '${ASSETS_ROOT}/example-bash1.sh' \
     --script '${ASSETS_ROOT}/example-bash2.sh' \
-    --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets \
+    --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets \
     --mode async
   ```
 
@@ -114,7 +114,7 @@ echo "Remote Execution 1.2"
 [Back to Top](#table-of-contents)  
 Upload multiple files or all contents of a directory to a remote directory in parallel, based on a properties file.
 
-![](./AAA/AAA/docs/assets/cmd/upload.svg) 
+![](./docs/assets/cmd/upload.svg) 
 
 **Usage**
 ```bash
@@ -129,8 +129,8 @@ rsctl upload \
 
 **Properties File Format**:
 ```properties
-AAA/assets/example1.txt=~/examples
-AAA/assets/exampledir=~/examples/targetdir
+assets/example1.txt=~/examples
+assets/exampledir=~/examples/targetdir
 ```
 Format: `<local-path>=<remote-directory>`    
 
@@ -145,7 +145,7 @@ Note: The file or the contents of the local directory on the left will be upload
 rsctl upload \
   --host 192.168.75.128 \
   --user test99 \
-  --properties-file AAA/config/path-mapping.properties
+  --properties-file config/path-mapping.properties
 ```
 
 **Required Parameters**:
@@ -185,15 +185,15 @@ rsctl upload \
       --user test99 \
       --ssh-port 22 \
       --use-sudo \
-      --properties-file AAA/assets/path-mapping.properties \
-      --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets
+      --properties-file assets/path-mapping.properties \
+      --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets
     ```
 
 ## rsctl patch
 [Back to Top](#table-of-contents)  
 Safely patches a remote file by uploading a local patch file, backing up the target file, and applying the patch, or recovering from a backup. 
 
-![](./AAA/AAA/docs/assets/cmd/patch.svg) 
+![](./docs/assets/cmd/patch.svg) 
 
 **Usage**
 ```bash
@@ -222,7 +222,7 @@ Steps (Recover Mode):
 rsctl patch \
   --host 192.168.75.128 \
   --user test99 \
-  --local-path "AAA/assets/example-patch.txt" \
+  --local-path "assets/example-patch.txt" \
   --remote-upload "/tmp/example-patch.txt.upload" \
   --remote-path "~/examples/example-patch-remote.txt" \
   --remote-backup "/tmp/example-patch-remote.txt.bak" 
@@ -299,7 +299,7 @@ configs:
     silent: false
     
     upload:
-      - properties-file: "AAA/config/path-mapping.properties"
+      - properties-file: "config/path-mapping.properties"
 
         # Specify which servers or groups this command targets
         target-servers: ["test-server1","test-server2"] 
@@ -311,7 +311,7 @@ configs:
         # silent: false
 
     patch:
-      - local-path: "AAA/assets/example-patch.txt"
+      - local-path: "assets/example-patch.txt"
         remote-upload: "/tmp/example-patch.txt.upload"
         remote-path: "~/examples/example-patch-remote.txt"
         remote-backup: "/tmp/example-patch-remote.txt.bak"
@@ -321,8 +321,8 @@ configs:
     execute:
       - remote-path: "~"
         scripts: 
-          - "AAA/assets/example-bash1.sh"
-          - "AAA/assets/example-bash2.sh"
+          - "assets/example-bash1.sh"
+          - "assets/example-bash2.sh"
         mode: sync
         target-servers: ["test-server1","test-server2"]  
         # target-groups: ["dev"]
@@ -341,7 +341,7 @@ common:
 # Provide global variables used in the provided paths. 
 # Can be referenced in paths using ${VAR_NAME}
 var-map:
-  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets"
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets"
 
 # Group mapping  (Optional)
 # Assign servers to logical groups for easier targeting
@@ -365,7 +365,7 @@ Docker is a platform that enables you to package, distribute, and run applicatio
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script AAA/scripts/docker/install.sh \
+    --script scripts/docker/install.sh \
     --use-sudo
   ```
 
@@ -390,7 +390,7 @@ Docker Desktop is an easy-to-install application for building, sharing, and runn
 **Command**:
 * Installs Docker Desktop locally on Windows.
   ```bash
-  call AAA\scripts\docker\install.bat
+  call scripts\docker\install.bat
   ```
 
 ## AWS LocalStack
@@ -402,12 +402,12 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
 1. Docker and Docker Compose are installed on the remote server (see [Docker and Docker Compose](#docker-and-docker-compose)).
 
 **Commands** (YAML/Run Mode Example):
-* Uploads `AAA/scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
+* Uploads `scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
   ```bash
   rsctl upload \
     --host 192.168.75.128 \
     --user test99 \
-    --properties-file AAA/scripts/aws/config/path-mapping.properties \
+    --properties-file scripts/aws/config/path-mapping.properties \
     --use-sudo
   ```
 * Start LocalStack.
@@ -415,7 +415,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script AAA/scripts/aws/localstack-start.sh \
+    --script scripts/aws/localstack-start.sh \
     --use-sudo
   ```
 * Stop LocalStack.
@@ -423,7 +423,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script AAA/scripts/aws/localstack-stop.sh \
+    --script scripts/aws/localstack-stop.sh \
     --use-sudo
   ```
 ## MailHog
@@ -437,11 +437,11 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 **Commands**:
 * Installs and runs the MailHog Docker image.
   ```bash
-  call AAA\scripts\mailhog\start.bat
+  call scripts\mailhog\start.bat
   ```
 * Stops the MailHog Docker image.
   ```bash
-  call AAA\scripts\mailhog\stop.bat
+  call scripts\mailhog\stop.bat
   ```
 
 **Access**:
@@ -459,7 +459,7 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script AAA/scripts/rocksdb/install.sh \
+    --script scripts/rocksdb/install.sh \
     --use-sudo
   ```
 * Uninstalls RocksDB.
@@ -467,7 +467,7 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script AAA/scripts/rocksdb/uninstall.sh \
+    --script scripts/rocksdb/uninstall.sh \
     --use-sudo
   ```
 
@@ -482,6 +482,6 @@ Typesense is an open-source, fast, typo-tolerant search engine for building inst
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script AAA/scripts/typesense/install.sh \
+    --script scripts/typesense/install.sh \
     --use-sudo
   ```
