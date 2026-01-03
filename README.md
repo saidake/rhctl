@@ -5,7 +5,7 @@
 <img src="docs/assets/logo.png" width="100">
 
 ----
-**rsctl (Remote Server Control)** is a high-performance CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. also including environment configuration bash or batch scripts.
+**rsctl (Remote Server Control)** is a lightweight, high-performance CLI tool for remote server management. It supports real-time streaming logs, SSH-based file transfers, script execution, file patching, and environment setup using Bash scripts.
 # Preview
 ![](./docs/assets/cmd/execute.gif) 
 # Table of Contents
@@ -17,7 +17,7 @@
   - [rsctl upload](#rsctl-upload)
   - [rsctl patch](#rsctl-patch)
   - [rsctl run](#rsctl-run)
-- [Environment Configuration Helper](#environment-configuration-helper)
+- [Environment Setup Scripts](#environment-setup-scripts)
   - [Docker and Docker Compose](#docker-and-docker-compose)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host)
   - [Docker Desktop](#docker-desktop)
@@ -353,7 +353,7 @@ group-map:
 - `--config <path>`: Path to YAML configuration file
 - `--config-name <name>`: Name of the configuration inside the YAML file to use
 
-# Environment Configuration Helper
+# Environment Setup Scripts
 ## Docker and Docker Compose
 Docker is a platform that enables you to package, distribute, and run applications in lightweight, portable containers. Docker Compose is a tool for defining and managing multi-container Docker applications using YAML files.
 
@@ -361,6 +361,8 @@ Docker is a platform that enables you to package, distribute, and run applicatio
 [Back to Top](#table-of-contents)  
 **Commands**:
 * Installs Docker and Docker Compose on the remote server.
+
+  Check out the script file: [scripts/docker/install.sh](scripts/docker/install.sh)
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -389,6 +391,8 @@ Docker Desktop is an easy-to-install application for building, sharing, and runn
 
 **Command**:
 * Installs Docker Desktop locally on Windows.
+  
+  Check out the script file: [scripts\docker\install.bat](scripts\docker\install.bat)
   ```bash
   call scripts\docker\install.bat
   ```
@@ -403,6 +407,8 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
 
 **Commands** (YAML/Run Mode Example):
 * Uploads `scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
+
+  Check out the properties file: [scripts/aws/config/path-mapping.properties](scripts/aws/config/path-mapping.properties)
   ```bash
   rsctl upload \
     --host 192.168.75.128 \
@@ -411,6 +417,8 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
     --use-sudo
   ```
 * Start LocalStack.
+
+  Check out the script file: [scripts/aws/localstack-start.sh](scripts/aws/localstack-start.sh)
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -419,6 +427,8 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
     --use-sudo
   ```
 * Stop LocalStack.
+  
+  Check out the script file: [scripts/aws/localstack-stop.sh](scripts/aws/localstack-stop.sh)
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -436,10 +446,14 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 
 **Commands**:
 * Installs and runs the MailHog Docker image.
+  
+  Check out the script file: [scripts\mailhog\start.bat](scripts\mailhog\start.bat)
   ```bash
   call scripts\mailhog\start.bat
   ```
 * Stops the MailHog Docker image.
+  
+  Check out the script file: [scripts\mailhog\stop.bat](scripts\mailhog\stop.bat)
   ```bash
   call scripts\mailhog\stop.bat
   ```
@@ -455,6 +469,8 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
 [Back to Top](#table-of-contents)  
 **Commands**:
 * Installs RocksDB.
+  
+  Check out the script file: [scripts/rocksdb/install.sh](scripts/rocksdb/install.sh)
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -463,6 +479,8 @@ RocksDB is a high-performance embedded key-value store optimized for low-latency
     --use-sudo
   ```
 * Uninstalls RocksDB.
+  
+  Check out the script file: [scripts/rocksdb/uninstall.sh](scripts/rocksdb/uninstall.sh)
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -478,6 +496,8 @@ Typesense is an open-source, fast, typo-tolerant search engine for building inst
 [Back to Top](#table-of-contents)  
 **Commands**:
 * Installs Typesense.
+  
+  Check out the script file: [scripts/typesense/install.sh](scripts/typesense/install.sh)
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
