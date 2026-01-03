@@ -138,7 +138,7 @@ macro_rules! log_error_with_host {
 #[macro_export]
 macro_rules! log_error_with_host_direct {
     ($user:expr,$host:expr, $task_name:expr, $($arg:tt)*) => {
-        $crate::utils::log_utils::log_direct_option(Some($user), Some($host), Some($task_name), $crate::domain::constants::LOG_ERROR, &format!($($arg)*));
+        $crate::utils::log_utils::clear_cur_line_and_log(Some($user), Some($host), Some($task_name), $crate::domain::constants::LOG_ERROR, &format!($($arg)*));
     };
 }
 
@@ -151,14 +151,14 @@ macro_rules! log_error_root {
 #[macro_export]
 macro_rules! log_error_direct {
     ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_direct_option(None, None, None, $crate::domain::constants::LOG_ERROR, &format!($($arg)*));
+        $crate::utils::log_utils::clear_cur_line_and_log(None, None, None, $crate::domain::constants::LOG_ERROR, &format!($($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! log_info_direct {
     ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_direct_option(None, None, None, $crate::domain::constants::LOG_INFO, &format!($($arg)*));
+        $crate::utils::log_utils::clear_cur_line_and_log(None, None, None, $crate::domain::constants::LOG_INFO, &format!($($arg)*));
     };
 }
 #[macro_export]
@@ -170,7 +170,7 @@ macro_rules! log_warn_root {
 #[macro_export]
 macro_rules! log_warn_direct {
     ($($arg:tt)*) => {
-        $crate::utils::log_utils::log_direct_option(None, None, None, $crate::domain::constants::LOG_WARN, &format!($($arg)*));
+        $crate::utils::log_utils::clear_cur_line_and_log(None, None, None, $crate::domain::constants::LOG_WARN, &format!($($arg)*));
     };
 }
 /// Macro for warn log
@@ -355,7 +355,7 @@ pub async fn init_logger() -> tokio::task::JoinHandle<()> {
             match entry.level.as_str() {
                 LOG_ASK => {
                     ASK_ACTIVE.store(true, Ordering::SeqCst);
-                    print_ask_with_info(
+                    clear_cur_line_and_print_ask_with_info(
                         entry.host.as_deref(),
                         entry.user.as_deref(),
                         entry.task_name.as_deref(),
@@ -364,7 +364,7 @@ pub async fn init_logger() -> tokio::task::JoinHandle<()> {
                 }
                 _ => {
                     // Print common log （ INFO / ERROR / WARN / DEBUG / REMOTE / LOCAL）
-                    log_direct_option(
+                    clear_cur_line_and_log(
                         entry.host.as_deref(),
                         entry.user.as_deref(),
                         entry.task_name.as_deref(),
@@ -385,7 +385,7 @@ pub async fn init_logger() -> tokio::task::JoinHandle<()> {
                 if let Some(ref ask) = last_ask {
                     // println!("ask.message: {}", ask.message);
                     // println!();
-                    print_ask_with_info(
+                    clear_cur_line_and_print_ask_with_info(
                         ask.host.as_deref(),
                         ask.user.as_deref(),
                         ask.task_name.as_deref(),
@@ -401,7 +401,7 @@ pub async fn init_logger() -> tokio::task::JoinHandle<()> {
     handle
 }
 
-pub fn log_direct_option(
+pub fn clear_cur_line_and_log(
     host: Option<&str>,
     user: Option<&str>,
     task_name: Option<&str>,
@@ -470,7 +470,7 @@ pub fn log_direct_option(
     }
 }
 
-pub fn print_ask_with_info(
+pub fn clear_cur_line_and_print_ask_with_info(
     host: Option<&str>,
     user: Option<&str>,
     task_name: Option<&str>,
@@ -479,6 +479,12 @@ pub fn print_ask_with_info(
     let colored_ask = &ansi_term::Colour::Cyan
         .paint(format!("{:<width$}", LOG_ASK, width = LOG_LEVEL_WIDTH))
         .to_string();
+    execute!(
+        stdout(),
+        cursor::MoveToColumn(0),
+        Clear(ClearType::CurrentLine)
+    )
+    .unwrap();
     match (user, host, task_name) {
         (Some(user), Some(host), Some(task)) => {
             // 207 bright magenta
@@ -487,26 +493,13 @@ pub fn print_ask_with_info(
             let colored_task = ansi_term::Colour::Fixed(216)
                 .paint(format!("{:<width$}", task, width = LOG_TASK_NAME_WIDTH))
                 .to_string(); // orange-yellow
-            execute!(
-                stdout(),
-                cursor::MoveToColumn(0),
-                Clear(ClearType::CurrentLine)
-            )
-            .unwrap();
-            // sleep(Duration::from_millis(300));
+
             print!(
                 "[{}@{}][{}][{}] {}",
                 colored_user, colored_host, colored_task, colored_ask, message
             );
         }
         _ => {
-            execute!(
-                stdout(),
-                cursor::MoveToColumn(0),
-                Clear(ClearType::CurrentLine)
-            )
-            .unwrap();
-            // sleep(Duration::from_millis(300));
             print!("[{}] {}", colored_ask, message);
         }
     }
