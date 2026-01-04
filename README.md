@@ -26,10 +26,6 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-1)
   - [MailHog](#mailhog)
     - [Installing on Local Windows](#installing-on-local-windows-1)
-  - [RocksDB](#rocksdb)
-    - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-2)
-  - [Typesense](#typesense)
-    - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
 
 # Commands
 ## rsctl execute
@@ -461,47 +457,3 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 **Access**:
 - SMTP server: http://localhost:1025
 - Web UI: http://localhost:8025
-
-## RocksDB
-RocksDB is a high-performance embedded key-value store optimized for low-latency data access.
-
-### Installing on a Remote Linux Host
-[Back to Top](#table-of-contents)  
-**Commands**:
-* Installs RocksDB.
-  
-  Check out the script file: [scripts/rocksdb/install.sh](scripts/rocksdb/install.sh)
-  ```bash
-  rsctl execute \
-    --host 192.168.75.128 \
-    --user test99 \
-    --script scripts/rocksdb/install.sh \
-    --use-sudo
-  ```
-* Uninstalls RocksDB.
-  
-  Check out the script file: [scripts/rocksdb/uninstall.sh](scripts/rocksdb/uninstall.sh)
-  ```bash
-  rsctl execute \
-    --host 192.168.75.128 \
-    --user test99 \
-    --script scripts/rocksdb/uninstall.sh \
-    --use-sudo
-  ```
-
-## Typesense
-Typesense is an open-source, fast, typo-tolerant search engine for building instant search experiences.
-
-### Installing on a Remote Linux Host
-[Back to Top](#table-of-contents)  
-**Commands**:
-* Installs Typesense.
-  
-  Check out the script file: [scripts/typesense/install.sh](scripts/typesense/install.sh)
-  ```bash
-  rsctl execute \
-    --host 192.168.75.128 \
-    --user test99 \
-    --script scripts/typesense/install.sh \
-    --use-sudo
-  ```
