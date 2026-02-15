@@ -26,6 +26,10 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-1)
   - [MailHog](#mailhog)
     - [Installing on Local Windows](#installing-on-local-windows-1)
+  - [Redis](#redis)
+    - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-2)
+  - [MongoDB](#mongodb)
+    - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
 
 # Commands
 ## rsctl execute
@@ -358,7 +362,8 @@ Docker is a platform that enables you to package, distribute, and run applicatio
 **Commands**:
 * Installs Docker and Docker Compose on the remote server.
 
-  Check out the script file: [scripts/docker/install.sh](scripts/docker/install.sh)
+  Check out the script file: [scripts/docker/install.sh](scripts/docker/install.sh)  
+  Example:
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -404,7 +409,8 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
 **Commands** (YAML/Run Mode Example):
 * Uploads `scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
 
-  Check out the properties file: [scripts/aws/config/path-mapping.properties](scripts/aws/config/path-mapping.properties)
+  Check out the properties file: [scripts/aws/config/path-mapping.properties](scripts/aws/config/path-mapping.properties)  
+  Example:
   ```bash
   rsctl upload \
     --host 192.168.75.128 \
@@ -414,7 +420,8 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   ```
 * Start LocalStack.
 
-  Check out the script file: [scripts/aws/localstack-start.sh](scripts/aws/localstack-start.sh)
+  Check out the script file: [scripts/aws/localstack-start.sh](scripts/aws/localstack-start.sh)  
+  Example:
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -424,7 +431,8 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   ```
 * Stop LocalStack.
   
-  Check out the script file: [scripts/aws/localstack-stop.sh](scripts/aws/localstack-stop.sh)
+  Check out the script file: [scripts/aws/localstack-stop.sh](scripts/aws/localstack-stop.sh)  
+  Example:
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -443,13 +451,15 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 **Commands**:
 * Installs and runs the MailHog Docker image.
   
-  Check out the script file: [scripts\mailhog\start.bat](scripts\mailhog\start.bat)
+  Check out the script file: [scripts\mailhog\start.bat](scripts\mailhog\start.bat)  
+  Example:
   ```bash
   call scripts\mailhog\start.bat
   ```
 * Stops the MailHog Docker image.
   
-  Check out the script file: [scripts\mailhog\stop.bat](scripts\mailhog\stop.bat)
+  Check out the script file: [scripts\mailhog\stop.bat](scripts\mailhog\stop.bat)  
+  Example:
   ```bash
   call scripts\mailhog\stop.bat
   ```
@@ -457,3 +467,26 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 **Access**:
 - SMTP server: http://localhost:1025
 - Web UI: http://localhost:8025
+
+## Redis
+
+### Installing on a Remote Linux Host
+
+
+## MongoDB
+
+### Installing on a Remote Linux Host
+[Back to Top](#table-of-contents)  
+**Commands**:
+* Installs MongoDB on the remote server.
+
+  Check out the script file: [scripts/mongodb/install.sh](scripts/mongodb/install.sh)  
+  Example of installing MongoDB on Ubuntu (Noble):
+  ```bash
+  rsctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/mongodb/install.sh \
+    --use-sudo
+  ```
