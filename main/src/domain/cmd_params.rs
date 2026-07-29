@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 Craig Brown
+ * Copyright (C) 2022-2026 rsctl Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,7 +17,6 @@
  * The final parsed parameter structs derived from the original CLI arguments
  * or yml configuration file, to be used in upload, patch, and other tasks.
  *
- * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
  */

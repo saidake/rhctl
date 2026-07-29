@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 Craig Brown
+ * Copyright (C) 2022-2026 rsctl Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,7 +16,6 @@
  * **************************************************************************
  * Main entry point of the application.
  *
- * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
  */
@@ -56,7 +55,6 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
 #[derive(Parser)]
 #[command(name = "rsctl")]
 #[command(about = "A high-performance Rust CLI for remote file operations via SSH")]
-#[command(author = "Craig Brown")]
 #[command(override_usage = "rsctl [COMMAND] [OPTIONS]")]
 #[command(version = "1.0.0")]
 struct Cli {

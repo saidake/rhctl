@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 Craig Brown
+ * Copyright (C) 2022-2026 rsctl Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,7 +16,6 @@
  * **************************************************************************
  * Patch a file in remote server.
  *
- * Author: Craig Brown
  * Since: 1.0.0
  * Date: October 16, 2025
  */
