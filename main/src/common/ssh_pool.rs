@@ -42,6 +42,7 @@ use russh::client::{Config, Handler};
 use russh::client::{Handle, Msg};
 use russh_keys::PublicKeyBase64;
 use russh_keys::key::PublicKey;
+use russh_keys::{load_openssh_certificate, load_secret_key};
 use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
@@ -279,19 +280,90 @@ impl SessionPool {
             password: self.server_metadata.password.clone(),
         };
         let mut session = russh::client::connect_stream(config, stream, client).await?;
+        let user = self.server_metadata.user.clone();
+
+        // Prefer identity / certificate auth when configured, then fall back to password.
+        if let Some(ref identity_path) = self.server_metadata.identity_file {
+            let identity_path = expand_user_path(identity_path);
+            let key_pair = match load_secret_key(&identity_path, None) {
+                Ok(key) => key,
+                Err(first_err) => {
+                    if !self.server_metadata.password.is_empty() {
+                        load_secret_key(&identity_path, Some(self.server_metadata.password.as_str()))
+                            .map_err(|e| {
+                                SshError::Custom(format!(
+                                    "Failed to load identity file '{}': {} (also failed with password as passphrase: {})",
+                                    identity_path, first_err, e
+                                ))
+                            })?
+                    } else {
+                        return Err(SshError::Custom(format!(
+                            "Failed to load identity file '{}': {}. If the key is encrypted, provide --password as the passphrase.",
+                            identity_path, first_err
+                        )));
+                    }
+                }
+            };
+
+            let key_auth_ok = if let Some(ref cert_path) = self.server_metadata.certificate_file {
+                let cert_path = expand_user_path(cert_path);
+                let cert = load_openssh_certificate(&cert_path).map_err(|e| {
+                    SshError::Custom(format!(
+                        "Failed to load OpenSSH certificate '{}': {}",
+                        cert_path, e
+                    ))
+                })?;
+                session
+                    .authenticate_openssh_cert(user.clone(), Arc::new(key_pair), cert)
+                    .await
+                    .map_err(SshError::Russh)?
+            } else {
+                session
+                    .authenticate_publickey(user.clone(), Arc::new(key_pair))
+                    .await
+                    .map_err(SshError::Russh)?
+            };
+
+            if key_auth_ok {
+                return Ok(session);
+            }
+
+            if !self.server_metadata.password.is_empty() {
+                let password_auth_ok = session
+                    .authenticate_password(user.clone(), self.server_metadata.password.clone())
+                    .await
+                    .map_err(SshError::Russh)?;
+                if password_auth_ok {
+                    return Ok(session);
+                }
+                return Err(SshError::Io(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Authentication failed (identity/certificate and password)",
+                )));
+            }
+
+            return Err(SshError::Io(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Authentication failed (identity/certificate)",
+            )));
+        }
+
+        if self.server_metadata.password.is_empty() {
+            return Err(SshError::Io(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "No identity file or password provided for authentication",
+            )));
+        }
 
         let auth_result = session
-            .authenticate_password(
-                self.server_metadata.user.clone(),
-                self.server_metadata.password.clone(),
-            )
+            .authenticate_password(user, self.server_metadata.password.clone())
             .await
             .map_err(SshError::Russh)?;
 
         if !auth_result {
             return Err(SshError::Io(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                "Authentication failed",
+                "Authentication failed (password)",
             )));
         }
 
@@ -1400,13 +1472,47 @@ impl ServerPool {
 
         if use_rsync && self.command_exists("rsync") {
             log_debug!(server_metadata, task_name, "Using rsync for upload");
+            let remote_target = if let Some(name) = new_file_name {
+                format!("{}/{}", remote_dir, name)
+            } else {
+                remote_dir.to_string()
+            };
+            let local_path = local_file_or_dir
+                .to_str()
+                .ok_or("Invalid local path encoding")?;
+            let remote_spec = format!(
+                "{}@{}:{}",
+                server_metadata.user, server_metadata.host, remote_target
+            );
+
+            if let Some(ref identity_file) = server_metadata.identity_file {
+                let identity_path = expand_user_path(identity_file);
+                let ssh_cmd = format!(
+                    "ssh -p {} -i {}",
+                    server_metadata.ssh_port, identity_path
+                );
+                let status = std::process::Command::new("rsync")
+                    .arg("-avz")
+                    .arg("-e")
+                    .arg(&ssh_cmd)
+                    .arg(local_path)
+                    .arg(&remote_spec)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .map_err(|e| format!("Failed to execute rsync with identity. \n\t> {}", e))?;
+
+                if !status.success() {
+                    return Err(format!(
+                        "rsync (identity) failed with exit code {}",
+                        status.code().unwrap_or(-1)
+                    ));
+                }
+                return Ok(());
+            }
+
             if !server_metadata.password.is_empty() {
                 if self.command_exists("sshpass") {
-                    let remote_target = if let Some(name) = new_file_name {
-                        format!("{}/{}", remote_dir, name)
-                    } else {
-                        remote_dir.to_string()
-                    };
                     let mut sshpass_cmd = std::process::Command::new("sshpass");
                     sshpass_cmd
                         .arg("-p")
@@ -1415,15 +1521,8 @@ impl ServerPool {
                         .arg("-avz")
                         .arg("-e")
                         .arg(format!("ssh -p {}", server_metadata.ssh_port))
-                        .arg(
-                            local_file_or_dir
-                                .to_str()
-                                .ok_or("Invalid local path encoding")?,
-                        )
-                        .arg(format!(
-                            "{}@{}:{}",
-                            server_metadata.user, server_metadata.host, remote_target
-                        ))
+                        .arg(local_path)
+                        .arg(&remote_spec)
                         .stdout(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null());
 
@@ -1442,6 +1541,11 @@ impl ServerPool {
                     return Err("rsync password required but sshpass not found".to_string());
                 }
             }
+
+            return Err(
+                "rsync requires either an identity file or a password for SSH authentication"
+                    .to_string(),
+            );
         } else {
             log_debug!(
                 server_metadata,
@@ -1664,4 +1768,18 @@ impl ServerPool {
         .await?;
         Ok(temp_dir)
     }
+}
+
+/// Expand a leading `~/` to the user's home directory.
+fn expand_user_path(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest).to_string_lossy().into_owned();
+        }
+    } else if path == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return home.to_string_lossy().into_owned();
+        }
+    }
+    path.to_string()
 }

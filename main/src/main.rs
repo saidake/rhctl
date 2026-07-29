@@ -91,8 +91,20 @@ enum Commands {
         #[arg(long, help = "Remote username")]
         user: String,
 
-        #[arg(long, help = "Remote password")]
+        #[arg(long, help = "Remote password (optional when --identity is set; also used for sudo)")]
         password: Option<String>,
+
+        #[arg(
+            long,
+            help = "Path to SSH private key (identity file). Preferred over password when set."
+        )]
+        identity: Option<String>,
+
+        #[arg(
+            long,
+            help = "Path to OpenSSH certificate (requires --identity)"
+        )]
+        certificate: Option<String>,
 
         #[arg(long, help = "Path to properties file")]
         properties_file: String,
@@ -151,8 +163,20 @@ enum Commands {
         #[arg(long, help = "Remote username")]
         user: String,
 
-        #[arg(long, help = "Remote password")]
+        #[arg(long, help = "Remote password (optional when --identity is set; also used for sudo)")]
         password: Option<String>,
+
+        #[arg(
+            long,
+            help = "Path to SSH private key (identity file). Preferred over password when set."
+        )]
+        identity: Option<String>,
+
+        #[arg(
+            long,
+            help = "Path to OpenSSH certificate (requires --identity)"
+        )]
+        certificate: Option<String>,
 
         #[arg(long, help = "Local bash script file (supports multiple)")]
         script: Vec<String>,
@@ -216,8 +240,20 @@ enum Commands {
         #[arg(long, help = "Remote username")]
         user: String,
 
-        #[arg(long, help = "Remote password")]
+        #[arg(long, help = "Remote password (optional when --identity is set; also used for sudo)")]
         password: Option<String>,
+
+        #[arg(
+            long,
+            help = "Path to SSH private key (identity file). Preferred over password when set."
+        )]
+        identity: Option<String>,
+
+        #[arg(
+            long,
+            help = "Path to OpenSSH certificate (requires --identity)"
+        )]
+        certificate: Option<String>,
 
         #[arg(long, help = "Local source file")]
         local_path: String,
@@ -339,6 +375,8 @@ async fn main() {
             ssh_port,
             user,
             password,
+            identity,
+            certificate,
 
             properties_file,
 
@@ -357,6 +395,8 @@ async fn main() {
                 &user,
                 ssh_port,
                 password,
+                identity,
+                certificate,
                 &properties_file,
                 use_sudo,
                 use_rsync,
@@ -453,6 +493,8 @@ async fn main() {
             ssh_port,
             user,
             password,
+            identity,
+            certificate,
             script,
             work_path,
             mode,
@@ -473,6 +515,8 @@ async fn main() {
                 &user,
                 ssh_port,
                 password,
+                identity,
+                certificate,
                 script,
                 work_path,
                 mode,
@@ -553,6 +597,8 @@ async fn main() {
             ssh_port,
             user,
             password,
+            identity,
+            certificate,
 
             local_path,
             remote_upload,
@@ -575,6 +621,8 @@ async fn main() {
                 &user,
                 ssh_port,
                 password,
+                identity,
+                certificate,
                 recover,
                 &local_path,
                 &remote_upload,

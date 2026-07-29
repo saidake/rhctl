@@ -83,6 +83,10 @@ pub struct ServerMetadata {
     pub user: String,
     pub ssh_port: u16,
     pub password: String,
+    /// Path to SSH private key (identity file). Preferred over password when set.
+    pub identity_file: Option<String>,
+    /// Path to OpenSSH certificate (requires `identity_file`).
+    pub certificate_file: Option<String>,
 
     pub connect_timeout: Duration,
     pub max_channels_per_session: usize,

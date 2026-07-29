@@ -12,6 +12,7 @@
 - [rsctl (Remote Server Control)](#rsctl-remote-server-control)
 - [Preview](#preview)
 - [Table of Contents](#table-of-contents)
+- [Build](#build)
 - [Commands](#commands)
   - [rsctl execute](#rsctl-execute)
   - [rsctl upload](#rsctl-upload)
@@ -32,9 +33,9 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
   - [PostgreSQL](#postgresql)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-4)
-```bash
 # Build
-(cd main && cargo build --release)
+```bash
+cd main && cargo build --release
 # Temporarily add `rsctl` to your PATH for the current terminal session.
 export PATH="$(pwd)/target/release:$PATH"
 ```
@@ -50,6 +51,8 @@ rsctl execute \
   --user <user> \
   [--ssh-port <port>] \
   [--password <pass>] \
+  [--identity <key>] \
+  [--certificate <cert>] \
   --script <script1> \
   [--script <script2> ...] \
   [--work-path <path>] \
@@ -85,7 +88,9 @@ echo "Remote Execution 1.2"
 - `--mode <sync|async>`: Execution mode: 'sync' (run sequentially) or 'async' (run concurrently).
 - `--work-path <path>`: Remote working directory where the bash script will be executed (defaults to the user's home directory: ~).
 
-- `--password <password>`: Remote password.
+- `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback).
+- `--identity <path>`: Path to SSH private key. Preferred over password when set.
+- `--certificate <path>`: Path to OpenSSH certificate (requires `--identity`).
 - `--ssh-port <port>`: Remote SSH port (default: 22).
 
 - `--use-sudo`: Run operations with sudo (default: false).
@@ -130,6 +135,8 @@ rsctl upload \
   --user <user> \
   [--ssh-port <port>] \
   [--password <pass>] \
+  [--identity <key>] \
+  [--certificate <cert>] \
   --properties-file <props> \
   [options]
 ```
@@ -161,7 +168,9 @@ rsctl upload \
 - `--properties-file <path>`: Required; defines mappings.
 
 **Optional Parameters**:
-- `--password <password>`: Remote password
+- `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback)
+- `--identity <path>`: Path to SSH private key. Preferred over password when set.
+- `--certificate <path>`: Path to OpenSSH certificate (requires `--identity`).
 - `--ssh-port <port>`: Remote SSH port (default: 22)
 
 - `--use-sudo`: Run operations with sudo (default: false).
@@ -209,6 +218,8 @@ rsctl patch \
   --user <user> \
   [--ssh-port <port>] \
   [--password <pass>] \
+  [--identity <key>] \
+  [--certificate <cert>] \
   --local-path <path> \
   --remote-upload <path> \
   --remote-path <path> \
@@ -245,7 +256,9 @@ rsctl patch \
 
 **Optional Parameters**:
 - `--recover`: Recover the remote target file from its backup after a patching.
-- `--password <password>`: Remote password
+- `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback)
+- `--identity <path>`: Path to SSH private key. Preferred over password when set.
+- `--certificate <path>`: Path to OpenSSH certificate (requires `--identity`).
 - `--ssh-port <port>`: Remote SSH port (default: 22)
 
 - `--use-sudo`: Run operations with sudo (default: false).
@@ -287,6 +300,8 @@ servers:
     user: "test99"
     ssh-port: 22
     password: "testpwd"
+    # identity-file: "~/.ssh/id_ed25519"
+    # certificate-file: "~/.ssh/id_ed25519-cert.pub"
     connect_timeout: 60s  # Overrides common server config if specified
   - name: "test-server2"
     host: "192.168.75.129"

@@ -64,6 +64,10 @@ pub struct ServerConfig {
     pub user: String,
     pub ssh_port: Option<u16>,
     pub password: Option<String>,
+    /// Path to SSH private key (identity file). Preferred over password when set.
+    pub identity_file: Option<String>,
+    /// Path to OpenSSH certificate (requires `identity-file`).
+    pub certificate_file: Option<String>,
 
     #[serde(default, with = "humantime_serde")]
     pub connect_timeout: Option<Duration>,
