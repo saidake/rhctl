@@ -30,7 +30,14 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-2)
   - [MongoDB](#mongodb)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
-
+  - [PostgreSQL](#postgresql)
+    - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-4)
+```bash
+# Build
+(cd main && cargo build --release)
+# Temporarily add `rsctl` to your PATH for the current terminal session.
+export PATH="$(pwd)/target/release:$PATH"
+```
 # Commands
 ## rsctl execute
 [Back to Top](#table-of-contents)  
@@ -471,7 +478,19 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 ## Redis
 
 ### Installing on a Remote Linux Host
+**Commands**:
+* Installs Redis on the remote server.
 
+  Check out the script file: [scripts/redis/install.sh](scripts/redis/install.sh)  
+  Example of installing Redis on Ubuntu (Noble):
+  ```bash
+  rsctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/redis/install.sh \
+    --use-sudo
+  ```
 
 ## MongoDB
 
@@ -488,5 +507,23 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
     --user test99 \
     --password testpwd \
     --script scripts/mongodb/install.sh \
+    --use-sudo
+  ```
+
+## PostgreSQL
+
+### Installing on a Remote Linux Host
+[Back to Top](#table-of-contents)  
+**Commands**:
+* Installs PostgreSQL on the remote server.
+
+  Check out the script file: [scripts/postgresql/install.sh](scripts/postgresql/install.sh)  
+  Example of installing PostgreSQL on Ubuntu (Noble):
+  ```bash
+  rsctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/postgresql/install.sh \
     --use-sudo
   ```
