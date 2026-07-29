@@ -1,6 +1,6 @@
 [package]
 name = "rsctl"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 description = "High-performance Rust CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. "
 license = "GPL-3.0-or-later"
