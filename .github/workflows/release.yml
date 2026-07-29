@@ -1,3 +1,11 @@
+# Build and Release
+#
+# Cross-platform release build for rsctl. Compiles release binaries for
+# Linux (x86_64 musl) and macOS (x86_64 and arm64), then uploads them as
+# workflow artifacts named by version and platform.
+#
+# Triggered on push of a git tag matching v* (e.g. v1.0.0, v0.2.1).
+
 name: Build and Release
 
 on:

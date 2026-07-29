@@ -25,7 +25,7 @@ configs:
     silent: false
     
     upload:
-      - properties-file: "AAA/config/path-mapping.properties"
+      - properties-file: "config/path-mapping.properties"
 
         # Specify which servers or groups this command targets
         target-servers: ["test-server1","test-server2"] 
@@ -37,7 +37,7 @@ configs:
         # silent: false
 
     patch:
-      - local-path: "AAA/assets/example-patch.txt"
+      - local-path: "assets/example-patch.txt"
         remote-upload: "/tmp/example-patch.txt.upload"
         remote-path: "~/examples/example-patch-remote.txt"
         remote-backup: "/tmp/example-patch-remote.txt.bak"
@@ -47,8 +47,8 @@ configs:
     execute:
       - remote-path: "~"
         scripts: 
-          - "AAA/assets/example-bash1.sh"
-          - "AAA/assets/example-bash2.sh"
+          - "assets/example-bash1.sh"
+          - "assets/example-bash2.sh"
         mode: sync
         target-servers: ["test-server1","test-server2"]  
         # target-groups: ["dev"]
@@ -67,7 +67,7 @@ common:
 # Provide global variables used in the provided paths. 
 # Can be referenced in paths using ${VAR_NAME}
 var-map:
-  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets"
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets"
 
 # Group mapping  (Optional)
 # Assign servers to logical groups for easier targeting

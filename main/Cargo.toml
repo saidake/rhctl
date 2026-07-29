@@ -1,0 +1,37 @@
+[package]
+name = "rsctl"
+version = "1.0.0"
+edition = "2024"
+description = "High-performance Rust CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. "
+license = "GPL-3.0-or-later"
+repository = "https://github.com/saidake/rsctl"
+homepage = "https://github.com/saidake/rsctl"
+readme = "README.md"
+keywords = ["ssh", "cli", "remote", "automation", "deployment", "patch", "file-transfer", "system-administration"]
+categories = ["command-line-utilities", "system-utilities", "network-programming"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+rpassword = "7.2"
+once_cell = "1.21.3"
+env_logger = "0.11"
+ansi_term = "0.12.1"
+tokio = { version = "1.41", features = ["full"] }
+crossbeam-queue = "0.3"
+dashmap = "5"
+humantime-serde = "1.1.1"
+humantime = "2"
+futures = "0.3"
+async-recursion = "1.0"
+crossterm = "0.27"
+russh = "0.46"
+russh-keys = "0.46"
+async-trait = "0.1.89"
+dirs-next = "2"
+base64 = "0.22"
+
+[build-dependencies]
+# If needed for build scripts

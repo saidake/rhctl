@@ -5,19 +5,22 @@
 <img src="docs/assets/logo.png" width="100">
 
 ----
-**rsctl (Remote Server Control)** is a high-performance CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. also including environment configuration bash or batch scripts.
+**rsctl (Remote Server Control)** is a lightweight, high-performance CLI tool for remote server management. It supports real-time streaming logs, SSH-based file transfers, script execution, file patching, and environment setup using Bash scripts.
 # Preview
 ![](./docs/assets/cmd/execute.gif) 
 # Table of Contents
 - [rsctl (Remote Server Control)](#rsctl-remote-server-control)
 - [Preview](#preview)
 - [Table of Contents](#table-of-contents)
+- [Build](#build)
 - [Commands](#commands)
   - [rsctl execute](#rsctl-execute)
   - [rsctl upload](#rsctl-upload)
   - [rsctl patch](#rsctl-patch)
   - [rsctl run](#rsctl-run)
-- [Environment Configuration Helper](#environment-configuration-helper)
+- [SSH Authentication Setup](#ssh-authentication-setup)
+  - [Add Your Public Key to a Remote Server](#add-your-public-key-to-a-remote-server)
+- [Environment Setup Scripts](#environment-setup-scripts)
   - [Docker and Docker Compose](#docker-and-docker-compose)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host)
   - [Docker Desktop](#docker-desktop)
@@ -26,11 +29,18 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-1)
   - [MailHog](#mailhog)
     - [Installing on Local Windows](#installing-on-local-windows-1)
-  - [RocksDB](#rocksdb)
+  - [Redis](#redis)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-2)
-  - [Typesense](#typesense)
+  - [MongoDB](#mongodb)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
-
+  - [PostgreSQL](#postgresql)
+    - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-4)
+# Build
+```bash
+cd main && cargo build --release && cd ..
+# Temporarily add `rsctl` to your PATH for the current terminal session.
+export PATH="$(pwd)/target/release:$PATH"
+```
 # Commands
 ## rsctl execute
 [Back to Top](#table-of-contents)  
@@ -43,6 +53,8 @@ rsctl execute \
   --user <user> \
   [--ssh-port <port>] \
   [--password <pass>] \
+  [--identity <key>] \
+  [--certificate <cert>] \
   --script <script1> \
   [--script <script2> ...] \
   [--work-path <path>] \
@@ -54,13 +66,13 @@ rsctl execute \
 rsctl execute \
   --host 192.168.75.128 \
   --user test99 \
-  --script AAA/assets/example-bash1.sh \
-  --script AAA/assets/example-bash2.sh \
+  --script assets/example-bash1.sh \
+  --script assets/example-bash2.sh \
   --mode async \
   --use-sudo
 ```
 
-**Example Script** (e.g., `AAA/assets/example-bash1.sh`):
+**Example Script** (e.g., `assets/example-bash1.sh`):
 ```bash
 #!/bin/bash
 pwd
@@ -78,7 +90,9 @@ echo "Remote Execution 1.2"
 - `--mode <sync|async>`: Execution mode: 'sync' (run sequentially) or 'async' (run concurrently).
 - `--work-path <path>`: Remote working directory where the bash script will be executed (defaults to the user's home directory: ~).
 
-- `--password <password>`: Remote password.
+- `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback).
+- `--identity <path>`: Path to SSH private key. Preferred over password when set.
+- `--certificate <path>`: Path to OpenSSH certificate (requires `--identity`).
 - `--ssh-port <port>`: Remote SSH port (default: 22).
 
 - `--use-sudo`: Run operations with sudo (default: false).
@@ -105,7 +119,7 @@ echo "Remote Execution 1.2"
     --user test99 \
     --script '${ASSETS_ROOT}/example-bash1.sh' \
     --script '${ASSETS_ROOT}/example-bash2.sh' \
-    --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets \
+    --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets \
     --mode async
   ```
 
@@ -123,14 +137,16 @@ rsctl upload \
   --user <user> \
   [--ssh-port <port>] \
   [--password <pass>] \
+  [--identity <key>] \
+  [--certificate <cert>] \
   --properties-file <props> \
   [options]
 ```
 
 **Properties File Format**:
 ```properties
-AAA/assets/example1.txt=~/examples
-AAA/assets/exampledir=~/examples/targetdir
+assets/example1.txt=~/examples
+assets/exampledir=~/examples/targetdir
 ```
 Format: `<local-path>=<remote-directory>`    
 
@@ -145,7 +161,7 @@ Note: The file or the contents of the local directory on the left will be upload
 rsctl upload \
   --host 192.168.75.128 \
   --user test99 \
-  --properties-file AAA/config/path-mapping.properties
+  --properties-file config/path-mapping.properties
 ```
 
 **Required Parameters**:
@@ -154,7 +170,9 @@ rsctl upload \
 - `--properties-file <path>`: Required; defines mappings.
 
 **Optional Parameters**:
-- `--password <password>`: Remote password
+- `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback)
+- `--identity <path>`: Path to SSH private key. Preferred over password when set.
+- `--certificate <path>`: Path to OpenSSH certificate (requires `--identity`).
 - `--ssh-port <port>`: Remote SSH port (default: 22)
 
 - `--use-sudo`: Run operations with sudo (default: false).
@@ -185,8 +203,8 @@ rsctl upload \
       --user test99 \
       --ssh-port 22 \
       --use-sudo \
-      --properties-file AAA/assets/path-mapping.properties \
-      --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets
+      --properties-file config/path-mapping.properties \
+      --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets
     ```
 
 ## rsctl patch
@@ -202,6 +220,8 @@ rsctl patch \
   --user <user> \
   [--ssh-port <port>] \
   [--password <pass>] \
+  [--identity <key>] \
+  [--certificate <cert>] \
   --local-path <path> \
   --remote-upload <path> \
   --remote-path <path> \
@@ -222,7 +242,7 @@ Steps (Recover Mode):
 rsctl patch \
   --host 192.168.75.128 \
   --user test99 \
-  --local-path "AAA/assets/example-patch.txt" \
+  --local-path "assets/example-patch.txt" \
   --remote-upload "/tmp/example-patch.txt.upload" \
   --remote-path "~/examples/example-patch-remote.txt" \
   --remote-backup "/tmp/example-patch-remote.txt.bak" 
@@ -238,7 +258,9 @@ rsctl patch \
 
 **Optional Parameters**:
 - `--recover`: Recover the remote target file from its backup after a patching.
-- `--password <password>`: Remote password
+- `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback)
+- `--identity <path>`: Path to SSH private key. Preferred over password when set.
+- `--certificate <path>`: Path to OpenSSH certificate (requires `--identity`).
 - `--ssh-port <port>`: Remote SSH port (default: 22)
 
 - `--use-sudo`: Run operations with sudo (default: false).
@@ -280,6 +302,8 @@ servers:
     user: "test99"
     ssh-port: 22
     password: "testpwd"
+    # identity-file: "~/.ssh/id_ed25519"
+    # certificate-file: "~/.ssh/id_ed25519-cert.pub"
     connect_timeout: 60s  # Overrides common server config if specified
   - name: "test-server2"
     host: "192.168.75.129"
@@ -299,7 +323,7 @@ configs:
     silent: false
     
     upload:
-      - properties-file: "AAA/config/path-mapping.properties"
+      - properties-file: "config/path-mapping.properties"
 
         # Specify which servers or groups this command targets
         target-servers: ["test-server1","test-server2"] 
@@ -311,7 +335,7 @@ configs:
         # silent: false
 
     patch:
-      - local-path: "AAA/assets/example-patch.txt"
+      - local-path: "assets/example-patch.txt"
         remote-upload: "/tmp/example-patch.txt.upload"
         remote-path: "~/examples/example-patch-remote.txt"
         remote-backup: "/tmp/example-patch-remote.txt.bak"
@@ -321,8 +345,8 @@ configs:
     execute:
       - remote-path: "~"
         scripts: 
-          - "AAA/assets/example-bash1.sh"
-          - "AAA/assets/example-bash2.sh"
+          - "assets/example-bash1.sh"
+          - "assets/example-bash2.sh"
         mode: sync
         target-servers: ["test-server1","test-server2"]  
         # target-groups: ["dev"]
@@ -341,7 +365,7 @@ common:
 # Provide global variables used in the provided paths. 
 # Can be referenced in paths using ${VAR_NAME}
 var-map:
-  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/AAA/assets"
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets"
 
 # Group mapping  (Optional)
 # Assign servers to logical groups for easier targeting
@@ -353,7 +377,34 @@ group-map:
 - `--config <path>`: Path to YAML configuration file
 - `--config-name <name>`: Name of the configuration inside the YAML file to use
 
-# Environment Configuration Helper
+# SSH Authentication Setup
+[Back to Top](#table-of-contents)  
+
+`rsctl` can authenticate with a password, an SSH private key (`--identity`), or an OpenSSH certificate (`--identity` + `--certificate`). Key-based login is preferred for automation.
+
+## Add Your Public Key to a Remote Server
+Generate a key pair on your local machine (skip if you already have one):
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C "rsctl"
+```
+
+Copy the **public** key to the remote server (one-time setup; password login is required for this step):
+
+```bash
+ssh-copy-id -i ~/.ssh/id_ed25519.pub -p 22 user@192.168.75.128
+```
+
+Or install it manually:
+
+```bash
+# On the remote server
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+echo "PASTE_YOUR_PUBLIC_KEY_HERE" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+# Environment Setup Scripts
 ## Docker and Docker Compose
 Docker is a platform that enables you to package, distribute, and run applications in lightweight, portable containers. Docker Compose is a tool for defining and managing multi-container Docker applications using YAML files.
 
@@ -361,6 +412,9 @@ Docker is a platform that enables you to package, distribute, and run applicatio
 [Back to Top](#table-of-contents)  
 **Commands**:
 * Installs Docker and Docker Compose on the remote server.
+
+  Check out the script file: [scripts/docker/install.sh](scripts/docker/install.sh)  
+  Example:
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -389,6 +443,8 @@ Docker Desktop is an easy-to-install application for building, sharing, and runn
 
 **Command**:
 * Installs Docker Desktop locally on Windows.
+  
+  Check out the script file: [scripts\docker\install.bat](scripts\docker\install.bat)
   ```bash
   call scripts\docker\install.bat
   ```
@@ -403,6 +459,9 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
 
 **Commands** (YAML/Run Mode Example):
 * Uploads `scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
+
+  Check out the properties file: [scripts/aws/config/path-mapping.properties](scripts/aws/config/path-mapping.properties)  
+  Example:
   ```bash
   rsctl upload \
     --host 192.168.75.128 \
@@ -411,6 +470,9 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
     --use-sudo
   ```
 * Start LocalStack.
+
+  Check out the script file: [scripts/aws/localstack-start.sh](scripts/aws/localstack-start.sh)  
+  Example:
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -419,6 +481,9 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
     --use-sudo
   ```
 * Stop LocalStack.
+  
+  Check out the script file: [scripts/aws/localstack-stop.sh](scripts/aws/localstack-stop.sh)  
+  Example:
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
@@ -436,10 +501,16 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 
 **Commands**:
 * Installs and runs the MailHog Docker image.
+  
+  Check out the script file: [scripts\mailhog\start.bat](scripts\mailhog\start.bat)  
+  Example:
   ```bash
   call scripts\mailhog\start.bat
   ```
 * Stops the MailHog Docker image.
+  
+  Check out the script file: [scripts\mailhog\stop.bat](scripts\mailhog\stop.bat)  
+  Example:
   ```bash
   call scripts\mailhog\stop.bat
   ```
@@ -448,40 +519,55 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 - SMTP server: http://localhost:1025
 - Web UI: http://localhost:8025
 
-## RocksDB
-RocksDB is a high-performance embedded key-value store optimized for low-latency data access.
+## Redis
+
+### Installing on a Remote Linux Host
+**Commands**:
+* Installs Redis on the remote server.
+
+  Check out the script file: [scripts/redis/install.sh](scripts/redis/install.sh)  
+  Example of installing Redis on Ubuntu (Noble):
+  ```bash
+  rsctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/redis/install.sh \
+    --use-sudo
+  ```
+
+## MongoDB
 
 ### Installing on a Remote Linux Host
 [Back to Top](#table-of-contents)  
 **Commands**:
-* Installs RocksDB.
+* Installs MongoDB on the remote server.
+
+  Check out the script file: [scripts/mongodb/install.sh](scripts/mongodb/install.sh)  
+  Example of installing MongoDB on Ubuntu (Noble):
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script scripts/rocksdb/install.sh \
-    --use-sudo
-  ```
-* Uninstalls RocksDB.
-  ```bash
-  rsctl execute \
-    --host 192.168.75.128 \
-    --user test99 \
-    --script scripts/rocksdb/uninstall.sh \
+    --password testpwd \
+    --script scripts/mongodb/install.sh \
     --use-sudo
   ```
 
-## Typesense
-Typesense is an open-source, fast, typo-tolerant search engine for building instant search experiences.
+## PostgreSQL
 
 ### Installing on a Remote Linux Host
 [Back to Top](#table-of-contents)  
 **Commands**:
-* Installs Typesense.
+* Installs PostgreSQL on the remote server.
+
+  Check out the script file: [scripts/postgresql/install.sh](scripts/postgresql/install.sh)  
+  Example of installing PostgreSQL on Ubuntu (Noble):
   ```bash
   rsctl execute \
     --host 192.168.75.128 \
     --user test99 \
-    --script scripts/typesense/install.sh \
+    --password testpwd \
+    --script scripts/postgresql/install.sh \
     --use-sudo
   ```
