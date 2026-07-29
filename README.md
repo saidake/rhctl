@@ -18,6 +18,8 @@
   - [rsctl upload](#rsctl-upload)
   - [rsctl patch](#rsctl-patch)
   - [rsctl run](#rsctl-run)
+- [SSH Authentication Setup](#ssh-authentication-setup)
+  - [Add Your Public Key to a Remote Server](#add-your-public-key-to-a-remote-server)
 - [Environment Setup Scripts](#environment-setup-scripts)
   - [Docker and Docker Compose](#docker-and-docker-compose)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host)
@@ -35,7 +37,7 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-4)
 # Build
 ```bash
-cd main && cargo build --release
+cd main && cargo build --release && cd ..
 # Temporarily add `rsctl` to your PATH for the current terminal session.
 export PATH="$(pwd)/target/release:$PATH"
 ```
@@ -201,7 +203,7 @@ rsctl upload \
       --user test99 \
       --ssh-port 22 \
       --use-sudo \
-      --properties-file assets/path-mapping.properties \
+      --properties-file config/path-mapping.properties \
       --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets
     ```
 
@@ -374,6 +376,33 @@ group-map:
 **Required Parameters**:
 - `--config <path>`: Path to YAML configuration file
 - `--config-name <name>`: Name of the configuration inside the YAML file to use
+
+# SSH Authentication Setup
+[Back to Top](#table-of-contents)  
+
+`rsctl` can authenticate with a password, an SSH private key (`--identity`), or an OpenSSH certificate (`--identity` + `--certificate`). Key-based login is preferred for automation.
+
+## Add Your Public Key to a Remote Server
+Generate a key pair on your local machine (skip if you already have one):
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C "rsctl"
+```
+
+Copy the **public** key to the remote server (one-time setup; password login is required for this step):
+
+```bash
+ssh-copy-id -i ~/.ssh/id_ed25519.pub -p 22 user@192.168.75.128
+```
+
+Or install it manually:
+
+```bash
+# On the remote server
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+echo "PASTE_YOUR_PUBLIC_KEY_HERE" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
 
 # Environment Setup Scripts
 ## Docker and Docker Compose
