@@ -39,7 +39,7 @@
 ```bash
 cd main && cargo build --release && cd ..
 # Temporarily add `rhctl` to your PATH for the current terminal session.
-export PATH="$(pwd)/target/release:$PATH"
+export PATH="$(pwd)/main/target/release:$PATH"
 ```
 # Commands
 ## rhctl execute
