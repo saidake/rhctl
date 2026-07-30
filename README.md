@@ -1,23 +1,23 @@
-# rsctl (Remote Server Control)
-![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/saidake/rsctl?sort=semver)
-![Build Status](https://github.com/saidake/rsctl/actions/workflows/release.yml/badge.svg)
+# rhctl (Remote Host Control)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/saidake/rhctl?sort=semver)
+![Build Status](https://github.com/saidake/rhctl/actions/workflows/release.yml/badge.svg)
 
 <img src="docs/assets/logo.png" width="100">
 
 ----
-**rsctl (Remote Server Control)** is a lightweight, high-performance CLI tool for remote server management. It supports real-time streaming logs, SSH-based file transfers, script execution, file patching, and environment setup using Bash scripts.
+**rhctl (Remote Host Control)** is a lightweight, high-performance CLI tool for remote host management. It supports real-time streaming logs, SSH-based file transfers, script execution, file patching, and environment setup using Bash scripts.
 # Preview
 ![](./docs/assets/cmd/execute.gif) 
 # Table of Contents
-- [rsctl (Remote Server Control)](#rsctl-remote-server-control)
+- [rhctl (Remote Host Control)](#rhctl-remote-host-control)
 - [Preview](#preview)
 - [Table of Contents](#table-of-contents)
 - [Build](#build)
 - [Commands](#commands)
-  - [rsctl execute](#rsctl-execute)
-  - [rsctl upload](#rsctl-upload)
-  - [rsctl patch](#rsctl-patch)
-  - [rsctl run](#rsctl-run)
+  - [rhctl execute](#rhctl-execute)
+  - [rhctl upload](#rhctl-upload)
+  - [rhctl patch](#rhctl-patch)
+  - [rhctl run](#rhctl-run)
 - [SSH Authentication Setup](#ssh-authentication-setup)
   - [Add Your Public Key to a Remote Server](#add-your-public-key-to-a-remote-server)
 - [Environment Setup Scripts](#environment-setup-scripts)
@@ -38,17 +38,17 @@
 # Build
 ```bash
 cd main && cargo build --release && cd ..
-# Temporarily add `rsctl` to your PATH for the current terminal session.
+# Temporarily add `rhctl` to your PATH for the current terminal session.
 export PATH="$(pwd)/target/release:$PATH"
 ```
 # Commands
-## rsctl execute
+## rhctl execute
 [Back to Top](#table-of-contents)  
 Runs one or more local Bash scripts on a remote server in a specified working directory.
 
 **Usage**
 ```bash
-rsctl execute \
+rhctl execute \
   --host <host> \
   --user <user> \
   [--ssh-port <port>] \
@@ -63,7 +63,7 @@ rsctl execute \
 ```
 **Example**:
 ```bash
-rsctl execute \
+rhctl execute \
   --host 192.168.75.128 \
   --user test99 \
   --script assets/example-bash1.sh \
@@ -114,17 +114,17 @@ echo "Remote Execution 1.2"
 - `--var KEY=VALUE`: Provide global variables used in the provided paths (multiple allowed; overrides in YAML mode are ignored).  
   Example:
   ```bash
-  rsctl execute \
+  rhctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --script '${ASSETS_ROOT}/example-bash1.sh' \
     --script '${ASSETS_ROOT}/example-bash2.sh' \
-    --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets \
+    --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rhctl/assets \
     --mode async
   ```
 
 
-## rsctl upload
+## rhctl upload
 [Back to Top](#table-of-contents)  
 Upload multiple files or all contents of a directory to a remote directory in parallel, based on a properties file.
 
@@ -132,7 +132,7 @@ Upload multiple files or all contents of a directory to a remote directory in pa
 
 **Usage**
 ```bash
-rsctl upload \
+rhctl upload \
   --host <host> \
   --user <user> \
   [--ssh-port <port>] \
@@ -158,7 +158,7 @@ Note: The file or the contents of the local directory on the left will be upload
 
 **Example**:
 ```bash
-rsctl upload \
+rhctl upload \
   --host 192.168.75.128 \
   --user test99 \
   --properties-file config/path-mapping.properties
@@ -198,16 +198,16 @@ rsctl upload \
     ${ASSETS_ROOT}/exampledir=~/examples/targetdir
     ```
     ```bash
-    rsctl upload \
+    rhctl upload \
       --host 192.168.75.128 \
       --user test99 \
       --ssh-port 22 \
       --use-sudo \
       --properties-file config/path-mapping.properties \
-      --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets
+      --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rhctl/assets
     ```
 
-## rsctl patch
+## rhctl patch
 [Back to Top](#table-of-contents)  
 Safely patches a remote file by uploading a local patch file, backing up the target file, and applying the patch, or recovering from a backup. 
 
@@ -215,7 +215,7 @@ Safely patches a remote file by uploading a local patch file, backing up the tar
 
 **Usage**
 ```bash
-rsctl patch \
+rhctl patch \
   --host <host> \
   --user <user> \
   [--ssh-port <port>] \
@@ -239,7 +239,7 @@ Steps (Recover Mode):
 
 **Example**:
 ```bash
-rsctl patch \
+rhctl patch \
   --host 192.168.75.128 \
   --user test99 \
   --local-path "assets/example-patch.txt" \
@@ -279,17 +279,17 @@ rsctl patch \
 
 
 
-## rsctl run
+## rhctl run
 [Back to Top](#table-of-contents)  
 Run batch operations defined in YAML config file. Supports multiple upload/execute/patch tasks across servers/groups in parallel.
 
 **Usage**:
 ```bash
-rsctl run --config <yml-file-path> --config-name <name>
+rhctl run --config <yml-file-path> --config-name <name>
 ```
 **Example**:
 ```bash
-rsctl run  --config config.yml --config-name dev-deploy
+rhctl run  --config config.yml --config-name dev-deploy
 ```
 
 **YAML Configuration File Format**:
@@ -365,7 +365,7 @@ common:
 # Provide global variables used in the provided paths. 
 # Can be referenced in paths using ${VAR_NAME}
 var-map:
-  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets"
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rhctl/assets"
 
 # Group mapping  (Optional)
 # Assign servers to logical groups for easier targeting
@@ -380,13 +380,13 @@ group-map:
 # SSH Authentication Setup
 [Back to Top](#table-of-contents)  
 
-`rsctl` can authenticate with a password, an SSH private key (`--identity`), or an OpenSSH certificate (`--identity` + `--certificate`). Key-based login is preferred for automation.
+`rhctl` can authenticate with a password, an SSH private key (`--identity`), or an OpenSSH certificate (`--identity` + `--certificate`). Key-based login is preferred for automation.
 
 ## Add Your Public Key to a Remote Server
 Generate a key pair on your local machine (skip if you already have one):
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C "rsctl"
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C "rhctl"
 ```
 
 Copy the **public** key to the remote server (one-time setup; password login is required for this step):
@@ -416,7 +416,7 @@ Docker is a platform that enables you to package, distribute, and run applicatio
   Check out the script file: [scripts/docker/install.sh](scripts/docker/install.sh)  
   Example:
   ```bash
-  rsctl execute \
+  rhctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --script scripts/docker/install.sh \
@@ -463,7 +463,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   Check out the properties file: [scripts/aws/config/path-mapping.properties](scripts/aws/config/path-mapping.properties)  
   Example:
   ```bash
-  rsctl upload \
+  rhctl upload \
     --host 192.168.75.128 \
     --user test99 \
     --properties-file scripts/aws/config/path-mapping.properties \
@@ -474,7 +474,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   Check out the script file: [scripts/aws/localstack-start.sh](scripts/aws/localstack-start.sh)  
   Example:
   ```bash
-  rsctl execute \
+  rhctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --script scripts/aws/localstack-start.sh \
@@ -485,7 +485,7 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
   Check out the script file: [scripts/aws/localstack-stop.sh](scripts/aws/localstack-stop.sh)  
   Example:
   ```bash
-  rsctl execute \
+  rhctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --script scripts/aws/localstack-stop.sh \
@@ -528,7 +528,7 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
   Check out the script file: [scripts/redis/install.sh](scripts/redis/install.sh)  
   Example of installing Redis on Ubuntu (Noble):
   ```bash
-  rsctl execute \
+  rhctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
@@ -546,7 +546,7 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
   Check out the script file: [scripts/mongodb/install.sh](scripts/mongodb/install.sh)  
   Example of installing MongoDB on Ubuntu (Noble):
   ```bash
-  rsctl execute \
+  rhctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
@@ -564,7 +564,7 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
   Check out the script file: [scripts/postgresql/install.sh](scripts/postgresql/install.sh)  
   Example of installing PostgreSQL on Ubuntu (Noble):
   ```bash
-  rsctl execute \
+  rhctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \

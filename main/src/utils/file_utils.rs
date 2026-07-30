@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022-2026 rsctl Contributors
+ * Copyright (C) 2022-2026 rhctl Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
  * Date: October 16, 2025
  */
 use crate::domain::cmd_params::ServerMetadata;
-use crate::domain::constants::REMOTE_TEMP_SBXCTL_FOLDER;
+use crate::domain::constants::REMOTE_TEMP_RHCTL_FOLDER;
 use crate::domain::yml_config::YmlConfig;
 use crate::log_local;
 use std::collections::HashMap;
@@ -48,7 +48,7 @@ pub fn generate_remote_temp_dir(prefix: &str) -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    format!("{}/{}_{:x}", REMOTE_TEMP_SBXCTL_FOLDER, prefix, timestamp)
+    format!("{}/{}_{:x}", REMOTE_TEMP_RHCTL_FOLDER, prefix, timestamp)
 }
 pub fn split_unix_path(path: &str) -> Result<(String, String), String> {
     let path: &str = path.trim_end_matches('/');

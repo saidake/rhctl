@@ -1,1 +1,1 @@
-rsctl example file 2
+rhctl example file 2

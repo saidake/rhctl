@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022-2026 rsctl Contributors
+ * Copyright (C) 2022-2026 rhctl Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,9 +53,9 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
 }
 
 #[derive(Parser)]
-#[command(name = "rsctl")]
+#[command(name = "rhctl")]
 #[command(about = "A high-performance Rust CLI for remote file operations via SSH")]
-#[command(override_usage = "rsctl [COMMAND] [OPTIONS]")]
+#[command(override_usage = "rhctl [COMMAND] [OPTIONS]")]
 #[command(version = "1.0.0")]
 struct Cli {
     #[command(subcommand)]

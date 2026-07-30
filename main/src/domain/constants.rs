@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022-2026 rsctl Contributors
+ * Copyright (C) 2022-2026 rhctl Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@
  */
 use std::{collections::HashSet, time::Duration};
 
-pub static REMOTE_TEMP_SBXCTL_FOLDER: &str = "/tmp/rsctl";
+pub static REMOTE_TEMP_RHCTL_FOLDER: &str = "/tmp/rhctl";
 pub static USER_ABORTED_MESSAGE: &str = "Operation aborted by user";
 
 pub const UPLOAD_TASK_NAME: &str = "UPLOAD";

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022-2026 rsctl Contributors
+ * Copyright (C) 2022-2026 rhctl Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
  */
 use crate::domain::cmd_params::ServerMetadata;
 use crate::domain::constants::{
-    DANGEROUS_PATHS, DEFAULT_SSH_HANDSHAKE_TIMEOUT, DEFAULT_SSH_PORT, REMOTE_TEMP_SBXCTL_FOLDER,
+    DANGEROUS_PATHS, DEFAULT_SSH_HANDSHAKE_TIMEOUT, DEFAULT_SSH_PORT, REMOTE_TEMP_RHCTL_FOLDER,
     SUDO_ERR_MSG, SYSTEM_TASK_NAME,
 };
 use crate::domain::yml_config::ServerConfig;
@@ -695,7 +695,7 @@ impl ServerPool {
                 .file_or_dir_exists(
                     server_metadata,
                     task_name,
-                    REMOTE_TEMP_SBXCTL_FOLDER,
+                    REMOTE_TEMP_RHCTL_FOLDER,
                     use_sudo,
                 )
                 .await?;
@@ -703,7 +703,7 @@ impl ServerPool {
                 ask_user(server_metadata,task_name,
                     format!(
                         "Remote path '{}' already exists. Transfering will DELETE it and use it as a temp folder. Continue?",
-                        REMOTE_TEMP_SBXCTL_FOLDER
+                        REMOTE_TEMP_RHCTL_FOLDER
                     )
                     .as_str(),
                     silent,
@@ -713,7 +713,7 @@ impl ServerPool {
                 self.exec(
                     server_metadata,
                     task_name,
-                    &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
+                    &format!("rm -rf \"{}\"", REMOTE_TEMP_RHCTL_FOLDER),
                     use_sudo,
                 )
                 .await?;
@@ -906,10 +906,10 @@ impl ServerPool {
         server_metadata: &Arc<ServerMetadata>,
         task_name: &str,
     ) -> Result<(), String> {
-        let remote_temp_sbxctl_folder_exists = self
-            .file_or_dir_exists(server_metadata, task_name, REMOTE_TEMP_SBXCTL_FOLDER, true)
+        let remote_temp_rhctl_folder_exists = self
+            .file_or_dir_exists(server_metadata, task_name, REMOTE_TEMP_RHCTL_FOLDER, true)
             .await?;
-        if remote_temp_sbxctl_folder_exists {
+        if remote_temp_rhctl_folder_exists {
             log_debug!(
                 server_metadata,
                 task_name,
@@ -920,7 +920,7 @@ impl ServerPool {
             self.exec(
                 server_metadata,
                 task_name,
-                &format!("rm -rf \"{}\"", REMOTE_TEMP_SBXCTL_FOLDER),
+                &format!("rm -rf \"{}\"", REMOTE_TEMP_RHCTL_FOLDER),
                 true,
             )
             .await?;

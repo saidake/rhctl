@@ -1,12 +1,12 @@
 # Contributing
 
-Welcome! This short guide explains how to contribute effectively to **rsctl**.
+Welcome! This short guide explains how to contribute effectively to **rhctl**.
 
 ## Submitting an issue
 
-- If you find a bug, please submit an issue to our GitHub [repository](https://github.com/saidake/rsctl/issues).
+- If you find a bug, please submit an issue to our GitHub [repository](https://github.com/saidake/rhctl/issues).
 - Before submitting, search the issue tracker to see if your problem already exists. Existing issues may already have workarounds or ongoing fixes.
-- Include the `rsctl` version, OS, and enough detail to reproduce the problem (commands, config snippets, and logs help a lot).
+- Include the `rhctl` version, OS, and enough detail to reproduce the problem (commands, config snippets, and logs help a lot).
 
 ## Branch Naming Convention
 
@@ -57,7 +57,7 @@ The Rust crate lives under `main/`.
 
 ```bash
 cd main && cargo build --release && cd ..
-# Temporarily add `rsctl` to your PATH for the current terminal session.
+# Temporarily add `rhctl` to your PATH for the current terminal session.
 export PATH="$(pwd)/target/release:$PATH"
 ```
 
@@ -93,7 +93,7 @@ Manually smoke-test the commands you touched (`execute`, `upload`, `patch`, `run
 
 Use the following procedure to submit a pull request:
 
-1. Fork rsctl on GitHub (_[How to fork a repo?](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo)_)
+1. Fork rhctl on GitHub (_[How to fork a repo?](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo)_)
 
 2. Create a branch from `main` (see [Branch Naming](#branch-naming-convention))
 
@@ -115,4 +115,4 @@ Try to provide as much description behind the context of your changes and how to
 
 Done :)
 
-By following these conventions, you help us keep rsctl stable, reliable, and easy to maintain. Thank you for contributing!
+By following these conventions, you help us keep rhctl stable, reliable, and easy to maintain. Thank you for contributing!

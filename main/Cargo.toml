@@ -1,11 +1,11 @@
 [package]
-name = "rsctl"
+name = "rhctl"
 version = "1.0.1"
 edition = "2024"
-description = "High-performance Rust CLI tool for remote server management, enabling file transfers, script execution, and file patching via SSH. "
+description = "High-performance Rust CLI tool for remote host management, enabling file transfers, script execution, and file patching via SSH. "
 license = "GPL-3.0-or-later"
-repository = "https://github.com/saidake/rsctl"
-homepage = "https://github.com/saidake/rsctl"
+repository = "https://github.com/saidake/rhctl"
+homepage = "https://github.com/saidake/rhctl"
 readme = "README.md"
 keywords = ["ssh", "cli", "remote", "automation", "deployment", "patch", "file-transfer", "system-administration"]
 categories = ["command-line-utilities", "system-utilities", "network-programming"]

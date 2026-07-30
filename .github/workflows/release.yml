@@ -1,6 +1,6 @@
 # Build and Release
 #
-# Cross-platform release build for rsctl. Compiles release binaries for
+# Cross-platform release build for rhctl. Compiles release binaries for
 # Linux (x86_64 musl) and macOS (x86_64 and arm64), then uploads them as
 # workflow artifacts named by version and platform.
 #
@@ -40,12 +40,12 @@ jobs:
       - name: Rename Linux binary
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          mv target/${{ matrix.target }}/release/rsctl ../rsctl-v${VERSION}-linux-x86_64
+          mv target/${{ matrix.target }}/release/rhctl ../rhctl-v${VERSION}-linux-x86_64
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rsctl-linux
-          path: rsctl-v*-linux-x86_64
+          name: rhctl-linux
+          path: rhctl-v*-linux-x86_64
   build-macos:
     runs-on: macos-latest
     defaults:
@@ -69,12 +69,12 @@ jobs:
       - name: Rename macOS binaries
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          mv target/x86_64-apple-darwin/release/rsctl ../rsctl-v${VERSION}-macos-x86_64
-          mv target/aarch64-apple-darwin/release/rsctl ../rsctl-v${VERSION}-macos-arm64
+          mv target/x86_64-apple-darwin/release/rhctl ../rhctl-v${VERSION}-macos-x86_64
+          mv target/aarch64-apple-darwin/release/rhctl ../rhctl-v${VERSION}-macos-arm64
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: rsctl-macos
+          name: rhctl-macos
           path: |
-            rsctl-v*-macos-x86_64
-            rsctl-v*-macos-arm64
+            rhctl-v*-macos-x86_64
+            rhctl-v*-macos-arm64

@@ -67,7 +67,7 @@ common:
 # Provide global variables used in the provided paths. 
 # Can be referenced in paths using ${VAR_NAME}
 var-map:
-  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rsctl/assets"
+  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rhctl/assets"
 
 # Group mapping  (Optional)
 # Assign servers to logical groups for easier targeting
