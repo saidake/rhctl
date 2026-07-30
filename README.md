@@ -34,6 +34,7 @@
   - [MongoDB](#mongodb)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
   - [PostgreSQL](#postgresql)
+- [Contributing](#contributing)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-4)
 # Build
 ```bash
@@ -571,3 +572,6 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
     --script scripts/postgresql/install.sh \
     --use-sudo
   ```
+
+# Contributing
+If you would like to contribute to the code base or fix an issue, please see [CONTRIBUTING.md](CONTRIBUTING.md).
