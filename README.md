@@ -35,7 +35,6 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
   - [PostgreSQL](#postgresql)
 - [Contributing](#contributing)
-    - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-4)
 # Build
 ```bash
 cd main && cargo build --release && cd ..
