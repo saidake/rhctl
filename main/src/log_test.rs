@@ -37,7 +37,7 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
 #[derive(Parser)]
 #[command(name = "rhctl")]
 #[command(about = "A high-performance Rust CLI for remote file operations via SSH")]
-#[command(version = "1.0.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
