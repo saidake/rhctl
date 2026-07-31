@@ -1,6 +1,6 @@
 @echo off
 REM ************************************************************************************
-REM Copyright (C) 2022-2026 rhctl Contributors
+REM Copyright (C) 2022-2026 Craig Brown and rhctl Contributors
 REM
 REM This program is free software: you can redistribute it and/or modify
 REM it under the terms of the GNU General Public License as published by
@@ -52,8 +52,8 @@ docker run -d ^
     -p 1025:1025 ^
     -p 8025:8025 ^
     mailhog/mailhog
-REM SMTP port： 1025
-REM Web UI port： 8025
+REM SMTP portï¼š 1025
+REM Web UI portï¼š 8025
 
 if errorlevel 1 (
     echo [ERROR] Failed to start MailHog container.
