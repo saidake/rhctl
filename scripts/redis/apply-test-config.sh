@@ -1,6 +1,6 @@
 #!/bin/bash
 # ************************************************************************************
-# Copyright (C) 2022-2026 Craig Brown and rhctl Contributors
+# Copyright (C) 2022-2026 rhctl Contributors
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -76,7 +76,7 @@ apply_redis_setting() {
 
 configure_firewall() {
     if ! command -v ufw &> /dev/null; then
-        echo "[INFO] ufw not installed â€” skipping firewall configuration"
+        echo "[INFO] ufw not installed — skipping firewall configuration"
         return 0
     fi
 
@@ -157,4 +157,4 @@ fi
 
 echo "[INFO] Redis test configuration applied successfully"
 echo "[INFO] Clients can connect on port 6379 from any host"
-echo "[WARN] protected-mode is disabled â€” intended for test environments only"
+echo "[WARN] protected-mode is disabled — intended for test environments only"

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022-2026 Craig Brown and rhctl Contributors
+ * Copyright (C) 2022-2026 rhctl Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -281,7 +281,7 @@ pub async fn ask_user_option(
         result
     };
 
-    // guard is dropped here â€” after ask completes
+    // guard is dropped here — after ask completes
     ASK_ACTIVE.store(false, Ordering::SeqCst);
     res
 }
@@ -362,7 +362,7 @@ pub async fn init_logger() -> tokio::task::JoinHandle<()> {
                     );
                 }
                 _ => {
-                    // Print common log ï¼ˆ INFO / ERROR / WARN / DEBUG / REMOTE / LOCALï¼‰
+                    // Print common log （ INFO / ERROR / WARN / DEBUG / REMOTE / LOCAL）
                     clear_cur_line_and_log(
                         entry.host.as_deref(),
                         entry.user.as_deref(),

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ************************************************************************************
-# Copyright (C) 2022-2026 Craig Brown and rhctl Contributors
+# Copyright (C) 2022-2026 rhctl Contributors
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -34,7 +34,7 @@ curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
 
 echo "[INFO] Create the list file (adjust version & codename if needed)"
 # For Ubuntu 24.04 (noble)
-# For Ubuntu 22.04 (jammy) â†’ replace noble with jammy
+# For Ubuntu 22.04 (jammy) → replace noble with jammy
 echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | \
    sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list
 
