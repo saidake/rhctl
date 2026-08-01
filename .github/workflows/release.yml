@@ -1,10 +1,11 @@
 # Build and Release
 #
 # Cross-platform release build for rhctl. Compiles release binaries for
-# Linux (x86_64 musl) and macOS (x86_64 and arm64), then uploads them as
-# workflow artifacts named by version and platform.
+# Linux (x86_64 musl) and macOS (x86_64 and arm64), then attaches them
+# to the GitHub Release for the pushed tag.
 #
 # Triggered on push of a git tag matching v* (e.g. v1.0.0, v0.2.1).
+# Release notes are written manually (CI does not generate or overwrite them).
 
 name: Build and Release
 
@@ -46,6 +47,7 @@ jobs:
         with:
           name: rhctl-linux
           path: rhctl-v*-linux-x86_64
+
   build-macos:
     runs-on: macos-latest
     defaults:
@@ -78,3 +80,47 @@ jobs:
           path: |
             rhctl-v*-macos-x86_64
             rhctl-v*-macos-arm64
+
+  release:
+    needs: [build, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rhctl-linux
+          path: dist
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: rhctl-macos
+          path: dist
+
+      - name: Attach artifacts to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          TITLE="rhctl ${TAG}"
+          LINUX="dist/rhctl-v${VERSION}-linux-x86_64"
+          MACOS_X64="dist/rhctl-v${VERSION}-macos-x86_64"
+          MACOS_ARM64="dist/rhctl-v${VERSION}-macos-arm64"
+
+          ls -la dist
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$LINUX" "$MACOS_X64" "$MACOS_ARM64" --clobber
+            gh release edit "$TAG" --title "$TITLE"
+          else
+            gh release create "$TAG" \
+              --title "$TITLE" \
+              --notes "" \
+              "$LINUX" \
+              "$MACOS_X64" \
+              "$MACOS_ARM64"
+          fi
