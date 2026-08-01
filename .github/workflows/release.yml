@@ -86,6 +86,7 @@ jobs:
   release:
     needs: [build, build-macos]
     runs-on: ubuntu-latest
+    environment: homebrew
     permissions:
       contents: write
     steps:
