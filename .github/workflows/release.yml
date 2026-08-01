@@ -1,11 +1,13 @@
 # Build and Release
 #
 # Cross-platform release build for rhctl. Compiles release binaries for
-# Linux (x86_64 musl) and macOS (x86_64 and arm64), then attaches them
-# to the GitHub Release for the pushed tag.
+# Linux (x86_64 musl) and macOS (x86_64 and arm64), attaches them to the
+# GitHub Release for the pushed tag, then updates saidake/homebrew-rhctl.
 #
 # Triggered on push of a git tag matching v* (e.g. v1.0.0, v0.2.1).
 # Release notes are written manually (CI does not generate or overwrite them).
+# Homebrew tap updates require repository secret GIT_TOKEN (Contents: write
+# on saidake/homebrew-rhctl).
 
 name: Build and Release
 
@@ -124,3 +126,42 @@ jobs:
               "$MACOS_X64" \
               "$MACOS_ARM64"
           fi
+
+      - name: Checkout for Homebrew formula script
+        uses: actions/checkout@v5
+        with:
+          path: rhctl-src
+
+      - name: Update Homebrew tap
+        env:
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GIT_TOKEN:-}" ]]; then
+            echo "GIT_TOKEN secret is not set; skipping Homebrew tap update" >&2
+            exit 1
+          fi
+
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          chmod +x rhctl-src/scripts/update-homebrew-formula.sh
+
+          git clone --depth 1 \
+            "https://x-access-token:${GIT_TOKEN}@github.com/saidake/homebrew-rhctl.git" \
+            homebrew-rhctl
+
+          rhctl-src/scripts/update-homebrew-formula.sh \
+            "$VERSION" \
+            dist \
+            homebrew-rhctl/Formula/rhctl.rb
+
+          cd homebrew-rhctl
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/rhctl.rb
+          if git diff --staged --quiet; then
+            echo "Homebrew formula already up to date for v${VERSION}"
+            exit 0
+          fi
+          git commit -m "rhctl ${VERSION}"
+          git push origin HEAD:main

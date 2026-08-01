@@ -12,6 +12,7 @@
 - [rhctl (Remote Host Control)](#rhctl-remote-host-control)
 - [Preview](#preview)
 - [Table of Contents](#table-of-contents)
+- [Install](#install)
 - [Build](#build)
 - [Commands](#commands)
   - [rhctl execute](#rhctl-execute)
@@ -35,6 +36,11 @@
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
   - [PostgreSQL](#postgresql)
 - [Contributing](#contributing)
+# Install
+```bash
+brew install saidake/rhctl/rhctl
+```
+Prebuilt binaries are also attached to each [GitHub Release](https://github.com/saidake/rhctl/releases).
 # Build
 ```bash
 cd main && cargo build --release && cd ..
