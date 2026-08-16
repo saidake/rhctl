@@ -50,7 +50,7 @@ class Rhctl < Formula
   desc "High-performance Rust CLI tool for remote host management"
   homepage "https://github.com/saidake/rhctl"
   version "${VERSION}"
-  license "GPL-3.0-or-later"
+  license "Apache-2.0"
 
   on_macos do
     on_arm do
