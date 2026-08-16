@@ -450,7 +450,7 @@ Docker Desktop is an easy-to-install application for building, sharing, and runn
 **Command**:
 * Installs Docker Desktop locally on Windows.
   
-  Check out the script file: [scripts\docker\install.bat](scripts\docker\install.bat)
+  Check out the script file: [scripts/docker/install.bat](scripts/docker/install.bat)
   ```bash
   call scripts\docker\install.bat
   ```
@@ -508,14 +508,14 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
 **Commands**:
 * Installs and runs the MailHog Docker image.
   
-  Check out the script file: [scripts\mailhog\start.bat](scripts\mailhog\start.bat)  
+  Check out the script file: [scripts/mailhog/start.bat](scripts/mailhog/start.bat)  
   Example:
   ```bash
   call scripts\mailhog\start.bat
   ```
 * Stops the MailHog Docker image.
   
-  Check out the script file: [scripts\mailhog\stop.bat](scripts\mailhog\stop.bat)  
+  Check out the script file: [scripts/mailhog/stop.bat](scripts/mailhog/stop.bat)  
   Example:
   ```bash
   call scripts\mailhog\stop.bat
