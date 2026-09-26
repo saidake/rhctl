@@ -42,6 +42,9 @@ pub const DEFAULT_MAX_SESSION_LIFETIME: Duration = Duration::from_secs(600);
 pub const DEFAULT_EXECUTE_WORK_PATH: &str = "~";
 pub const DEFAULT_EXECUTE_MODE: &str = "sync";
 
+/// Min seconds between appended REMOTE lines for `\r` progress meters (e.g. curl).
+pub const REMOTE_CR_PROGRESS_INTERVAL_SECS: u64 = 30;
+
 // Connection Config
 pub const DEFAULT_SSH_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 

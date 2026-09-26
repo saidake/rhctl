@@ -17,7 +17,7 @@ use crate::domain::constants::{
 use crate::domain::yml_config::ServerConfig;
 use crate::utils::file_utils::{generate_remote_temp_dir, get_local_path_base_name};
 use crate::utils::log_utils::ask_user;
-use crate::utils::ssh_utils::execution_print;
+use crate::utils::ssh_utils::{CrProgressPrinter, feed_remote_stream};
 use crate::{log_debug, log_error_direct, log_info, log_warn, log_warn_direct};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -1005,50 +1005,44 @@ impl ServerPool {
 
         let mut stdout_buf = String::new();
         let mut stderr_buf = String::new();
-        let mut first_line = true;
+        let mut skip_sudo_blank = use_sudo;
         let mut stdout_collected = Vec::new();
         let mut stderr_collected = Vec::new();
-        let mut partial_stdout_line = String::new();
-        let mut partial_stderr_line = String::new();
+        let mut partial_stdout = String::new();
+        let mut partial_stderr = String::new();
+        let mut stdout_progress = CrProgressPrinter::new();
+        let mut stderr_progress = CrProgressPrinter::new();
 
         while let Some(msg) = channel_guard.channel.wait().await {
             match msg {
                 ChannelMsg::Data { data } => {
                     stdout_collected.extend_from_slice(&data);
-                    let data_str = String::from_utf8_lossy(&data).to_string();
-                    partial_stdout_line.push_str(&data_str);
-
-                    // Process complete lines
-                    while let Some(line_end) = partial_stdout_line.find('\n') {
-                        let line = partial_stdout_line[..line_end].to_string();
-                        partial_stdout_line = partial_stdout_line[line_end + 1..].to_string();
-
-                        if print_log {
-                            // Remove the first \n or empty lines from pw_with_newline
-                            if first_line && use_sudo && line.trim().is_empty() {
-                                first_line = false;
-                                continue;
-                            }
-                            execution_print(server_metadata, task_name, &line, false)?;
-                        }
-
-                        if first_line && use_sudo {
-                            first_line = false;
-                        }
+                    if print_log {
+                        let data_str = String::from_utf8_lossy(&data);
+                        feed_remote_stream(
+                            &mut partial_stdout,
+                            &mut stdout_progress,
+                            &data_str,
+                            server_metadata,
+                            task_name,
+                            &mut skip_sudo_blank,
+                        )?;
                     }
                 }
                 ChannelMsg::ExtendedData { data, ext } if ext == 1 => {
                     stderr_collected.extend_from_slice(&data);
-                    let data_str = String::from_utf8_lossy(&data).to_string();
-                    partial_stderr_line.push_str(&data_str);
-
-                    // Process complete lines
-                    while let Some(line_end) = partial_stderr_line.find('\n') {
-                        let line = partial_stderr_line[..line_end].to_string();
-                        partial_stderr_line = partial_stderr_line[line_end + 1..].to_string();
-                        // if print_log {
-                        //     execution_print(&line, true)?;
-                        // }
+                    if print_log {
+                        let data_str = String::from_utf8_lossy(&data);
+                        // Remote stderr (e.g. curl progress) streams as REMOTE, not ERROR.
+                        let mut no_sudo_skip = false;
+                        feed_remote_stream(
+                            &mut partial_stderr,
+                            &mut stderr_progress,
+                            &data_str,
+                            server_metadata,
+                            task_name,
+                            &mut no_sudo_skip,
+                        )?;
                     }
                 }
                 ChannelMsg::ExitStatus { exit_status } => {
@@ -1081,14 +1075,17 @@ impl ServerPool {
             }
         }
 
-        // Handle any remaining partial lines
-        if !partial_stdout_line.is_empty() && print_log {
-            if !(first_line && use_sudo && partial_stdout_line.trim().is_empty()) {
-                execution_print(server_metadata, task_name, &partial_stdout_line, false)?;
+        if print_log {
+            stdout_progress.flush(server_metadata, task_name)?;
+            if !partial_stdout.is_empty()
+                && !(use_sudo && skip_sudo_blank && partial_stdout.trim().is_empty())
+            {
+                stdout_progress.on_lf(&partial_stdout, server_metadata, task_name)?;
             }
-        }
-        if !partial_stderr_line.is_empty() && print_log {
-            execution_print(server_metadata, task_name, &partial_stderr_line, true)?;
+            stderr_progress.flush(server_metadata, task_name)?;
+            if !partial_stderr.is_empty() {
+                stderr_progress.on_lf(&partial_stderr, server_metadata, task_name)?;
+            }
         }
 
         // Collect final output for return
