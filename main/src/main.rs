@@ -56,13 +56,6 @@ struct Cli {
         help = "Global log level (debug, info, warn, error)"
     )]
     log_level: Option<String>,
-
-    #[arg(
-        long,
-        global = true,
-        value_parser = parse_var,
-        help = "Provide global variables used in the provided paths in KEY=VALUE format, can be specified multiple times")]
-    var: Vec<(String, String)>,
 }
 
 #[derive(Subcommand)]
@@ -312,32 +305,22 @@ enum Commands {
     },
 }
 
-// Parse KEY=VALUE format for --var
-fn parse_var(s: &str) -> Result<(String, String), String> {
-    let parts: Vec<&str> = s.splitn(2, '=').collect();
-    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
-        return Err(format!("Invalid --var format: '{}'. Expected KEY=VALUE", s));
-    }
-    Ok((parts[0].to_string(), parts[1].to_string()))
-}
-
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    // Convert CLI vars to HashMap
-    let cli_vars: HashMap<String, String> = cli.var.iter().cloned().collect();
-    // Determine log level
-    let log_level = cli_vars
-        .get("LOG_LEVEL")
-        .map(|s| s.as_str())
-        .or_else(|| cli.log_level.as_deref())
-        .unwrap_or("info");
-    // println!("log_level: {}", log_level);
+    // Path placeholders (${NAME}) resolve from the process environment; YAML mode
+    // may also supply values via var-map (those override env).
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let log_level = cli
+        .log_level
+        .clone()
+        .or_else(|| std::env::var("LOG_LEVEL").ok())
+        .unwrap_or_else(|| "info".to_string());
 
     // Initialize logging
     env_logger::Builder::new()
         .format(|buf, record| writeln!(buf, "{}", record.args()))
-        .filter_level(match log_level {
+        .filter_level(match log_level.as_str() {
             "debug" => log::LevelFilter::Debug,
             "info" => log::LevelFilter::Info,
             "warn" => log::LevelFilter::Warn,
@@ -396,11 +379,11 @@ async fn main() {
                 max_sessions_per_server,
                 session_acquire_timeout,
                 max_session_lifetime,
-                &cli_vars,
+                &env_vars,
             );
             let mut mappings = HashMap::new();
             if let Err(e) =
-                load_properties(config.properties_file.as_str(), &mut mappings, &cli_vars)
+                load_properties(config.properties_file.as_str(), &mut mappings, &env_vars)
             {
                 log_error_with_host_direct!(
                     user.as_str(),
@@ -518,7 +501,7 @@ async fn main() {
                 max_sessions_per_server,
                 session_acquire_timeout,
                 max_session_lifetime,
-                &cli_vars,
+                &env_vars,
             );
 
             log_info_direct!("Starting initial TCP connectivity check for server...");
@@ -626,7 +609,7 @@ async fn main() {
                 max_sessions_per_server,
                 session_acquire_timeout,
                 max_session_lifetime,
-                &cli_vars,
+                &env_vars,
             );
 
             log_info_direct!("Starting initial TCP connectivity check for server...");
@@ -715,13 +698,6 @@ async fn main() {
                     flush_logs_and_exit(log_handle).await;
                 }
             };
-
-            if !cli_vars.is_empty() {
-                ask_user_and_abort_option(None, None,
-                "CLI --var arguments are ignored when using YAML config. Using vars from YAML instead, Continue?",
-                false,
-                ).await;
-            }
 
             log_info_direct!("Starting initial TCP connectivity check for servers...");
             let failed_servers = global_server_pool

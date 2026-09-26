@@ -138,7 +138,7 @@ pub fn load_properties(
     Ok(())
 }
 
-pub fn expand_vars(input: &str, vars: &HashMap<String, String>) -> Result<String, String> {
+pub fn expand_vars(input: &str, overlays: &HashMap<String, String>) -> Result<String, String> {
     if input.trim().is_empty() {
         return Err("Input is empty".to_string());
     }
@@ -151,19 +151,18 @@ pub fn expand_vars(input: &str, vars: &HashMap<String, String>) -> Result<String
 
         if let Some(end) = rest.find('}') {
             let key = &rest[..end];
-            match vars.get(key) {
-                Some(value) => {
-                    if value.is_empty() {
-                        return Err(format!(
-                            "Variable '{}' is empty in '{}'",
-                            key, input
-                        ));
-                    }
-                    result.push_str(value);
+            let value = overlays
+                .get(key)
+                .cloned()
+                .or_else(|| std::env::var(key).ok());
+            match value {
+                Some(value) if !value.is_empty() => result.push_str(&value),
+                Some(_) => {
+                    return Err(format!("Variable '{}' is empty in '{}'", key, input));
                 }
                 None => {
                     return Err(format!(
-                        "Variable '{}' not provided in '{}'",
+                        "Variable '{}' not found in environment (or var-map) in '{}'",
                         key, input
                     ));
                 }

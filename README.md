@@ -129,16 +129,16 @@ echo "Remote Execution 1.2"
   Example duration values: `20s`, `5m`, `1h`
 
 **Optional Global Parameters**:
-- `--log_level <level>`: Set log level (debug, info, warn, error; default: info).
-- `--var KEY=VALUE`: Provide global variables used in the provided paths (multiple allowed; overrides in YAML mode are ignored).  
+- `--log-level <level>`: Set log level (debug, info, warn, error; default: info). Also accepts `LOG_LEVEL` from the environment.
+- Path placeholders `${NAME}` are expanded from the process environment.  
   Example:
   ```bash
+  export ASSETS_ROOT=/path/to/assets
   rhctl execute \
     --host 192.168.75.128 \
     --user test99 \
     --script '${ASSETS_ROOT}/example-bash1.sh' \
     --script '${ASSETS_ROOT}/example-bash2.sh' \
-    --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rhctl/assets \
     --mode async
   ```
 
@@ -209,21 +209,21 @@ rhctl upload \
   Example duration values: `20s`, `5m`, `1h`
 
 **Optional Global Parameters**:
-- `--log_level <level>`: Set log level (debug, info, warn, error; default: info).
-- `--var KEY=VALUE`: Provide global variables used in the provided paths (multiple allowed; overrides in YAML mode are ignored).  
+- `--log-level <level>`: Set log level (debug, info, warn, error; default: info). Also accepts `LOG_LEVEL` from the environment.
+- Path placeholders `${NAME}` are expanded from the process environment.  
   Example:  
     ```properties
     ${ASSETS_ROOT}/example1.txt=~/examples
     ${ASSETS_ROOT}/exampledir=~/examples/targetdir
     ```
     ```bash
+    export ASSETS_ROOT=/path/to/assets
     rhctl upload \
       --host 192.168.75.128 \
       --user test99 \
       --ssh-port 22 \
       --use-sudo \
-      --properties-file config/path-mapping.properties \
-      --var ASSETS_ROOT=/mnt/c/Users/saidake/Desktop/DevProjects/rhctl/assets
+      --properties-file config/path-mapping.properties
     ```
 
 ## rhctl patch
@@ -381,10 +381,10 @@ common:
     max_session_lifetime: 10m
 
 # Global variables  (Optional)
-# Provide global variables used in the provided paths. 
-# Can be referenced in paths using ${VAR_NAME}
+# Provide values for ${VAR_NAME} placeholders in paths.
+# Entries here override the same name from the process environment.
 var-map:
-  ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rhctl/assets"
+  ASSETS_ROOT: "/path/to/assets"
 
 # Group mapping  (Optional)
 # Assign servers to logical groups for easier targeting

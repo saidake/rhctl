@@ -194,6 +194,7 @@ pub struct YmlConfig {
     // multiple deployment configs
     pub configs: Option<Vec<NamedConfig>>,
 
+    /// Optional `${NAME}` overlays for paths (override process environment).
     #[serde(default)]
     pub var_map: HashMap<String, String>,
 }

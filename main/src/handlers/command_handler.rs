@@ -118,7 +118,7 @@ pub fn parse_patch_config_from_cmd(
     max_sessions_per_server: Option<usize>,
     session_acquire_timeout: Option<Duration>,
     max_session_lifetime: Option<Duration>,
-    cli_vars: &HashMap<String, String>,
+    vars: &HashMap<String, String>,
 ) -> PatchCmdConfig {
     let ssh_port = ssh_port.unwrap_or(DEFAULT_SSH_PORT);
     let (password, identity_file, certificate_file) = resolve_auth(
@@ -148,19 +148,19 @@ pub fn parse_patch_config_from_cmd(
         use_rsync,
         silent,
         recover,
-        local_path: substitute_vars(&local_path, &cli_vars).unwrap_or_else(|e| {
+        local_path: substitute_vars(&local_path, &vars).unwrap_or_else(|e| {
             log_error_with_host_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
-        remote_upload: substitute_vars(&remote_upload, &cli_vars).unwrap_or_else(|e| {
+        remote_upload: substitute_vars(&remote_upload, &vars).unwrap_or_else(|e| {
             log_error_with_host_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
-        remote_path: substitute_vars(&remote_path, &cli_vars).unwrap_or_else(|e| {
+        remote_path: substitute_vars(&remote_path, &vars).unwrap_or_else(|e| {
             log_error_with_host_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
-        remote_backup: substitute_vars(&remote_backup, &cli_vars).unwrap_or_else(|e| {
+        remote_backup: substitute_vars(&remote_backup, &vars).unwrap_or_else(|e| {
             log_error_with_host_direct!(&user, &host, PATCH_TASK_NAME, "{}", e);
             exit(1);
         }),
@@ -187,7 +187,7 @@ pub fn parse_execute_config_from_cmd(
     max_sessions_per_server: Option<usize>,
     session_acquire_timeout: Option<Duration>,
     max_session_lifetime: Option<Duration>,
-    cli_vars: &HashMap<String, String>,
+    vars: &HashMap<String, String>,
 ) -> ExecuteCmdConfig {
     let ssh_port = ssh_port.unwrap_or(DEFAULT_SSH_PORT);
     let (password, identity_file, certificate_file) = resolve_auth(
@@ -218,7 +218,7 @@ pub fn parse_execute_config_from_cmd(
         scripts: script
             .into_iter()
             .map(|s| {
-                resolve_script_invocation(&s, &cli_vars).unwrap_or_else(|e| {
+                resolve_script_invocation(&s, &vars).unwrap_or_else(|e| {
                     log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
                     exit(1);
                 })
@@ -227,7 +227,7 @@ pub fn parse_execute_config_from_cmd(
         mode: mode.unwrap_or(DEFAULT_EXECUTE_MODE.to_string()),
         work_path: substitute_vars(
             &work_path.unwrap_or_else(|| DEFAULT_EXECUTE_WORK_PATH.to_string()),
-            &cli_vars,
+            &vars,
         )
         .unwrap_or_else(|e| {
             log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
@@ -254,7 +254,7 @@ pub fn parse_upload_config_from_cmd(
     max_sessions_per_server: Option<usize>,
     session_acquire_timeout: Option<Duration>,
     max_session_lifetime: Option<Duration>,
-    cli_vars: &HashMap<String, String>,
+    vars: &HashMap<String, String>,
 ) -> UploadCmdConfig {
     let ssh_port = ssh_port.unwrap_or(DEFAULT_SSH_PORT);
     let (password, identity_file, certificate_file) = resolve_auth(
@@ -282,7 +282,7 @@ pub fn parse_upload_config_from_cmd(
         use_sudo,
         use_rsync,
         silent,
-        properties_file: substitute_vars(&properties_file, &cli_vars).unwrap_or_else(|e| {
+        properties_file: substitute_vars(&properties_file, &vars).unwrap_or_else(|e| {
             log_error_with_host_direct!(user, host, UPLOAD_TASK_NAME, "{}", e);
             exit(1);
         }),

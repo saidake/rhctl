@@ -47,9 +47,6 @@ struct Cli {
 
     #[arg(long, help = "Name of the configuration inside the YAML file to use")]
     config_name: Option<String>,
-
-    #[arg(long, value_parser = parse_var, help = "Global variable in KEY=VALUE format, can be specified multiple times")]
-    var: Vec<(String, String)>,
 }
 
 #[derive(Subcommand)]
@@ -194,15 +191,6 @@ enum Commands {
         #[arg(long, default_value = "false", help = "Recover from backup")]
         recover: bool,
     },
-}
-
-// Parse KEY=VALUE format for --var
-fn parse_var(s: &str) -> Result<(String, String), String> {
-    let parts: Vec<&str> = s.splitn(2, '=').collect();
-    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
-        return Err(format!("Invalid --var format: '{}'. Expected KEY=VALUE", s));
-    }
-    Ok((parts[0].to_string(), parts[1].to_string()))
 }
 
 #[tokio::main]
