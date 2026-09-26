@@ -4,22 +4,27 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # ************************************************************************************
-# Restrict PostgreSQL remote access to an allow-list of client IPs.
+# Set PostgreSQL remote access to an exact allow-list of client addresses.
 #
-# Removes open "0.0.0.0/0" / "::/0" host-all rules added by init.sh (any auth method)
-# and ensures one `host all all <ip>/32 <auth-method>` line per IP.
+# Replaces existing remote `host all all …` rules (keeps localhost 127.0.0.1/32
+# and ::1/128). Re-runs overwrite the previous allow-list.
 #
 # Idempotent — safe to re-run.
 #
 # Usage:
 #   ./limit-remote-ips.sh \
-#     --ips 192.168.1.100,10.0.0.5,192.168.1.0/24 \
+#     --allowed-ips 192.168.1.100,10.0.0.5,192.168.1.0/24 \
+#     --auth-method md5
+#   ./limit-remote-ips.sh \
+#     --allowed-ips 0.0.0.0/0,::/0 \
 #     --auth-method md5
 #
 # Required Parameters:
-#   --ips <ip>[,<ip>...]
-#       Allow-list of client addresses (or pass IPs as positional args).
-#         Example ip values: `192.168.1.100`, `10.0.0.5`, `192.168.1.0/24`
+#   --allowed-ips <ip>[,<ip>...]
+#       Desired final allow-list (overwrites prior remote host-all rules).
+#       Use `0.0.0.0/0,::/0` to allow all IPv4 + IPv6 again.
+#         Example ip values: `192.168.1.100`, `10.0.0.5`, `192.168.1.0/24`,
+#           `0.0.0.0/0`, `::/0`
 #
 # Optional Parameters:
 #   --auth-method <method>
@@ -28,7 +33,7 @@
 #
 # Override Parameters:
 #   RHCTL_PG_ALLOW_IPS=<ip>[,<ip>...]
-#       Same as `--ips`.
+#       Same as `--allowed-ips`.
 #   RHCTL_PG_AUTH_METHOD=<method>
 #       Same as `--auth-method`.
 #
@@ -45,7 +50,7 @@ IPS=()
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --ips)
+        --allowed-ips)
             IFS=',' read -r -a _parsed <<<"$2"
             IPS+=("${_parsed[@]}")
             shift 2
@@ -55,7 +60,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,40p' "$0"
+            sed -n '2,50p' "$0"
             exit 0
             ;;
         --*)
@@ -74,7 +79,7 @@ if [ "${#IPS[@]}" -eq 0 ] && [ -n "${RHCTL_PG_ALLOW_IPS:-}" ]; then
 fi
 
 if [ "${#IPS[@]}" -eq 0 ]; then
-    echo "[ERROR] Required: --ips IP[,IP...] or positional IPs (or RHCTL_PG_ALLOW_IPS)"
+    echo "[ERROR] Required: --allowed-ips IP[,IP...] or positional IPs (or RHCTL_PG_ALLOW_IPS)"
     exit 1
 fi
 
@@ -102,40 +107,53 @@ if [ ! -f "$HBA_FILE" ]; then
     exit 1
 fi
 
-CHANGED=false
+normalize_cidr() {
+    local ip="$1"
+    if [[ "$ip" != */* ]]; then
+        echo "${ip}/32"
+    else
+        echo "$ip"
+    fi
+}
 
-# Drop wide-open rules regardless of auth method suffix.
-if sudo grep -qE '^host[[:space:]]+all[[:space:]]+all[[:space:]]+0\.0\.0\.0/0[[:space:]]+' "$HBA_FILE"; then
-    sudo sed -i -E '/^host[[:space:]]+all[[:space:]]+all[[:space:]]+0\.0\.0\.0\/0[[:space:]]+/d' "$HBA_FILE"
-    log "Removed host all all 0.0.0.0/0 rules"
-    CHANGED=true
-fi
-if sudo grep -qE '^host[[:space:]]+all[[:space:]]+all[[:space:]]+::/0[[:space:]]+' "$HBA_FILE"; then
-    sudo sed -i -E '/^host[[:space:]]+all[[:space:]]+all[[:space:]]+::\/0[[:space:]]+/d' "$HBA_FILE"
-    log "Removed host all all ::/0 rules"
-    CHANGED=true
-fi
+# Snapshot remote host-all lines (exclude localhost).
+remote_hba_snapshot() {
+    sudo grep -E '^host[[:space:]]+all[[:space:]]+all[[:space:]]+' "$HBA_FILE" 2>/dev/null \
+        | grep -Ev '[[:space:]](127\.0\.0\.1/32|::1/128)[[:space:]]' || true
+}
 
+# Drop all remote host-all rules; keep localhost.
+remove_remote_hba_rules() {
+    sudo sed -i -E \
+        '/^host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1\/32|::1\/128)[[:space:]]+/b
+         /^host[[:space:]]+all[[:space:]]+all[[:space:]]+/d' \
+        "$HBA_FILE"
+}
+
+DESIRED_CIDRS=()
 for raw in "${IPS[@]}"; do
     ip="$(echo "$raw" | xargs)"
     [ -z "$ip" ] && continue
-    if [[ "$ip" != */* ]]; then
-        cidr="${ip}/32"
-    else
-        cidr="$ip"
-    fi
-    line="host    all             all             ${cidr}               ${AUTH}"
-    escaped_cidr="${cidr//\//\\/}"
-    if sudo grep -qE "^host[[:space:]]+all[[:space:]]+all[[:space:]]+${escaped_cidr}[[:space:]]+${AUTH}" "$HBA_FILE"; then
-        log "Already allowed: ${cidr} (${AUTH})"
-        continue
-    fi
-    echo "$line" | sudo tee -a "$HBA_FILE" >/dev/null
-    log "Allowed ${cidr} with auth-method ${AUTH}"
-    CHANGED=true
+    DESIRED_CIDRS+=("$(normalize_cidr "$ip")")
 done
 
-if [ "$CHANGED" = true ]; then
+if [ "${#DESIRED_CIDRS[@]}" -eq 0 ]; then
+    echo "[ERROR] --allowed-ips produced an empty allow-list"
+    exit 1
+fi
+
+BEFORE="$(remote_hba_snapshot)"
+remove_remote_hba_rules
+
+for cidr in "${DESIRED_CIDRS[@]}"; do
+    line="host    all             all             ${cidr}               ${AUTH}"
+    echo "$line" | sudo tee -a "$HBA_FILE" >/dev/null
+    log "Allowed ${cidr} with auth-method ${AUTH}"
+done
+
+AFTER="$(remote_hba_snapshot)"
+
+if [ "$BEFORE" != "$AFTER" ]; then
     log "Reloading PostgreSQL"
     sudo systemctl reload postgresql || sudo systemctl restart postgresql
 else

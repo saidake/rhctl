@@ -8,9 +8,10 @@
 #
 # Creates once (skips when state file / objects already exist):
 #   - random database name / role / password (preset formats; random preset if unset)
-# Sets listen_addresses='*'. Remote pg_hba rules:
-#   - default: host all from 0.0.0.0/0 and ::/0
-#   - with --ips: only the listed client addresses (same as limit-remote-ips.sh)
+# Sets listen_addresses='*'. Remote pg_hba rules (exact allow-list; re-runs overwrite):
+#   - default / omit --allowed-ips: 0.0.0.0/0 and ::/0
+#   - with --allowed-ips: only those client addresses (same as limit-remote-ips.sh)
+#   - reopen after restrict: --allowed-ips 0.0.0.0/0,::/0
 #
 # Idempotent — safe to re-run.
 #
@@ -18,7 +19,12 @@
 #   ./init.sh \
 #     --port 5432 \
 #     --auth-method md5 \
-#     --ips 192.168.1.100,10.0.0.5 \
+#     --allowed-ips 192.168.1.100,10.0.0.5 \
+#     --credential-profile hardened
+#   ./init.sh \
+#     --port 5432 \
+#     --auth-method md5 \
+#     --allowed-ips 0.0.0.0/0,::/0 \
 #     --credential-profile hardened
 #   ./init.sh \
 #     --port 5433 \
@@ -35,9 +41,11 @@
 #   --auth-method <method>
 #       pg_hba auth method (default: `md5`).
 #         Example method values: `md5`, `scram-sha-256`, `password`
-#   --ips <ip>[,<ip>...]
-#       Restrict remote access to these client addresses (omit to allow all).
-#         Example ip values: `192.168.1.100`, `10.0.0.5`, `192.168.1.0/24`
+#   --allowed-ips <ip>[,<ip>...]
+#       Desired final remote allow-list (overwrites prior remote host-all rules;
+#       omit for `0.0.0.0/0,::/0`). Use `0.0.0.0/0,::/0` to allow all again.
+#         Example ip values: `192.168.1.100`, `10.0.0.5`, `192.168.1.0/24`,
+#           `0.0.0.0/0`, `::/0`
 #   --credential-profile <profile>
 #       Bundle of name + password formats. If unset (and formats unset), a profile is
 #       chosen at random so installs do not share one pattern.
@@ -73,7 +81,7 @@
 #   RHCTL_PG_AUTH_METHOD=<method>
 #       Same as `--auth-method`.
 #   RHCTL_PG_ALLOW_IPS=<ip>[,<ip>...]
-#       Same as `--ips`.
+#       Same as `--allowed-ips`.
 #   RHCTL_PG_CREDENTIAL_PROFILE=<profile>
 #       Same as `--credential-profile`.
 #   RHCTL_PG_DB_NAME_FORMAT=<format>
@@ -116,7 +124,7 @@ while [ "$#" -gt 0 ]; do
             RHCTL_PG_AUTH_METHOD="$2"
             shift 2
             ;;
-        --ips)
+        --allowed-ips)
             IFS=',' read -r -a _parsed <<<"$2"
             IPS+=("${_parsed[@]}")
             shift 2
@@ -138,7 +146,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,75p' "$0"
+            sed -n '2,95p' "$0"
             exit 0
             ;;
         --*)
@@ -342,30 +350,40 @@ set_conf_kv() {
     return 0
 }
 
-ensure_hba_line() {
-    local line="$1"
-    if sudo grep -Fqx "$line" "$HBA_FILE"; then
-        log "pg_hba.conf already has: $line"
-        return 1
+normalize_cidr() {
+    local ip="$1"
+    if [[ "$ip" != */* ]]; then
+        echo "${ip}/32"
+    else
+        echo "$ip"
     fi
-    echo "$line" | sudo tee -a "$HBA_FILE" >/dev/null
-    log "Added pg_hba.conf: $line"
-    return 0
 }
 
-remove_open_hba_rules() {
-    local changed=false
-    if sudo grep -qE '^host[[:space:]]+all[[:space:]]+all[[:space:]]+0\.0\.0\.0/0[[:space:]]+' "$HBA_FILE"; then
-        sudo sed -i -E '/^host[[:space:]]+all[[:space:]]+all[[:space:]]+0\.0\.0\.0\/0[[:space:]]+/d' "$HBA_FILE"
-        log "Removed host all all 0.0.0.0/0 rules"
-        changed=true
-    fi
-    if sudo grep -qE '^host[[:space:]]+all[[:space:]]+all[[:space:]]+::/0[[:space:]]+' "$HBA_FILE"; then
-        sudo sed -i -E '/^host[[:space:]]+all[[:space:]]+all[[:space:]]+::\/0[[:space:]]+/d' "$HBA_FILE"
-        log "Removed host all all ::/0 rules"
-        changed=true
-    fi
-    if [ "$changed" = true ]; then
+remote_hba_snapshot() {
+    sudo grep -E '^host[[:space:]]+all[[:space:]]+all[[:space:]]+' "$HBA_FILE" 2>/dev/null \
+        | grep -Ev '[[:space:]](127\.0\.0\.1/32|::1/128)[[:space:]]' || true
+}
+
+remove_remote_hba_rules() {
+    sudo sed -i -E \
+        '/^host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1\/32|::1\/128)[[:space:]]+/b
+         /^host[[:space:]]+all[[:space:]]+all[[:space:]]+/d' \
+        "$HBA_FILE"
+}
+
+# Replace remote host-all rules with the desired CIDR list. Returns 0 if changed.
+sync_remote_hba_allowlist() {
+    local -a desired=("$@")
+    local before after cidr line
+    before="$(remote_hba_snapshot)"
+    remove_remote_hba_rules
+    for cidr in "${desired[@]}"; do
+        line="host    all             all             ${cidr}               ${AUTH}"
+        echo "$line" | sudo tee -a "$HBA_FILE" >/dev/null
+        log "pg_hba allow: ${cidr} (${AUTH})"
+    done
+    after="$(remote_hba_snapshot)"
+    if [ "$before" != "$after" ]; then
         return 0
     fi
     return 1
@@ -391,24 +409,24 @@ if set_conf_kv "port" "${RHCTL_PG_PORT}" "$CONF_FILE"; then NEED_RESTART=true; f
 
 AUTH="$RHCTL_PG_AUTH_METHOD"
 
-# --- remote auth ---
+# --- remote auth (exact allow-list; re-runs overwrite) ---
+DESIRED_CIDRS=()
 if [ "${#IPS[@]}" -gt 0 ]; then
-    if remove_open_hba_rules; then NEED_RESTART=true; fi
     for raw in "${IPS[@]}"; do
         ip="$(echo "$raw" | xargs)"
         [ -z "$ip" ] && continue
-        if [[ "$ip" != */* ]]; then
-            cidr="${ip}/32"
-        else
-            cidr="$ip"
-        fi
-        line="host    all             all             ${cidr}               ${AUTH}"
-        if ensure_hba_line "$line"; then NEED_RESTART=true; fi
+        DESIRED_CIDRS+=("$(normalize_cidr "$ip")")
     done
 else
-    if ensure_hba_line "host    all             all             0.0.0.0/0               ${AUTH}"; then NEED_RESTART=true; fi
-    if ensure_hba_line "host    all             all             ::/0                    ${AUTH}"; then NEED_RESTART=true; fi
+    DESIRED_CIDRS=("0.0.0.0/0" "::/0")
 fi
+
+if [ "${#DESIRED_CIDRS[@]}" -eq 0 ]; then
+    echo "[ERROR] --allowed-ips produced an empty allow-list"
+    exit 1
+fi
+
+if sync_remote_hba_allowlist "${DESIRED_CIDRS[@]}"; then NEED_RESTART=true; fi
 
 configure_firewall "$RHCTL_PG_PORT"
 
@@ -485,7 +503,7 @@ echo "[INFO]   DB_NAME_FORMAT=${DB_NAME_FORMAT:-}"
 echo "[INFO]   USER_NAME_FORMAT=${DB_USER_NAME_FORMAT:-$USER_NAME_FORMAT}"
 echo "[INFO]   PASSWORD_FORMAT=${DB_PASSWORD_FORMAT:-$PASSWORD_FORMAT}"
 if [ "${#IPS[@]}" -gt 0 ]; then
-    echo "[INFO]   ALLOW_IPS=${IPS[*]}"
+    echo "[INFO]   ALLOW_IPS=${DESIRED_CIDRS[*]}"
 else
     echo "[INFO]   ALLOW_IPS=0.0.0.0/0 ::/0"
 fi
