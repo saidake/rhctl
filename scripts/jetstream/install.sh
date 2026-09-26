@@ -12,22 +12,29 @@
 # Usage:
 #   ./install.sh
 #   ./install.sh --nats-version v2.15.0
+#   ./install.sh --archive /home/test99/nats-server-v2.15.0-linux-amd64.tar.gz
 #
 # Required Parameters:
 #   (none)
 #
 # Optional Parameters:
 #   --nats-version <version>
-#       NATS Server release tag to install when missing (default: `latest`).
-#       A leading `v` is required in the download URL and is added if omitted.
+#       NATS Server release tag to download when missing and `--archive` is unset
+#       (default: `latest`). A leading `v` is added if omitted.
 #         Example version values: `latest`, `v2.15.0`, `v2.12.5`
+#   --archive <path>
+#       Existing NATS Server `.tar.gz` on this host; skips GitHub download.
+#         Example path values: `/home/test99/nats-server-v2.15.0-linux-amd64.tar.gz`
 #
 # Override Parameters:
 #   RHCTL_NATS_VERSION=<version>
 #       Same as `--nats-version`.
 #         Example version values: `latest`, `v2.15.0`, `v2.12.5`
+#   RHCTL_NATS_ARCHIVE=<path>
+#       Same as `--archive`.
+#         Example path values: `/home/test99/nats-server-v2.15.0-linux-amd64.tar.gz`
 #
-# Since : 1.0.2
+# Since : 1.0.3
 # Date  : Sep 26, 2026
 # ************************************************************************************
 # Commands:
@@ -38,6 +45,7 @@
 set -e
 
 NATS_VERSION="${RHCTL_NATS_VERSION:-latest}"
+NATS_ARCHIVE="${RHCTL_NATS_ARCHIVE:-}"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/nats"
 DATA_DIR="/var/lib/nats"
@@ -54,8 +62,16 @@ while [[ $# -gt 0 ]]; do
       NATS_VERSION="$2"
       shift 2
       ;;
+    --archive)
+      if [[ -z "${2:-}" ]]; then
+        echo "[ERROR] --archive requires a value."
+        exit 1
+      fi
+      NATS_ARCHIVE="$2"
+      shift 2
+      ;;
     -h|--help)
-      sed -n '2,40p' "$0"
+      sed -n '2,45p' "$0"
       exit 0
       ;;
     *)
@@ -99,7 +115,11 @@ echo "[INFO] Updating package index..."
 sudo apt-get update -y
 
 echo "[INFO] Installing prerequisites..."
-sudo apt-get install -y curl tar
+if [[ -n "$NATS_ARCHIVE" ]]; then
+  sudo apt-get install -y tar
+else
+  sudo apt-get install -y curl tar
+fi
 
 # ------------------------------------------------
 # Install NATS Server
@@ -108,17 +128,26 @@ sudo apt-get install -y curl tar
 if command -v nats-server >/dev/null 2>&1; then
   echo "[INFO] NATS already installed: $(nats-server --version)"
 else
-  NATS_VERSION="$(normalize_nats_version "$(resolve_nats_version "$NATS_VERSION")")"
-  echo "[INFO] Installing NATS Server ${NATS_VERSION}..."
-
   TMP_DIR=$(mktemp -d)
   trap 'rm -rf "${TMP_DIR}"' EXIT
 
-  DOWNLOAD_URL="https://github.com/nats-io/nats-server/releases/download/${NATS_VERSION}/nats-server-${NATS_VERSION}-linux-amd64.tar.gz"
-  echo "[INFO] Downloading: curl -fL \"${DOWNLOAD_URL}\" -o \"${TMP_DIR}/nats-server.tar.gz\""
-  curl -fL "${DOWNLOAD_URL}" -o "${TMP_DIR}/nats-server.tar.gz"
+  if [[ -n "$NATS_ARCHIVE" ]]; then
+    if [[ ! -f "$NATS_ARCHIVE" ]]; then
+      echo "[ERROR] Archive not found: ${NATS_ARCHIVE}"
+      exit 1
+    fi
+    echo "[INFO] Installing NATS Server from archive: ${NATS_ARCHIVE}"
+    ARCHIVE_PATH="$NATS_ARCHIVE"
+  else
+    NATS_VERSION="$(normalize_nats_version "$(resolve_nats_version "$NATS_VERSION")")"
+    echo "[INFO] Installing NATS Server ${NATS_VERSION}..."
+    DOWNLOAD_URL="https://github.com/nats-io/nats-server/releases/download/${NATS_VERSION}/nats-server-${NATS_VERSION}-linux-amd64.tar.gz"
+    ARCHIVE_PATH="${TMP_DIR}/nats-server.tar.gz"
+    echo "[INFO] Downloading: curl -fL \"${DOWNLOAD_URL}\" -o \"${ARCHIVE_PATH}\""
+    curl -fL "${DOWNLOAD_URL}" -o "${ARCHIVE_PATH}"
+  fi
 
-  tar -xzf "${TMP_DIR}/nats-server.tar.gz" -C "${TMP_DIR}"
+  tar -xzf "${ARCHIVE_PATH}" -C "${TMP_DIR}"
 
   NATS_BIN=$(find "${TMP_DIR}" -name "nats-server" -type f | head -1)
   if [[ -z "$NATS_BIN" ]]; then

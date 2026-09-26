@@ -626,6 +626,15 @@ NATS Server with JetStream enabled for persistent messaging streams.
     --script scripts/jetstream/install.sh \
     --use-sudo
   ```
+  Example using an existing archive already on the remote host (skips curl download):
+  ```bash
+  rhctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script "scripts/jetstream/install.sh --archive /home/test99/nats-server-v2.15.0-linux-amd64.tar.gz" \
+    --use-sudo
+  ```
 * Configures NATS for remote access (listen on all interfaces, open firewall port, print connection URL).
 
   Check out the script file: [scripts/jetstream/configure.sh](scripts/jetstream/configure.sh)  
