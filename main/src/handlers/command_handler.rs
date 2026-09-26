@@ -244,7 +244,8 @@ pub fn parse_upload_config_from_cmd(
     password: Option<String>,
     identity_file: Option<String>,
     certificate_file: Option<String>,
-    properties_file: &str,
+    transfer_file: Option<String>,
+    transfers: Vec<String>,
 
     use_sudo: bool,
     use_rsync: bool,
@@ -265,6 +266,12 @@ pub fn parse_upload_config_from_cmd(
         host,
         UPLOAD_TASK_NAME,
     );
+    let transfer_file = transfer_file.map(|f| {
+        substitute_vars(&f, vars).unwrap_or_else(|e| {
+            log_error_with_host_direct!(user, host, UPLOAD_TASK_NAME, "{}", e);
+            exit(1);
+        })
+    });
     UploadCmdConfig {
         server_metadata: build_server_metadata(
             host,
@@ -282,10 +289,8 @@ pub fn parse_upload_config_from_cmd(
         use_sudo,
         use_rsync,
         silent,
-        properties_file: substitute_vars(&properties_file, &vars).unwrap_or_else(|e| {
-            log_error_with_host_direct!(user, host, UPLOAD_TASK_NAME, "{}", e);
-            exit(1);
-        }),
+        transfer_file,
+        transfers,
     }
 }
 
@@ -357,23 +362,35 @@ pub fn parse_upload_configs(
 
     for upload in &named_config.upload {
         for server in &servers {
+            if upload.transfer_file.is_none() && upload.transfers.is_empty() {
+                log_error_with_host_direct!(
+                    &server.user,
+                    &server.host,
+                    UPLOAD_TASK_NAME,
+                    "Upload config requires transfer-file and/or transfers"
+                );
+                exit(1);
+            }
+            let transfer_file = upload.transfer_file.as_ref().map(|f| {
+                substitute_vars(f, var_map).unwrap_or_else(|e| {
+                    log_error_with_host_direct!(
+                        &server.user,
+                        &server.host,
+                        UPLOAD_TASK_NAME,
+                        "{}",
+                        e
+                    );
+                    exit(1);
+                })
+            });
             configs.push((
                 UploadCmdConfig {
                     server_metadata: server_metadata_from_yml(server, common, UPLOAD_TASK_NAME),
                     use_sudo: upload.use_sudo.or(named_config.use_sudo).unwrap_or(false),
                     use_rsync: upload.use_rsync.or(named_config.use_rsync).unwrap_or(false),
                     silent: upload.silent.or(named_config.silent).unwrap_or(false),
-                    properties_file: substitute_vars(&upload.properties_file, var_map)
-                        .unwrap_or_else(|e| {
-                            log_error_with_host_direct!(
-                                &server.user,
-                                &server.host,
-                                UPLOAD_TASK_NAME,
-                                "{}",
-                                e
-                            );
-                            exit(1);
-                        }),
+                    transfer_file,
+                    transfers: upload.transfers.clone(),
                 },
                 var_map.clone(),
             ));

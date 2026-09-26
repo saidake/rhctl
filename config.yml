@@ -25,7 +25,10 @@ configs:
     silent: false
     
     upload:
-      - properties-file: "config/path-mapping.properties"
+      - transfer-file: "config/path-mapping.properties"
+        # Or inline:
+        # transfers:
+        #   - "assets/example1.txt=~/examples"
 
         # Specify which servers or groups this command targets
         target-servers: ["test-server1","test-server2"] 

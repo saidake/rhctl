@@ -89,8 +89,14 @@ enum Commands {
         #[arg(long, help = "Log level (debug, info, warn, error)")]
         log_level: Option<String>,
 
-        #[arg(long, help = "Path to properties file")]
-        properties_file: String,
+        #[arg(
+            long = "transfer",
+            help = "Inline transfer mapping local=remote-dir (repeatable)"
+        )]
+        transfer: Vec<String>,
+
+        #[arg(long = "transfer-file", help = "Transfer file with local=remote-dir lines")]
+        transfer_file: Option<String>,
     },
 
     #[command(about = "Execute a local bash script remotely")]

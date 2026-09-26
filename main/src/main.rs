@@ -33,8 +33,7 @@ use crate::handlers::command_handler::{
     parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
     parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
 };
-use crate::utils::file_utils::load_properties;
-use crate::utils::file_utils::load_yaml_config;
+use crate::utils::file_utils::{load_yaml_config, resolve_upload_mappings};
 use crate::utils::log_utils::{ask_user_and_abort_option, flush_logs_and_exit, init_logger};
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
@@ -60,7 +59,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    #[command(about = "Upload files based on property mappings")]
+    #[command(about = "Upload files or directories using transfer mappings")]
     Upload {
         #[arg(long, help = "Remote host IP or hostname")]
         host: String,
@@ -86,8 +85,17 @@ enum Commands {
         )]
         certificate: Option<String>,
 
-        #[arg(long, help = "Path to properties file")]
-        properties_file: String,
+        #[arg(
+            long = "transfer",
+            help = "Inline transfer mapping local=remote-dir (repeatable). Overrides the same local path from --transfer-file."
+        )]
+        transfer: Vec<String>,
+
+        #[arg(
+            long = "transfer-file",
+            help = "Transfer file with local=remote-dir lines (same format as --transfer)"
+        )]
+        transfer_file: Option<String>,
 
         #[arg(long, default_value = "false", help = "Use sudo for operations")]
         use_sudo: bool,
@@ -351,7 +359,8 @@ async fn main() {
             identity,
             certificate,
 
-            properties_file,
+            transfer,
+            transfer_file,
 
             use_sudo,
             use_rsync,
@@ -363,6 +372,15 @@ async fn main() {
             max_session_lifetime,
             ..
         } => {
+            if transfer.is_empty() && transfer_file.is_none() {
+                log_error_with_host_direct!(
+                    user.as_str(),
+                    host.as_str(),
+                    UPLOAD_TASK_NAME,
+                    "Provide at least one of --transfer or --transfer-file"
+                );
+                exit(1);
+            }
             let config = parse_upload_config_from_cmd(
                 &host,
                 &user,
@@ -370,7 +388,8 @@ async fn main() {
                 password,
                 identity,
                 certificate,
-                &properties_file,
+                transfer_file,
+                transfer,
                 use_sudo,
                 use_rsync,
                 silent,
@@ -381,22 +400,23 @@ async fn main() {
                 max_session_lifetime,
                 &env_vars,
             );
-            let mut mappings = HashMap::new();
-            if let Err(e) =
-                load_properties(config.properties_file.as_str(), &mut mappings, &env_vars)
-            {
-                log_error_with_host_direct!(
-                    user.as_str(),
-                    host.as_str(),
-                    UPLOAD_TASK_NAME,
-                    "{}",
-                    format!(
-                        "Failed to load properties file '{}'. \n\t> {}",
-                        config.properties_file, e
-                    )
-                );
-                exit(1);
-            }
+            let mappings = match resolve_upload_mappings(
+                config.transfer_file.as_deref(),
+                &config.transfers,
+                &env_vars,
+            ) {
+                Ok(m) => m,
+                Err(e) => {
+                    log_error_with_host_direct!(
+                        user.as_str(),
+                        host.as_str(),
+                        UPLOAD_TASK_NAME,
+                        "{}",
+                        e
+                    );
+                    exit(1);
+                }
+            };
 
             log_info_direct!("Starting initial TCP connectivity check for server...");
             let (_, _, result) = ServerPool::check_single_server_by_info(
@@ -748,21 +768,17 @@ async fn main() {
             // Spawn threads for upload commands
             for (config, _) in upload_configs {
                 let server_metadata = Arc::new(config.server_metadata.clone());
-                let mut mappings = HashMap::new();
-                if let Err(e) = load_properties(
-                    config.properties_file.as_str(),
-                    &mut mappings,
+                let mappings = match resolve_upload_mappings(
+                    config.transfer_file.as_deref(),
+                    &config.transfers,
                     &yml_config.var_map,
                 ) {
-                    log_error_root!(
-                        "{}",
-                        format!(
-                            "Failed to load properties file '{}'. \n\t> {}",
-                            config.properties_file, e
-                        )
-                    );
-                    flush_logs_and_exit(log_handle).await;
-                }
+                    Ok(m) => m,
+                    Err(e) => {
+                        log_error_root!("{}", e);
+                        flush_logs_and_exit(log_handle).await;
+                    }
+                };
                 // println!("Mappings after load: {:#?}", mappings);
                 let global_server_pool_clone = global_server_pool.clone();
                 let handle = tokio::spawn(async move {

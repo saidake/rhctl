@@ -25,11 +25,8 @@ pub async fn run(
     server_metadata: &Arc<ServerMetadata>,
     global_server_pool: Arc<ServerPool>,
 ) -> Result<(), String> {
-    if !Path::new(&config.properties_file).exists() {
-        return Err(format!(
-            "Properties file not found: '{}'",
-            config.properties_file
-        ));
+    if mappings.is_empty() {
+        return Err("No upload transfers to process".to_string());
     }
     let mut tasks = Vec::new();
 

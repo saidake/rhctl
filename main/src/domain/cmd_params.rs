@@ -23,7 +23,12 @@ pub struct UploadCmdConfig {
     #[serde(default)]
     pub silent: bool,
 
-    pub properties_file: String,
+    /// Optional transfer-file (`local=remote-dir` lines).
+    #[serde(default)]
+    pub transfer_file: Option<String>,
+    /// Inline transfers (`local=remote-dir`); applied after the file (override same local path).
+    #[serde(default)]
+    pub transfers: Vec<String>,
 }
 
 /// One local script to run remotely: path plus optional CLI args.

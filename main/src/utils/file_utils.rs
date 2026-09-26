@@ -100,6 +100,26 @@ pub fn get_local_path_base_name(path: &Path) -> Result<String, String> {
         .ok_or_else(|| format!("Could not get base name: {}", path.display()))
 }
 
+pub fn parse_transfer_mapping(raw: &str, vars: &HashMap<String, String>) -> Result<(String, String), String> {
+    let line = raw.trim();
+    let parts: Vec<&str> = line.splitn(2, '=').collect();
+    if parts.len() != 2 {
+        return Err(format!(
+            "Invalid transfer mapping '{}'; expected local=remote-dir",
+            raw
+        ));
+    }
+    let local_file_or_dir = substitute_vars(parts[0].trim(), vars)?;
+    let target_path = substitute_vars(parts[1].trim(), vars)?;
+    if local_file_or_dir.is_empty() || target_path.is_empty() {
+        return Err(format!(
+            "Empty local or target path in transfer mapping '{}'",
+            raw
+        ));
+    }
+    Ok((local_file_or_dir, target_path))
+}
+
 pub fn load_properties(
     file: &str,
     mappings: &mut HashMap<String, String>,
@@ -114,28 +134,38 @@ pub fn load_properties(
         if line.trim().is_empty() || line.starts_with('#') {
             continue;
         }
-        let parts: Vec<&str> = line.splitn(2, '=').collect();
-        if parts.len() != 2 {
-            return Err(format!(
-                "Invalid format at line {}: '{}'",
-                line_num + 1,
-                line
-            ));
-        }
-        // println!("parts[0].trim(): {}, parts[1].trim(): {}",parts[0].trim(), parts[1].trim());
-        let local_file_or_dir = substitute_vars(parts[0].trim(), vars)?;
-        let target_path = substitute_vars(parts[1].trim(), vars)?;
-        // println!("local_file_or_dir: {}, target_path: {}",local_file_or_dir, target_path);
-        if local_file_or_dir.is_empty() || target_path.is_empty() {
-            return Err(format!(
-                "Empty local or target path at line {}: '{}'",
-                line_num + 1,
-                line
-            ));
-        }
+        let (local_file_or_dir, target_path) = parse_transfer_mapping(line, vars).map_err(|e| {
+            format!("Invalid format at line {}: {}", line_num + 1, e)
+        })?;
         mappings.insert(local_file_or_dir, target_path);
     }
     Ok(())
+}
+
+/// Build upload mappings: transfer-file first, then inline `--transfer` (overrides same local path).
+pub fn resolve_upload_mappings(
+    transfer_file: Option<&str>,
+    transfers: &[String],
+    vars: &HashMap<String, String>,
+) -> Result<HashMap<String, String>, String> {
+    if transfer_file.is_none() && transfers.is_empty() {
+        return Err(
+            "Provide at least one of --transfer / transfer-file (or YAML transfers / transfer-file)"
+                .to_string(),
+        );
+    }
+    let mut mappings = HashMap::new();
+    if let Some(file) = transfer_file {
+        load_properties(file, &mut mappings, vars)?;
+    }
+    for raw in transfers {
+        let (local, remote) = parse_transfer_mapping(raw, vars)?;
+        mappings.insert(local, remote);
+    }
+    if mappings.is_empty() {
+        return Err("No upload transfers resolved (file and --transfer were empty)".to_string());
+    }
+    Ok(mappings)
 }
 
 pub fn expand_vars(input: &str, overlays: &HashMap<String, String>) -> Result<String, String> {
@@ -197,4 +227,31 @@ pub fn substitute_vars(input_path: &str, vars: &HashMap<String, String>) -> Resu
     let result = expand_vars(input_path, vars)?;
     validate_path_chars(&result)?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_transfer_mapping_ok() {
+        let vars = HashMap::new();
+        let (l, r) = parse_transfer_mapping("a/b.txt=~/out", &vars).unwrap();
+        assert_eq!(l, "a/b.txt");
+        assert_eq!(r, "~/out");
+    }
+
+    #[test]
+    fn resolve_upload_requires_source() {
+        let vars = HashMap::new();
+        assert!(resolve_upload_mappings(None, &[], &vars).is_err());
+    }
+
+    #[test]
+    fn resolve_upload_inline_only() {
+        let vars = HashMap::new();
+        let transfers = vec!["local.txt=~/remote".to_string()];
+        let m = resolve_upload_mappings(None, &transfers, &vars).unwrap();
+        assert_eq!(m.get("local.txt").map(String::as_str), Some("~/remote"));
+    }
 }

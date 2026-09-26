@@ -147,7 +147,7 @@ echo "Remote Execution 1.2"
 
 ## rhctl upload
 [Back to Top](#table-of-contents)  
-Upload multiple files or all contents of a directory to a remote directory in parallel, based on a properties file.
+Upload multiple files or all contents of a directory to a remote directory in parallel, using inline `--transfer` pairs and/or a `--transfer-file`.
 
 ![](./docs/assets/cmd/upload.svg) 
 
@@ -160,11 +160,12 @@ rhctl upload \
   [--password <pass>] \
   [--identity <key>] \
   [--certificate <cert>] \
-  --properties-file <props> \
+  [--transfer <local=remote-dir> ...] \
+  [--transfer-file <file>] \
   [options]
 ```
 
-**Properties File Format**:
+**Transfer Format** (`--transfer` or each line in `--transfer-file`):
 ```properties
 assets/example1.txt=~/examples
 assets/exampledir=~/examples/targetdir
@@ -174,21 +175,33 @@ Format: `<local-path>=<remote-directory>`
 Maps local files or directories to target directories on the remote server.   
 
 Note: The right-hand side must be a **directory**, not a file path. If it does not exist, it will be created automatically.  
-Note: The file or the contents of the local directory on the left will be uploaded **into** the specified remote directory on the right.
+Note: The file or the contents of the local directory on the left will be uploaded **into** the specified remote directory on the right.  
+Note: Provide at least one of `--transfer` or `--transfer-file`. When both are set, the file is loaded first and `--transfer` overrides the same local path.
 
 
-**Example**:
+**Example** (transfer file):
 ```bash
 rhctl upload \
   --host 192.168.75.128 \
   --user test99 \
-  --properties-file config/path-mapping.properties
+  --transfer-file config/path-mapping.properties
+```
+
+**Example** (inline transfers):
+```bash
+rhctl upload \
+  --host 192.168.75.128 \
+  --user test99 \
+  --transfer assets/example1.txt=~/examples \
+  --transfer assets/exampledir=~/examples/targetdir
 ```
 
 **Required Parameters**:
 - `--host <ip/hostname>`: Remote host IP or hostname
 - `--user <username>`: Remote username
-- `--properties-file <path>`: Required; defines mappings.
+- At least one of:
+  - `--transfer <local=remote-dir>`: Inline mapping (repeatable)
+  - `--transfer-file <path>`: File of `local=remote-dir` lines
 
 **Optional Parameters**:
 - `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback)
@@ -225,7 +238,7 @@ rhctl upload \
       --user test99 \
       --ssh-port 22 \
       --use-sudo \
-      --properties-file config/path-mapping.properties
+      --transfer-file config/path-mapping.properties
     ```
 
 ## rhctl patch
@@ -344,7 +357,9 @@ configs:
     silent: false
     
     upload:
-      - properties-file: "config/path-mapping.properties"
+      - transfer-file: "config/path-mapping.properties"
+        # transfers:
+        #   - "assets/example1.txt=~/examples"
 
         # Specify which servers or groups this command targets
         target-servers: ["test-server1","test-server2"] 
@@ -481,13 +496,13 @@ LocalStack is a local AWS cloud stack emulator for testing AWS services.
 **Commands** (YAML/Run Mode Example):
 * Uploads `scripts/aws/assets/docker-compose.yml` to remote directory `/opt/sandbox/aws`.
 
-  Check out the properties file: [scripts/aws/config/path-mapping.properties](scripts/aws/config/path-mapping.properties)  
+  Check out the transfer file: [scripts/aws/config/path-mapping.properties](scripts/aws/config/path-mapping.properties)  
   Example:
   ```bash
   rhctl upload \
     --host 192.168.75.128 \
     --user test99 \
-    --properties-file scripts/aws/config/path-mapping.properties \
+    --transfer-file scripts/aws/config/path-mapping.properties \
     --use-sudo
   ```
 * Start LocalStack.

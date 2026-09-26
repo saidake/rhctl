@@ -89,7 +89,12 @@ pub struct UploadConfig {
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
 
-    pub properties_file: String,
+    /// Path to a transfer file (`local=remote-dir` per line).
+    #[serde(default, alias = "properties-file")]
+    pub transfer_file: Option<String>,
+    /// Inline transfers (`local=remote-dir`).
+    #[serde(default)]
+    pub transfers: Vec<String>,
 
     #[serde(default)]
     pub target_servers: Vec<String>, // explicitly list server names
