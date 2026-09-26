@@ -32,7 +32,7 @@
 #       Postgres connection URL (preferred).
 #         Example url values: `postgres://user:pass@127.0.0.1:5432/mydb`
 #   RHCTL_PG_STATE_FILE=<path>
-#       Credentials state file from `init.sh`.
+#       Latest credentials state file written by `init.sh`.
 #   PGHOST / PGPORT / PGUSER / PGPASSWORD / PGDATABASE
 #       Libpq connection overrides when `DATABASE_URL` is unset.
 #

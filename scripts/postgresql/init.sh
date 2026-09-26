@@ -6,22 +6,25 @@
 # ************************************************************************************
 # Initialize an installed PostgreSQL for remote access and create a test DB + role.
 #
-# Creates once (skips when state file / objects already exist):
-#   - random database name / role / password (preset formats; random preset if unset)
-# Sets listen_addresses='*'. Remote pg_hba rules (exact allow-list; re-runs overwrite):
+# Each run mints a new random database name / role / password (preset formats;
+# random preset if unset) and writes them to the state file (latest wins for
+# execute-sql.sh). Server listen / port / pg_hba / firewall changes stay idempotent.
+# Remote pg_hba rules (exact allow-list; re-runs overwrite):
 #   - default / omit --allowed-ips: 0.0.0.0/0 and ::/0
 #   - with --allowed-ips: only those client addresses (same as limit-remote-ips.sh)
 #   - reopen after restrict: --allowed-ips 0.0.0.0/0,::/0
 #
-# Idempotent — safe to re-run.
+# Idempotent for server config — safe to re-run. Credentials are always new.
 #
 # Usage:
 #   ./init.sh \
+#     --host 192.168.75.129 \
 #     --port 5432 \
 #     --auth-method md5 \
 #     --allowed-ips 192.168.1.100,10.0.0.5 \
 #     --credential-profile hardened
 #   ./init.sh \
+#     --host 192.168.75.129 \
 #     --port 5432 \
 #     --auth-method md5 \
 #     --allowed-ips 0.0.0.0/0,::/0 \
@@ -35,6 +38,10 @@
 #   (none)
 #
 # Optional Parameters:
+#   --host <host>
+#       Address printed in DATABASE_URL / psql test (default: `127.0.0.1`).
+#       Use the target server IP/hostname when clients connect remotely.
+#         Example host values: `192.168.75.129`, `db.example.com`, `127.0.0.1`
 #   --port <port>
 #       Listen port (default: `5432`).
 #         Example port values: `5432`, `5433`, `48985`
@@ -76,6 +83,8 @@
 #           `base58_32`   → `3fK9mP2qR7tX4vB8nH1jL5wY6zA2cD`
 #
 # Override Parameters:
+#   RHCTL_PG_HOST=<host>
+#       Same as `--host`.
 #   RHCTL_PG_PORT=<port>
 #       Same as `--port`.
 #   RHCTL_PG_AUTH_METHOD=<method>
@@ -91,7 +100,7 @@
 #   RHCTL_PG_PASSWORD_FORMAT=<format>
 #       Same as `--password-format`.
 #   RHCTL_PG_STATE_FILE=<path>
-#       Credentials state file path.
+#       Latest credentials state file (overwritten each init run).
 #         Example path values: `/var/lib/postgresql/.rhctl-pg-test-credentials`
 #
 # Since : 1.0.1
@@ -100,6 +109,8 @@
 
 set -euo pipefail
 
+# Empty means "not set" so we can fall back to state-file DB_HOST on re-runs.
+RHCTL_PG_HOST="${RHCTL_PG_HOST:-}"
 RHCTL_PG_PORT="${RHCTL_PG_PORT:-5432}"
 RHCTL_PG_AUTH_METHOD="${RHCTL_PG_AUTH_METHOD:-md5}"
 STATE_FILE="${RHCTL_PG_STATE_FILE:-/var/lib/postgresql/.rhctl-pg-test-credentials}"
@@ -116,6 +127,10 @@ PROFILES=(dev_simple dev_hex app_snake hardened)
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --host)
+            RHCTL_PG_HOST="$2"
+            shift 2
+            ;;
         --port)
             RHCTL_PG_PORT="$2"
             shift 2
@@ -146,7 +161,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,95p' "$0"
+            sed -n '2,110p' "$0"
             exit 0
             ;;
         --*)
@@ -439,20 +454,35 @@ if sync_remote_hba_allowlist "${DESIRED_CIDRS[@]}"; then NEED_RESTART=true; fi
 
 configure_firewall "$RHCTL_PG_PORT"
 
-# --- credentials (persist for re-runs) ---
-if [ -f "$STATE_FILE" ]; then
-    # shellcheck disable=SC1090
-    source "$STATE_FILE"
-    log "Reusing existing credentials from ${STATE_FILE}"
-else
-    DB_NAME="$(generate_identifier "$DB_NAME_FORMAT")"
-    DB_USER="$(generate_identifier "$USER_NAME_FORMAT")"
-    DB_PASSWORD="$(generate_password "$PASSWORD_FORMAT")"
-    sudo mkdir -p "$(dirname "$STATE_FILE")"
-    sudo tee "$STATE_FILE" >/dev/null <<EOF
+# --- credentials: always mint a new random DB + role each run ---
+DB_CONNECT_HOST="${RHCTL_PG_HOST:-127.0.0.1}"
+DB_NAME="$(generate_identifier "$DB_NAME_FORMAT")"
+DB_USER="$(generate_identifier "$USER_NAME_FORMAT")"
+DB_PASSWORD="$(generate_password "$PASSWORD_FORMAT")"
+
+# Extremely unlikely with random formats; regenerate if a name already exists.
+tries=0
+while [ "$tries" -lt 8 ]; do
+    role_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" || true)
+    db_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" || true)
+    if [ "$role_exists" != "1" ] && [ "$db_exists" != "1" ]; then
+        break
+    fi
+    [ "$role_exists" = "1" ] && DB_USER="$(generate_identifier "$USER_NAME_FORMAT")"
+    [ "$db_exists" = "1" ] && DB_NAME="$(generate_identifier "$DB_NAME_FORMAT")"
+    tries=$((tries + 1))
+done
+if [ "$tries" -ge 8 ]; then
+    echo "[ERROR] Failed to allocate unique database/role names after ${tries} attempts"
+    exit 1
+fi
+
+sudo mkdir -p "$(dirname "$STATE_FILE")"
+sudo tee "$STATE_FILE" >/dev/null <<EOF
 DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
+DB_HOST=${DB_CONNECT_HOST}
 DB_PORT=${RHCTL_PG_PORT}
 DB_AUTH_METHOD=${AUTH}
 DB_CREDENTIAL_PROFILE=${CREDENTIAL_PROFILE}
@@ -460,33 +490,19 @@ DB_NAME_FORMAT=${DB_NAME_FORMAT}
 DB_USER_NAME_FORMAT=${USER_NAME_FORMAT}
 DB_PASSWORD_FORMAT=${PASSWORD_FORMAT}
 EOF
-    sudo chmod 600 "$STATE_FILE"
-    sudo chown postgres:postgres "$STATE_FILE" 2>/dev/null || true
-    log "Generated new credentials → ${STATE_FILE}"
-    log "Formats: profile=${CREDENTIAL_PROFILE} db=${DB_NAME_FORMAT} user=${USER_NAME_FORMAT} password=${PASSWORD_FORMAT}"
-fi
-
-# shellcheck disable=SC1090
-source "$STATE_FILE"
+sudo chmod 600 "$STATE_FILE"
+sudo chown postgres:postgres "$STATE_FILE" 2>/dev/null || true
+log "Generated new credentials → ${STATE_FILE}"
+log "Formats: profile=${CREDENTIAL_PROFILE} db=${DB_NAME_FORMAT} user=${USER_NAME_FORMAT} password=${PASSWORD_FORMAT}"
 
 DB_PASSWORD_SQL="$(sql_quote "$DB_PASSWORD")"
 DB_PASSWORD_URL="$(url_encode "$DB_PASSWORD")"
 
-role_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" || true)
-if [ "$role_exists" = "1" ]; then
-    log "Role '${DB_USER}' already exists — skipping CREATE USER"
-else
-    sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD_SQL}';"
-    log "Created role '${DB_USER}'"
-fi
+sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD_SQL}';"
+log "Created role '${DB_USER}'"
 
-db_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" || true)
-if [ "$db_exists" = "1" ]; then
-    log "Database '${DB_NAME}' already exists — skipping CREATE DATABASE"
-else
-    sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
-    log "Created database '${DB_NAME}' owned by '${DB_USER}'"
-fi
+sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
+log "Created database '${DB_NAME}' owned by '${DB_USER}'"
 
 if [ "$NEED_RESTART" = true ]; then
     log "Restarting PostgreSQL to apply config"
@@ -505,18 +521,19 @@ echo "[INFO] PostgreSQL test credentials"
 echo "[INFO]   DB_NAME=${DB_NAME}"
 echo "[INFO]   DB_USER=${DB_USER}"
 echo "[INFO]   DB_PASSWORD=${DB_PASSWORD}"
-echo "[INFO]   DB_PORT=${DB_PORT:-$RHCTL_PG_PORT}"
+echo "[INFO]   DB_HOST=${DB_CONNECT_HOST}"
+echo "[INFO]   DB_PORT=${RHCTL_PG_PORT}"
 echo "[INFO]   DB_AUTH_METHOD=${AUTH}"
-echo "[INFO]   CREDENTIAL_PROFILE=${DB_CREDENTIAL_PROFILE:-$CREDENTIAL_PROFILE}"
-echo "[INFO]   DB_NAME_FORMAT=${DB_NAME_FORMAT:-}"
-echo "[INFO]   USER_NAME_FORMAT=${DB_USER_NAME_FORMAT:-$USER_NAME_FORMAT}"
-echo "[INFO]   PASSWORD_FORMAT=${DB_PASSWORD_FORMAT:-$PASSWORD_FORMAT}"
+echo "[INFO]   CREDENTIAL_PROFILE=${CREDENTIAL_PROFILE}"
+echo "[INFO]   DB_NAME_FORMAT=${DB_NAME_FORMAT}"
+echo "[INFO]   USER_NAME_FORMAT=${USER_NAME_FORMAT}"
+echo "[INFO]   PASSWORD_FORMAT=${PASSWORD_FORMAT}"
 if [ "${#IPS[@]}" -gt 0 ]; then
     echo "[INFO]   ALLOW_IPS=${DESIRED_CIDRS[*]}"
 else
     echo "[INFO]   ALLOW_IPS=0.0.0.0/0 ::/0"
 fi
-echo "[INFO]   DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD_URL}@127.0.0.1:${DB_PORT:-$RHCTL_PG_PORT}/${DB_NAME}"
+echo "[INFO]   DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD_URL}@${DB_CONNECT_HOST}:${RHCTL_PG_PORT}/${DB_NAME}"
 echo "[INFO] Test:"
-echo "[INFO]   PGPASSWORD='${DB_PASSWORD}' psql -U ${DB_USER} -d ${DB_NAME} -h 127.0.0.1 -p ${DB_PORT:-$RHCTL_PG_PORT}"
+echo "[INFO]   PGPASSWORD='${DB_PASSWORD}' psql -U ${DB_USER} -d ${DB_NAME} -h ${DB_CONNECT_HOST} -p ${RHCTL_PG_PORT}"
 echo "============================================="
