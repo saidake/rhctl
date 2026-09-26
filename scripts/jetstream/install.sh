@@ -11,7 +11,7 @@
 #
 # Usage:
 #   ./install.sh
-#   ./install.sh --nats-version v2.12.5
+#   ./install.sh --nats-version v2.15.0
 #
 # Required Parameters:
 #   (none)
@@ -19,12 +19,13 @@
 # Optional Parameters:
 #   --nats-version <version>
 #       NATS Server release tag to install when missing (default: `latest`).
-#         Example version values: `latest`, `v2.12.5`, `v2.10.12`
+#       A leading `v` is required in the download URL and is added if omitted.
+#         Example version values: `latest`, `v2.15.0`, `v2.12.5`
 #
 # Override Parameters:
 #   RHCTL_NATS_VERSION=<version>
 #       Same as `--nats-version`.
-#         Example version values: `latest`, `v2.12.5`, `v2.10.12`
+#         Example version values: `latest`, `v2.15.0`, `v2.12.5`
 #
 # Since : 1.0.2
 # Date  : Sep 26, 2026
@@ -85,6 +86,15 @@ resolve_nats_version() {
   echo "$tag"
 }
 
+# Release tags and archive names always use a leading `v` (e.g. v2.15.0).
+normalize_nats_version() {
+  local v="$1"
+  if [[ "$v" != v* ]]; then
+    v="v${v}"
+  fi
+  echo "$v"
+}
+
 echo "[INFO] Updating package index..."
 sudo apt-get update -y
 
@@ -98,14 +108,15 @@ sudo apt-get install -y curl tar
 if command -v nats-server >/dev/null 2>&1; then
   echo "[INFO] NATS already installed: $(nats-server --version)"
 else
-  NATS_VERSION="$(resolve_nats_version "$NATS_VERSION")"
+  NATS_VERSION="$(normalize_nats_version "$(resolve_nats_version "$NATS_VERSION")")"
   echo "[INFO] Installing NATS Server ${NATS_VERSION}..."
 
   TMP_DIR=$(mktemp -d)
   trap 'rm -rf "${TMP_DIR}"' EXIT
 
-  curl -L "https://github.com/nats-io/nats-server/releases/download/${NATS_VERSION}/nats-server-${NATS_VERSION}-linux-amd64.tar.gz" \
-    -o "${TMP_DIR}/nats-server.tar.gz"
+  DOWNLOAD_URL="https://github.com/nats-io/nats-server/releases/download/${NATS_VERSION}/nats-server-${NATS_VERSION}-linux-amd64.tar.gz"
+  echo "[INFO] Downloading: curl -fL \"${DOWNLOAD_URL}\" -o \"${TMP_DIR}/nats-server.tar.gz\""
+  curl -fL "${DOWNLOAD_URL}" -o "${TMP_DIR}/nats-server.tar.gz"
 
   tar -xzf "${TMP_DIR}/nats-server.tar.gz" -C "${TMP_DIR}"
 
