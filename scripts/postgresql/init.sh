@@ -257,7 +257,16 @@ fi
 rand_chars() {
     local charset="$1"
     local len="$2"
-    tr -dc "$charset" </dev/urandom | head -c "$len"
+    local out
+    # `head` closes the pipe early; under `pipefail` that yields SIGPIPE (141) from `tr`.
+    set +o pipefail
+    out="$(tr -dc "$charset" </dev/urandom | head -c "$len")"
+    set -o pipefail
+    if [ "${#out}" -ne "$len" ]; then
+        echo "[ERROR] Failed to generate ${len} random characters" >&2
+        exit 1
+    fi
+    printf '%s' "$out"
 }
 
 # Unquoted Postgres identifiers: [a-z_][a-z0-9_]* , max 63 chars.
