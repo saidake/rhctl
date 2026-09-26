@@ -35,6 +35,8 @@
   - [MongoDB](#mongodb)
     - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-3)
   - [PostgreSQL](#postgresql)
+  - [NATS JetStream](#nats-jetstream)
+    - [Installing on a Remote Linux Host](#installing-on-a-remote-linux-host-4)
 - [Contributing](#contributing)
 # Install
 ```bash
@@ -590,6 +592,37 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
     --script scripts/postgresql/install.sh \
     --use-sudo
   ```
+
+## NATS JetStream
+NATS Server with JetStream enabled for persistent messaging streams.
+
+### Installing on a Remote Linux Host
+[Back to Top](#table-of-contents)  
+**Commands**:
+* Installs NATS Server with JetStream and configures a systemd `nats` service (idempotent).
+
+  Check out the script file: [scripts/jetstream/install.sh](scripts/jetstream/install.sh)  
+  Example of installing NATS JetStream on Ubuntu:
+  ```bash
+  rhctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script scripts/jetstream/install.sh \
+    --use-sudo
+  ```
+
+**Example Success Output**:
+```
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS already installed: nats-server: v2.12.5
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] User 'nats' already exists.
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS config already exists: /etc/nats/nats.conf
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] systemd service already exists.
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS service already enabled.
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS service already running.
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS service is running.
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Installation complete.
+```
 
 # Contributing
 If you would like to contribute to the code base or fix an issue, please see [CONTRIBUTING.md](CONTRIBUTING.md).
