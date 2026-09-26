@@ -7,7 +7,7 @@
 # Install PostgreSQL (latest from PGDG) and ensure the service is running.
 # Default Port: 5432
 #
-# Idempotent — safe to re-run.
+# If exists, skip — safe to re-run.
 #
 # Usage:
 #   ./install.sh

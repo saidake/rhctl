@@ -7,7 +7,7 @@
 # Install NATS Server with JetStream and configure a systemd service.
 # Default Port: 4222
 #
-# Idempotent — safe to re-run.
+# If exists, skip — safe to re-run.
 #
 # Usage:
 #   ./install.sh

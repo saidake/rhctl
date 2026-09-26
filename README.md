@@ -89,7 +89,7 @@ rhctl execute \
   --host 192.168.75.129 \
   --user test99 \
   --password testpwd \
-  --script "/path/to/scripts/postgresql/init.sh --port 5432" \
+  --script "/path/to/scripts/postgresql/configure.sh --port 5432" \
   --use-sudo
 ```
 
@@ -611,8 +611,20 @@ NATS Server with JetStream enabled for persistent messaging streams.
     --script scripts/jetstream/install.sh \
     --use-sudo
   ```
+* Configures NATS for remote access (listen on all interfaces, open firewall port, print connection URL).
 
-**Example Success Output**:
+  Check out the script file: [scripts/jetstream/configure.sh](scripts/jetstream/configure.sh)  
+  Example:
+  ```bash
+  rhctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script "scripts/jetstream/configure.sh --host 192.168.75.128 --port 4222" \
+    --use-sudo
+  ```
+
+**Example Success Output** (install):
 ```
 [test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS already installed: nats-server: v2.12.5
 [test99@192.168.75.128][EXECUTE][REMOTE] [INFO] User 'nats' already exists.
@@ -622,6 +634,21 @@ NATS Server with JetStream enabled for persistent messaging streams.
 [test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS service already running.
 [test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS service is running.
 [test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Installation complete.
+```
+
+**Example Success Output** (configure):
+```
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Updated nats.conf 'host' = 0.0.0.0
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] nats.conf 'port' already set to 4222
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Allowed 4222/tcp in ufw
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] Restarting NATS to apply config
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS service is running
+[test99@192.168.75.128][EXECUTE][REMOTE] =============================================
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS JetStream connection
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO]   NATS_HOST=192.168.75.128
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO]   NATS_PORT=4222
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO]   NATS_URL=nats://192.168.75.128:4222
+[test99@192.168.75.128][EXECUTE][REMOTE] =============================================
 ```
 
 # Contributing

@@ -4,32 +4,33 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # ************************************************************************************
-# Initialize an installed PostgreSQL for remote access and create a test DB + role.
+# Configure an installed PostgreSQL for remote access and create a test DB + role.
 #
 # Each run mints a new random database name / role / password (preset formats;
 # random preset if unset) and writes them to the state file (latest wins for
-# execute-sql.sh). Server listen / port / pg_hba / firewall changes stay idempotent.
+# execute-sql.sh). Server listen / port / pg_hba / firewall changes overwrite
+# prior desired state on re-run.
 # Remote pg_hba rules (exact allow-list; re-runs overwrite):
 #   - default / omit --allowed-ips: 0.0.0.0/0 and ::/0
 #   - with --allowed-ips: only those client addresses (same as limit-remote-ips.sh)
 #   - reopen after restrict: --allowed-ips 0.0.0.0/0,::/0
 #
-# Idempotent for server config — safe to re-run. Credentials are always new.
+# If exists, overwrite — safe to re-run. Credentials are always new.
 #
 # Usage:
-#   ./init.sh \
+#   ./configure.sh \
 #     --host 192.168.75.129 \
 #     --port 5432 \
 #     --auth-method md5 \
 #     --allowed-ips 192.168.1.100,10.0.0.5 \
 #     --credential-profile hardened
-#   ./init.sh \
+#   ./configure.sh \
 #     --host 192.168.75.129 \
 #     --port 5432 \
 #     --auth-method md5 \
 #     --allowed-ips 0.0.0.0/0,::/0 \
 #     --credential-profile hardened
-#   ./init.sh \
+#   ./configure.sh \
 #     --port 5433 \
 #     --auth-method scram-sha-256 \
 #     --credential-profile app_snake

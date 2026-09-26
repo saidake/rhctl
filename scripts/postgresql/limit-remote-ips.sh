@@ -9,7 +9,7 @@
 # Replaces existing remote `host all all …` rules (keeps localhost 127.0.0.1/32
 # and ::1/128). Re-runs overwrite the previous allow-list.
 #
-# Idempotent — safe to re-run.
+# If exists, overwrite — safe to re-run.
 #
 # Usage:
 #   ./limit-remote-ips.sh \

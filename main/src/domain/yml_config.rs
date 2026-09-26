@@ -125,7 +125,7 @@ pub struct ExecuteConfig {
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
 
-    /// Script command lines: path plus optional args, e.g. `init.sh --port 5432`.
+    /// Script command lines: path plus optional args, e.g. `configure.sh --port 5432`.
     pub scripts: Vec<String>,
     pub work_path: Option<String>, // optional working directory
     pub mode: Option<String>,

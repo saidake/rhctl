@@ -27,7 +27,7 @@ pub struct UploadCmdConfig {
 }
 
 /// One local script to run remotely: path plus optional CLI args.
-/// Parsed from a `--script` / YAML value such as `init.sh --port 5432`.
+/// Parsed from a `--script` / YAML value such as `configure.sh --port 5432`.
 #[derive(Clone, Debug, Default)]
 pub struct ScriptInvocation {
     pub path: String,
@@ -60,35 +60,35 @@ mod tests {
 
     #[test]
     fn parse_path_only() {
-        let inv = parse_script_invocation("scripts/init.sh").unwrap();
-        assert_eq!(inv.path, "scripts/init.sh");
+        let inv = parse_script_invocation("scripts/configure.sh").unwrap();
+        assert_eq!(inv.path, "scripts/configure.sh");
         assert!(inv.args.is_empty());
     }
 
     #[test]
     fn parse_path_with_args() {
-        let inv = parse_script_invocation("scripts/postgresql/init.sh --port 5432").unwrap();
-        assert_eq!(inv.path, "scripts/postgresql/init.sh");
+        let inv = parse_script_invocation("scripts/postgresql/configure.sh --port 5432").unwrap();
+        assert_eq!(inv.path, "scripts/postgresql/configure.sh");
         assert_eq!(inv.args, vec!["--port", "5432"]);
     }
 
     #[test]
     fn parse_quoted_path_and_arg_values() {
-        let inv = parse_script_invocation(r#"'/path/with spaces/init.sh' --name "my db""#).unwrap();
-        assert_eq!(inv.path, "/path/with spaces/init.sh");
+        let inv = parse_script_invocation(r#"'/path/with spaces/configure.sh' --name "my db""#).unwrap();
+        assert_eq!(inv.path, "/path/with spaces/configure.sh");
         assert_eq!(inv.args, vec!["--name", "my db"]);
     }
 
     #[test]
     fn parse_multiline_with_ipv6_allow_all() {
         let inv = parse_script_invocation(
-            "/tmp/scripts/postgresql/init.sh \
+            "/tmp/scripts/postgresql/configure.sh \
      --port 5432 \
      --auth-method md5 \
      --allowed-ips 0.0.0.0/0,::/0",
         )
         .unwrap();
-        assert_eq!(inv.path, "/tmp/scripts/postgresql/init.sh");
+        assert_eq!(inv.path, "/tmp/scripts/postgresql/configure.sh");
         assert_eq!(
             inv.args,
             vec![
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn reject_empty_and_unbalanced() {
         assert!(parse_script_invocation("").is_err());
-        assert!(parse_script_invocation("init.sh --name 'unterminated").is_err());
+        assert!(parse_script_invocation("configure.sh --name 'unterminated").is_err());
     }
 }
 

@@ -8,10 +8,8 @@
 #
 # Connection resolution (first match wins):
 #   1) DATABASE_URL
-#   2) state file from init.sh
+#   2) state file from configure.sh
 #   3) PG* environment variables
-#
-# Idempotent — safe to re-run.
 #
 # Usage:
 #   ./execute-sql.sh \
@@ -32,7 +30,7 @@
 #       Postgres connection URL (preferred).
 #         Example url values: `postgres://user:pass@127.0.0.1:5432/mydb`
 #   RHCTL_PG_STATE_FILE=<path>
-#       Latest credentials state file written by `init.sh`.
+#       Latest credentials state file written by `configure.sh`.
 #   PGHOST / PGPORT / PGUSER / PGPASSWORD / PGDATABASE
 #       Libpq connection overrides when `DATABASE_URL` is unset.
 #
@@ -112,7 +110,7 @@ build_psql_args() {
         PSQL_ARGS=(-h "${PGHOST:-127.0.0.1}" -p "${PGPORT:-5432}" -U "$PGUSER" -d "$PGDATABASE")
         return 0
     fi
-    err "Set DATABASE_URL, or run init.sh first (state file), or set PG* vars"
+    err "Set DATABASE_URL, or run configure.sh first (state file), or set PG* vars"
     exit 1
 }
 

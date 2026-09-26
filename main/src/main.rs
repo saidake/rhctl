@@ -160,7 +160,7 @@ enum Commands {
 
         #[arg(
             long,
-            help = "Local bash script to run remotely; optional args after the path (e.g. 'init.sh --port 5432'). Supports multiple."
+            help = "Local bash script to run remotely; optional args after the path (e.g. 'configure.sh --port 5432'). Supports multiple."
         )]
         script: Vec<String>,
 
