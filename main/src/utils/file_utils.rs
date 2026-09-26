@@ -138,13 +138,12 @@ pub fn load_properties(
     Ok(())
 }
 
-pub fn substitute_vars(input_path: &str, vars: &HashMap<String, String>) -> Result<String, String> {
-    if input_path.trim().is_empty() {
-        return Err("Input path is empty".to_string());
+pub fn expand_vars(input: &str, vars: &HashMap<String, String>) -> Result<String, String> {
+    if input.trim().is_empty() {
+        return Err("Input is empty".to_string());
     }
-    // println!("vars: {:?}", vars);
     let mut result = String::new();
-    let mut rest = input_path;
+    let mut rest = input;
 
     while let Some(start) = rest.find("${") {
         result.push_str(&rest[..start]);
@@ -156,38 +155,47 @@ pub fn substitute_vars(input_path: &str, vars: &HashMap<String, String>) -> Resu
                 Some(value) => {
                     if value.is_empty() {
                         return Err(format!(
-                            "Variable '{}' is empty in path '{}'",
-                            key, input_path
+                            "Variable '{}' is empty in '{}'",
+                            key, input
                         ));
                     }
                     result.push_str(value);
                 }
                 None => {
                     return Err(format!(
-                        "Variable '{}' not provided in path '{}'",
-                        key, input_path
+                        "Variable '{}' not provided in '{}'",
+                        key, input
                     ));
                 }
             }
             rest = &rest[end + 1..];
         } else {
             return Err(format!(
-                "Unclosed variable placeholder in path '{}'",
-                input_path
+                "Unclosed variable placeholder in '{}'",
+                input
             ));
         }
     }
 
     result.push_str(rest);
+    Ok(result)
+}
 
+pub fn validate_path_chars(path: &str) -> Result<(), String> {
     // Invalid characters check (macOS / Linux only)
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let forbidden: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
-        if result.chars().any(|c| forbidden.contains(&c)) {
-            return Err(format!("Path '{}' contains invalid characters.", result));
+        if path.chars().any(|c| forbidden.contains(&c)) {
+            return Err(format!("Path '{}' contains invalid characters.", path));
         }
     }
+    let _ = path;
+    Ok(())
+}
 
+pub fn substitute_vars(input_path: &str, vars: &HashMap<String, String>) -> Result<String, String> {
+    let result = expand_vars(input_path, vars)?;
+    validate_path_chars(&result)?;
     Ok(result)
 }

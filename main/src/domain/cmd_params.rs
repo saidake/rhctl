@@ -35,6 +35,7 @@ pub struct ScriptInvocation {
 }
 
 /// Parse a script command line into path + args (shell-style quoting).
+/// Newlines and extra whitespace between tokens are allowed.
 pub fn parse_script_invocation(raw: &str) -> Result<ScriptInvocation, String> {
     let tokens = shlex::split(raw).ok_or_else(|| {
         format!(
@@ -76,6 +77,29 @@ mod tests {
         let inv = parse_script_invocation(r#"'/path/with spaces/init.sh' --name "my db""#).unwrap();
         assert_eq!(inv.path, "/path/with spaces/init.sh");
         assert_eq!(inv.args, vec!["--name", "my db"]);
+    }
+
+    #[test]
+    fn parse_multiline_with_ipv6_allow_all() {
+        let inv = parse_script_invocation(
+            "/tmp/scripts/postgresql/init.sh \
+     --port 5432 \
+     --auth-method md5 \
+     --allowed-ips 0.0.0.0/0,::/0",
+        )
+        .unwrap();
+        assert_eq!(inv.path, "/tmp/scripts/postgresql/init.sh");
+        assert_eq!(
+            inv.args,
+            vec![
+                "--port",
+                "5432",
+                "--auth-method",
+                "md5",
+                "--allowed-ips",
+                "0.0.0.0/0,::/0"
+            ]
+        );
     }
 
     #[test]

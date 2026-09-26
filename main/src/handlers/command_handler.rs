@@ -23,9 +23,19 @@ use crate::domain::constants::{
     EXECUTE_TASK_NAME, PATCH_TASK_NAME, UPLOAD_TASK_NAME,
 };
 use crate::domain::yml_config::{NamedConfig, ServerConfig, TargetConfig, YmlConfig};
-use crate::utils::file_utils::substitute_vars;
+use crate::utils::file_utils::{expand_vars, substitute_vars, validate_path_chars};
 use crate::utils::log_utils::prompt_password_or_exit;
 use crate::{log_error_direct, log_error_with_host_direct, log_warn_direct, log_warn_root};
+
+fn resolve_script_invocation(
+    raw: &str,
+    vars: &HashMap<String, String>,
+) -> Result<crate::domain::cmd_params::ScriptInvocation, String> {
+    let expanded = expand_vars(raw, vars)?;
+    let inv = parse_script_invocation(&expanded)?;
+    validate_path_chars(&inv.path)?;
+    Ok(inv)
+}
 
 /// Resolve SSH credentials: prefer identity/certificate; password is required only when no identity is set.
 /// Password remains optional with identity (used for sudo and password fallback).
@@ -208,11 +218,7 @@ pub fn parse_execute_config_from_cmd(
         scripts: script
             .into_iter()
             .map(|s| {
-                let substituted = substitute_vars(&s, &cli_vars).unwrap_or_else(|e| {
-                    log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
-                    exit(1);
-                });
-                parse_script_invocation(&substituted).unwrap_or_else(|e| {
+                resolve_script_invocation(&s, &cli_vars).unwrap_or_else(|e| {
                     log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
                     exit(1);
                 })
@@ -414,17 +420,7 @@ pub fn parse_execute_configs(
                         .clone()
                         .into_iter()
                         .map(|s| {
-                            let substituted = substitute_vars(&s, var_map).unwrap_or_else(|e| {
-                                log_error_with_host_direct!(
-                                    &server.user,
-                                    &server.host,
-                                    EXECUTE_TASK_NAME,
-                                    "{}",
-                                    e
-                                );
-                                exit(1);
-                            });
-                            parse_script_invocation(&substituted).unwrap_or_else(|e| {
+                            resolve_script_invocation(&s, var_map).unwrap_or_else(|e| {
                                 log_error_with_host_direct!(
                                     &server.user,
                                     &server.host,
