@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use crate::common::ssh_pool::ServerPool;
 use crate::domain::cmd_params::{
-    ExecuteCmdConfig, PatchCmdConfig, ServerMetadata, UploadCmdConfig,
+    parse_script_invocation, ExecuteCmdConfig, PatchCmdConfig, ServerMetadata, UploadCmdConfig,
 };
 use crate::domain::constants::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_EXECUTE_MODE, DEFAULT_EXECUTE_WORK_PATH,
@@ -208,7 +208,11 @@ pub fn parse_execute_config_from_cmd(
         scripts: script
             .into_iter()
             .map(|s| {
-                substitute_vars(&s, &cli_vars).unwrap_or_else(|e| {
+                let substituted = substitute_vars(&s, &cli_vars).unwrap_or_else(|e| {
+                    log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
+                    exit(1);
+                });
+                parse_script_invocation(&substituted).unwrap_or_else(|e| {
                     log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
                     exit(1);
                 })
@@ -410,7 +414,17 @@ pub fn parse_execute_configs(
                         .clone()
                         .into_iter()
                         .map(|s| {
-                            substitute_vars(&s, var_map).unwrap_or_else(|e| {
+                            let substituted = substitute_vars(&s, var_map).unwrap_or_else(|e| {
+                                log_error_with_host_direct!(
+                                    &server.user,
+                                    &server.host,
+                                    EXECUTE_TASK_NAME,
+                                    "{}",
+                                    e
+                                );
+                                exit(1);
+                            });
+                            parse_script_invocation(&substituted).unwrap_or_else(|e| {
                                 log_error_with_host_direct!(
                                     &server.user,
                                     &server.host,

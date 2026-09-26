@@ -26,6 +26,65 @@ pub struct UploadCmdConfig {
     pub properties_file: String,
 }
 
+/// One local script to run remotely: path plus optional CLI args.
+/// Parsed from a `--script` / YAML value such as `init.sh --port 5432`.
+#[derive(Clone, Debug, Default)]
+pub struct ScriptInvocation {
+    pub path: String,
+    pub args: Vec<String>,
+}
+
+/// Parse a script command line into path + args (shell-style quoting).
+pub fn parse_script_invocation(raw: &str) -> Result<ScriptInvocation, String> {
+    let tokens = shlex::split(raw).ok_or_else(|| {
+        format!(
+            "Invalid script command line (unbalanced quotes): '{}'",
+            raw
+        )
+    })?;
+    if tokens.is_empty() {
+        return Err("Empty script command line".to_string());
+    }
+    let mut iter = tokens.into_iter();
+    let path = iter.next().unwrap();
+    Ok(ScriptInvocation {
+        path,
+        args: iter.collect(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_path_only() {
+        let inv = parse_script_invocation("scripts/init.sh").unwrap();
+        assert_eq!(inv.path, "scripts/init.sh");
+        assert!(inv.args.is_empty());
+    }
+
+    #[test]
+    fn parse_path_with_args() {
+        let inv = parse_script_invocation("scripts/postgresql/init.sh --port 5432").unwrap();
+        assert_eq!(inv.path, "scripts/postgresql/init.sh");
+        assert_eq!(inv.args, vec!["--port", "5432"]);
+    }
+
+    #[test]
+    fn parse_quoted_path_and_arg_values() {
+        let inv = parse_script_invocation(r#"'/path/with spaces/init.sh' --name "my db""#).unwrap();
+        assert_eq!(inv.path, "/path/with spaces/init.sh");
+        assert_eq!(inv.args, vec!["--name", "my db"]);
+    }
+
+    #[test]
+    fn reject_empty_and_unbalanced() {
+        assert!(parse_script_invocation("").is_err());
+        assert!(parse_script_invocation("init.sh --name 'unterminated").is_err());
+    }
+}
+
 #[derive(Clone, Deserialize, Default)]
 pub struct ExecuteCmdConfig {
     pub server_metadata: ServerMetadata,
@@ -37,7 +96,8 @@ pub struct ExecuteCmdConfig {
     #[serde(default)]
     pub silent: bool,
 
-    pub scripts: Vec<String>,
+    #[serde(skip)]
+    pub scripts: Vec<ScriptInvocation>,
 
     pub mode: String,
     pub work_path: String,

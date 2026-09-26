@@ -46,6 +46,9 @@ Prebuilt binaries are also attached to each [GitHub Release](https://github.com/
 cd main && cargo build --release && cd ..
 # Temporarily add `rhctl` to your PATH for the current terminal session.
 export PATH="$(pwd)/main/target/release:$PATH"
+# Permanently install the release binary into /usr/local/bin.
+sudo cp main/target/release/rhctl /usr/local/bin/rhctl
+sudo chmod +x /usr/local/bin/rhctl
 ```
 # Commands
 ## rhctl execute
@@ -61,8 +64,8 @@ rhctl execute \
   [--password <pass>] \
   [--identity <key>] \
   [--certificate <cert>] \
-  --script <script1> \
-  [--script <script2> ...] \
+  --script <script-or-cmdline> \
+  [--script <script-or-cmdline> ...] \
   [--work-path <path>] \
   [--mode sync|async] \
   [options]
@@ -78,6 +81,16 @@ rhctl execute \
   --use-sudo
 ```
 
+**Example with script parameters** (path and args in one `--script` value):
+```bash
+rhctl execute \
+  --host 192.168.75.129 \
+  --user test99 \
+  --password testpwd \
+  --script "/path/to/scripts/postgresql/init.sh --port 5432" \
+  --use-sudo
+```
+
 **Example Script** (e.g., `assets/example-bash1.sh`):
 ```bash
 #!/bin/bash
@@ -90,7 +103,7 @@ echo "Remote Execution 1.2"
 **Required Parameters**:
 - `--host <ip/hostname>`: Remote host IP or hostname
 - `--user <username>`: Remote username
-- `--script <path>`: Local bash script file (supports multiple)
+- `--script <cmdline>`: Local bash script path, optionally followed by args (shell-style quoting). Supports multiple.
 
 **Optional Parameters**:
 - `--mode <sync|async>`: Execution mode: 'sync' (run sequentially) or 'async' (run concurrently).

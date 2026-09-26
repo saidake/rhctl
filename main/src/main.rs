@@ -165,7 +165,10 @@ enum Commands {
         )]
         certificate: Option<String>,
 
-        #[arg(long, help = "Local bash script file (supports multiple)")]
+        #[arg(
+            long,
+            help = "Local bash script to run remotely; optional args after the path (e.g. 'init.sh --port 5432'). Supports multiple."
+        )]
         script: Vec<String>,
 
         #[arg(
