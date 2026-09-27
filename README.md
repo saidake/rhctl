@@ -89,7 +89,7 @@ rhctl execute \
   --host 192.168.75.129 \
   --user test99 \
   --password testpwd \
-  --script "/path/to/scripts/postgresql/configure.sh --port 5432" \
+  --script "/path/to/scripts/postgresql/db.sh --action create --port 5432" \
   --use-sudo
 ```
 
@@ -605,6 +605,48 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
     --user test99 \
     --password testpwd \
     --script scripts/postgresql/install.sh \
+    --use-sudo
+  ```
+* Configures PostgreSQL for remote access (listen, port, pg_hba, firewall).
+
+  Check out the script file: [scripts/postgresql/configure.sh](scripts/postgresql/configure.sh)  
+  Example:
+  ```bash
+  rhctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script "scripts/postgresql/configure.sh --port 5432" \
+    --use-sudo
+  ```
+* Creates / lists / deletes databases and roles (`db.sh --action create|list|delete`).
+
+  Check out the script file: [scripts/postgresql/db.sh](scripts/postgresql/db.sh)  
+  Example create:
+  ```bash
+  rhctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script "scripts/postgresql/db.sh --action create --host 192.168.75.128 --port 5432" \
+    --use-sudo
+  ```
+  Example list:
+  ```bash
+  rhctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script "scripts/postgresql/db.sh --action list --port 5432" \
+    --use-sudo
+  ```
+  Example delete:
+  ```bash
+  rhctl execute \
+    --host 192.168.75.128 \
+    --user test99 \
+    --password testpwd \
+    --script "scripts/postgresql/db.sh --action delete --db-name mydb --port 5432" \
     --use-sudo
   ```
 

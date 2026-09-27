@@ -4,45 +4,24 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # ************************************************************************************
-# Configure an installed PostgreSQL for remote access and create a test DB + role.
+# Configure installed PostgreSQL for remote access (listen, port, pg_hba, firewall)
+# and ensure the service accepts connections.
 #
-# Each run mints a new random database name / role / password (preset formats;
-# random preset if unset) and writes them to the state file (latest wins for
-# execute-sql.sh). Server listen / port / pg_hba / firewall changes overwrite
-# prior desired state on re-run.
-# Remote pg_hba rules (exact allow-list; re-runs overwrite):
-#   - default / omit --allowed-ips: 0.0.0.0/0 and ::/0
-#   - with --allowed-ips: only those client addresses (same as limit-remote-ips.sh)
-#   - reopen after restrict: --allowed-ips 0.0.0.0/0,::/0
+# Does not create databases or roles — use db.sh --action create.
 #
-# If exists, overwrite — safe to re-run. Credentials are always new.
+# If exists, overwrite — safe to re-run.
 #
 # Usage:
+#   ./configure.sh --port 5432
 #   ./configure.sh \
-#     --host 192.168.75.129 \
 #     --port 5432 \
 #     --auth-method md5 \
-#     --allowed-ips 192.168.1.100,10.0.0.5 \
-#     --credential-profile hardened
-#   ./configure.sh \
-#     --host 192.168.75.129 \
-#     --port 5432 \
-#     --auth-method md5 \
-#     --allowed-ips 0.0.0.0/0,::/0 \
-#     --credential-profile hardened
-#   ./configure.sh \
-#     --port 5433 \
-#     --auth-method scram-sha-256 \
-#     --credential-profile app_snake
+#     --allowed-ips 192.168.1.100,10.0.0.5
 #
 # Required Parameters:
 #   (none)
 #
 # Optional Parameters:
-#   --host <host>
-#       Address printed in DATABASE_URL / psql test (default: `127.0.0.1`).
-#       Use the target server IP/hostname when clients connect remotely.
-#         Example host values: `192.168.75.129`, `db.example.com`, `127.0.0.1`
 #   --port <port>
 #       Listen port (default: `5432`).
 #         Example port values: `5432`, `5433`, `48985`
@@ -50,59 +29,18 @@
 #       pg_hba auth method (default: `md5`).
 #         Example method values: `md5`, `scram-sha-256`, `password`
 #   --allowed-ips <ip>[,<ip>...]
-#       Desired final remote allow-list (overwrites prior remote host-all rules;
-#       omit for `0.0.0.0/0,::/0`). Use `0.0.0.0/0,::/0` to allow all again.
+#       Remote pg_hba allow-list; re-runs overwrite prior remote host-all rules
+#       (default: `0.0.0.0/0,::/0`).
 #         Example ip values: `192.168.1.100`, `10.0.0.5`, `192.168.1.0/24`,
 #           `0.0.0.0/0`, `::/0`
-#   --credential-profile <profile>
-#       Bundle of name + password formats. If unset (and formats unset), a profile is
-#       chosen at random so installs do not share one pattern.
-#         Example profile values: `dev_simple`, `dev_hex`, `app_snake`, `hardened`
-#   --db-name-format <format>
-#       Database identifier format (Postgres-safe unquoted name).
-#         Example format values / generated names:
-#           `p_alnum`   → `p7k2m9xq4n1b`
-#           `u_hex`     → `u0a1b2c3d4e5f678`
-#           `app_alnum` → `app_k3m9x2p7q1`
-#           `db_snake`  → `db_a1b2c3d4_e5f6`
-#           `r_digit`   → `rabcd12345678`
-#   --user-name-format <format>
-#       Role identifier format (same allowed values as `--db-name-format`).
-#         Example format values / generated names:
-#           `p_alnum`   → `p9xq4n1b7k2m`
-#           `u_hex`     → `ufedcba9876543210`
-#           `app_alnum` → `app_z8y7x6w5v4`
-#           `db_snake`  → `db_m1n2o3p4_q5r6`
-#           `r_digit`   → `rwxyz87654321`
-#   --password-format <format>
-#       Password generation format.
-#         Example format values / generated passwords:
-#           `alnum24`     → `K7mP2qR9tX4vB8nH1jL5wY3`
-#           `alnum32`     → `A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6`
-#           `hex48`       → `a1b2c3d4e5f6789012345678abcdef0123456789abcdef01`
-#           `alnum_sym28` → `K7mP2q#R9tX4v*B8nH_1jL5wY3z`
-#           `base58_32`   → `3fK9mP2qR7tX4vB8nH1jL5wY6zA2cD`
 #
 # Override Parameters:
-#   RHCTL_PG_HOST=<host>
-#       Same as `--host`.
 #   RHCTL_PG_PORT=<port>
 #       Same as `--port`.
 #   RHCTL_PG_AUTH_METHOD=<method>
 #       Same as `--auth-method`.
 #   RHCTL_PG_ALLOW_IPS=<ip>[,<ip>...]
 #       Same as `--allowed-ips`.
-#   RHCTL_PG_CREDENTIAL_PROFILE=<profile>
-#       Same as `--credential-profile`.
-#   RHCTL_PG_DB_NAME_FORMAT=<format>
-#       Same as `--db-name-format`.
-#   RHCTL_PG_USER_NAME_FORMAT=<format>
-#       Same as `--user-name-format`.
-#   RHCTL_PG_PASSWORD_FORMAT=<format>
-#       Same as `--password-format`.
-#   RHCTL_PG_STATE_FILE=<path>
-#       Latest credentials state file (overwritten each configure run).
-#         Example path values: `/var/lib/postgresql/.rhctl-pg-test-credentials`
 #
 # Since : 1.0.3
 # Date  : Sep 27, 2026
@@ -112,28 +50,13 @@ set -euo pipefail
 
 # ========================================================================= Parameter
 
-# Empty means "not set" so we can fall back to state-file DB_HOST on re-runs.
-RHCTL_PG_HOST="${RHCTL_PG_HOST:-}"
 RHCTL_PG_PORT="${RHCTL_PG_PORT:-5432}"
 RHCTL_PG_AUTH_METHOD="${RHCTL_PG_AUTH_METHOD:-md5}"
-STATE_FILE="${RHCTL_PG_STATE_FILE:-/var/lib/postgresql/.rhctl-pg-test-credentials}"
-CREDENTIAL_PROFILE="${RHCTL_PG_CREDENTIAL_PROFILE:-}"
-DB_NAME_FORMAT="${RHCTL_PG_DB_NAME_FORMAT:-}"
-USER_NAME_FORMAT="${RHCTL_PG_USER_NAME_FORMAT:-}"
-PASSWORD_FORMAT="${RHCTL_PG_PASSWORD_FORMAT:-}"
 NEED_RESTART=false
 IPS=()
 
-NAME_FORMATS=(p_alnum u_hex app_alnum db_snake r_digit)
-PASSWORD_FORMATS=(alnum24 alnum32 hex48 alnum_sym28 base58_32)
-PROFILES=(dev_simple dev_hex app_snake hardened)
-
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --host)
-            RHCTL_PG_HOST="$2"
-            shift 2
-            ;;
         --port)
             RHCTL_PG_PORT="$2"
             shift 2
@@ -147,24 +70,8 @@ while [ "$#" -gt 0 ]; do
             IPS+=("${_parsed[@]}")
             shift 2
             ;;
-        --credential-profile)
-            CREDENTIAL_PROFILE="$2"
-            shift 2
-            ;;
-        --db-name-format)
-            DB_NAME_FORMAT="$2"
-            shift 2
-            ;;
-        --user-name-format)
-            USER_NAME_FORMAT="$2"
-            shift 2
-            ;;
-        --password-format)
-            PASSWORD_FORMAT="$2"
-            shift 2
-            ;;
         -h|--help)
-            sed -n '2,110p' "$0"
+            sed -n '2,50p' "$0"
             exit 0
             ;;
         --*)
@@ -195,110 +102,6 @@ esac
 
 log() { echo "[INFO] $*"; }
 warn() { echo "[WARN] $*"; }
-
-in_list() {
-    local needle="$1"
-    shift
-    local x
-    for x in "$@"; do
-        [ "$x" = "$needle" ] && return 0
-    done
-    return 1
-}
-
-pick_random() {
-    local arr=("$@")
-    local n=${#arr[@]}
-    local i=$((RANDOM % n))
-    echo "${arr[$i]}"
-}
-
-apply_profile() {
-    case "$1" in
-        dev_simple)
-            DB_NAME_FORMAT="${DB_NAME_FORMAT:-p_alnum}"
-            USER_NAME_FORMAT="${USER_NAME_FORMAT:-p_alnum}"
-            PASSWORD_FORMAT="${PASSWORD_FORMAT:-alnum24}"
-            ;;
-        dev_hex)
-            DB_NAME_FORMAT="${DB_NAME_FORMAT:-u_hex}"
-            USER_NAME_FORMAT="${USER_NAME_FORMAT:-u_hex}"
-            PASSWORD_FORMAT="${PASSWORD_FORMAT:-hex48}"
-            ;;
-        app_snake)
-            DB_NAME_FORMAT="${DB_NAME_FORMAT:-db_snake}"
-            USER_NAME_FORMAT="${USER_NAME_FORMAT:-app_alnum}"
-            PASSWORD_FORMAT="${PASSWORD_FORMAT:-alnum32}"
-            ;;
-        hardened)
-            DB_NAME_FORMAT="${DB_NAME_FORMAT:-db_snake}"
-            USER_NAME_FORMAT="${USER_NAME_FORMAT:-r_digit}"
-            PASSWORD_FORMAT="${PASSWORD_FORMAT:-alnum_sym28}"
-            ;;
-        *)
-            echo "[ERROR] Unsupported --credential-profile: $1"
-            echo "[ERROR] Allowed: ${PROFILES[*]}"
-            exit 1
-            ;;
-    esac
-}
-
-rand_chars() {
-    local charset="$1"
-    local len="$2"
-    local out
-    # `head` closes the pipe early; under `pipefail` that yields SIGPIPE (141) from `tr`.
-    set +o pipefail
-    out="$(tr -dc "$charset" </dev/urandom | head -c "$len")"
-    set -o pipefail
-    if [ "${#out}" -ne "$len" ]; then
-        echo "[ERROR] Failed to generate ${len} random characters" >&2
-        exit 1
-    fi
-    printf '%s' "$out"
-}
-
-# Unquoted Postgres identifiers: [a-z_][a-z0-9_]* , max 63 chars.
-generate_identifier() {
-    case "$1" in
-        p_alnum)  echo "p$(rand_chars 'a-z0-9' 12)" ;;
-        u_hex)    echo "u$(rand_chars 'a-f0-9' 16)" ;;
-        app_alnum) echo "app_$(rand_chars 'a-z0-9' 10)" ;;
-        db_snake) echo "db_$(rand_chars 'a-z0-9' 8)_$(rand_chars 'a-z0-9' 4)" ;;
-        r_digit)  echo "r$(rand_chars 'a-z' 4)$(rand_chars '0-9' 8)" ;;
-        *)
-            echo "[ERROR] Internal: unknown identifier format $1" >&2
-            exit 1
-            ;;
-    esac
-}
-
-generate_password() {
-    case "$1" in
-        alnum24)     rand_chars 'A-Za-z0-9' 24 ;;
-        alnum32)     rand_chars 'A-Za-z0-9' 32 ;;
-        hex48)       rand_chars 'a-f0-9' 48 ;;
-        # Avoid shell/SQL/URL metacharacters: ' " ` $ \ and whitespace.
-        alnum_sym28) rand_chars 'A-Za-z0-9!@#%^*_-' 28 ;;
-        base58_32)   rand_chars '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz' 32 ;;
-        *)
-            echo "[ERROR] Internal: unknown password format $1" >&2
-            exit 1
-            ;;
-    esac
-}
-
-sql_quote() {
-    printf "%s" "$1" | sed "s/'/''/g"
-}
-
-url_encode() {
-    if command -v python3 &>/dev/null; then
-        python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
-    else
-        printf "%s" "$1"
-    fi
-}
 
 set_conf_kv() {
     local key="$1"
@@ -353,7 +156,6 @@ remove_remote_hba_rules() {
         "$HBA_FILE"
 }
 
-# Replace remote host-all rules with the desired CIDR list. Returns 0 if changed.
 sync_remote_hba_allowlist() {
     local -a desired=("$@")
     local before after cidr line
@@ -385,37 +187,6 @@ configure_firewall() {
     log "Allowed ${port}/tcp in ufw"
 }
 
-# Resolve credential formats: explicit flags win; else random profile / random formats.
-if [ -n "$CREDENTIAL_PROFILE" ]; then
-    apply_profile "$CREDENTIAL_PROFILE"
-elif [ -z "$DB_NAME_FORMAT" ] && [ -z "$USER_NAME_FORMAT" ] && [ -z "$PASSWORD_FORMAT" ]; then
-    CREDENTIAL_PROFILE="$(pick_random "${PROFILES[@]}")"
-    apply_profile "$CREDENTIAL_PROFILE"
-    log "No credential formats specified — randomly selected profile: ${CREDENTIAL_PROFILE}"
-else
-    CREDENTIAL_PROFILE="${CREDENTIAL_PROFILE:-custom}"
-fi
-
-[ -z "$DB_NAME_FORMAT" ] && DB_NAME_FORMAT="$(pick_random "${NAME_FORMATS[@]}")"
-[ -z "$USER_NAME_FORMAT" ] && USER_NAME_FORMAT="$(pick_random "${NAME_FORMATS[@]}")"
-[ -z "$PASSWORD_FORMAT" ] && PASSWORD_FORMAT="$(pick_random "${PASSWORD_FORMATS[@]}")"
-
-if ! in_list "$DB_NAME_FORMAT" "${NAME_FORMATS[@]}"; then
-    echo "[ERROR] Unsupported --db-name-format: ${DB_NAME_FORMAT}"
-    echo "[ERROR] Allowed: ${NAME_FORMATS[*]}"
-    exit 1
-fi
-if ! in_list "$USER_NAME_FORMAT" "${NAME_FORMATS[@]}"; then
-    echo "[ERROR] Unsupported --user-name-format: ${USER_NAME_FORMAT}"
-    echo "[ERROR] Allowed: ${NAME_FORMATS[*]}"
-    exit 1
-fi
-if ! in_list "$PASSWORD_FORMAT" "${PASSWORD_FORMATS[@]}"; then
-    echo "[ERROR] Unsupported --password-format: ${PASSWORD_FORMAT}"
-    echo "[ERROR] Allowed: ${PASSWORD_FORMATS[*]}"
-    exit 1
-fi
-
 # ========================================================================= PostgreSQL discovery
 
 if ! command -v psql &>/dev/null; then
@@ -429,8 +200,6 @@ if ! command -v pg_lsclusters &>/dev/null; then
     exit 1
 fi
 
-# Discover the actual PostgreSQL cluster instead of relying on the psql
-# client version. The client version and server version may differ.
 CLUSTER_INFO="$(pg_lsclusters -h 2>/dev/null | awk '$2 == "main" { print; exit }')"
 
 if [ -z "$CLUSTER_INFO" ]; then
@@ -499,11 +268,7 @@ fi
 
 configure_firewall "$RHCTL_PG_PORT"
 
-# ========================================================================= Start / restart PostgreSQL BEFORE using psql
-#
-# This is intentionally before CREATE USER / CREATE DATABASE.
-# Previously the script attempted to use psql first and only started/restarted
-# PostgreSQL afterwards.
+# ========================================================================= Start / restart PostgreSQL
 
 if [ "$NEED_RESTART" = true ]; then
     log "Restarting PostgreSQL to apply configuration"
@@ -592,105 +357,16 @@ fi
 log "Runtime listen_addresses=${RUNTIME_LISTEN}"
 log "Runtime port=${RUNTIME_PORT}"
 
-# ========================================================================= credentials
-#
-# PostgreSQL is now guaranteed to be running before these commands execute.
-
-DB_CONNECT_HOST="${RHCTL_PG_HOST:-127.0.0.1}"
-DB_NAME="$(generate_identifier "$DB_NAME_FORMAT")"
-DB_USER="$(generate_identifier "$USER_NAME_FORMAT")"
-DB_PASSWORD="$(generate_password "$PASSWORD_FORMAT")"
-
-# ========================================================================= Ensure unique database / role names
-
-tries=0
-while [ "$tries" -lt 8 ]; do
-    role_exists="$(
-        sudo -u postgres psql \
-            -p "$RHCTL_PG_PORT" \
-            -d postgres \
-            -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" \
-            || true
-    )"
-    db_exists="$(
-        sudo -u postgres psql \
-            -p "$RHCTL_PG_PORT" \
-            -d postgres \
-            -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" \
-            || true
-    )"
-    if [ "$role_exists" != "1" ] && [ "$db_exists" != "1" ]; then
-        break
-    fi
-    [ "$role_exists" = "1" ] && DB_USER="$(generate_identifier "$USER_NAME_FORMAT")"
-    [ "$db_exists" = "1" ] && DB_NAME="$(generate_identifier "$DB_NAME_FORMAT")"
-    tries=$((tries + 1))
-done
-
-if [ "$tries" -ge 8 ]; then
-    echo "[ERROR] Failed to allocate unique database/role names after ${tries} attempts"
-    exit 1
-fi
-
-# ========================================================================= Persist state file
-
-sudo mkdir -p "$(dirname "$STATE_FILE")"
-sudo tee "$STATE_FILE" >/dev/null <<EOF
-DB_NAME=${DB_NAME}
-DB_USER=${DB_USER}
-DB_PASSWORD=${DB_PASSWORD}
-DB_HOST=${DB_CONNECT_HOST}
-DB_PORT=${RHCTL_PG_PORT}
-DB_AUTH_METHOD=${AUTH}
-DB_CREDENTIAL_PROFILE=${CREDENTIAL_PROFILE}
-DB_NAME_FORMAT=${DB_NAME_FORMAT}
-DB_USER_NAME_FORMAT=${USER_NAME_FORMAT}
-DB_PASSWORD_FORMAT=${PASSWORD_FORMAT}
-EOF
-sudo chmod 600 "$STATE_FILE"
-sudo chown postgres:postgres "$STATE_FILE" 2>/dev/null || true
-log "Generated new credentials → ${STATE_FILE}"
-log "Formats: profile=${CREDENTIAL_PROFILE} db=${DB_NAME_FORMAT} user=${USER_NAME_FORMAT} password=${PASSWORD_FORMAT}"
-
-# ========================================================================= Create role / database
-
-DB_PASSWORD_SQL="$(sql_quote "$DB_PASSWORD")"
-DB_PASSWORD_URL="$(url_encode "$DB_PASSWORD")"
-
-sudo -u postgres psql \
-    -p "$RHCTL_PG_PORT" \
-    -d postgres \
-    -v ON_ERROR_STOP=1 \
-    -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD_SQL}';"
-log "Created role '${DB_USER}'"
-
-sudo -u postgres psql \
-    -p "$RHCTL_PG_PORT" \
-    -d postgres \
-    -v ON_ERROR_STOP=1 \
-    -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
-log "Created database '${DB_NAME}' owned by '${DB_USER}'"
-
 # ========================================================================= Final output
 
 echo "============================================="
-echo "[INFO] PostgreSQL test credentials"
-echo "[INFO]   DB_NAME=${DB_NAME}"
-echo "[INFO]   DB_USER=${DB_USER}"
-echo "[INFO]   DB_PASSWORD=${DB_PASSWORD}"
-echo "[INFO]   DB_HOST=${DB_CONNECT_HOST}"
-echo "[INFO]   DB_PORT=${RHCTL_PG_PORT}"
-echo "[INFO]   DB_AUTH_METHOD=${AUTH}"
-echo "[INFO]   CREDENTIAL_PROFILE=${CREDENTIAL_PROFILE}"
-echo "[INFO]   DB_NAME_FORMAT=${DB_NAME_FORMAT}"
-echo "[INFO]   USER_NAME_FORMAT=${USER_NAME_FORMAT}"
-echo "[INFO]   PASSWORD_FORMAT=${PASSWORD_FORMAT}"
+echo "[INFO] PostgreSQL server configured for remote access"
+echo "[INFO]   LISTEN=* PORT=${RHCTL_PG_PORT} AUTH=${AUTH}"
 if [ "${#IPS[@]}" -gt 0 ]; then
     echo "[INFO]   ALLOW_IPS=${DESIRED_CIDRS[*]}"
 else
     echo "[INFO]   ALLOW_IPS=0.0.0.0/0 ::/0"
 fi
-echo "[INFO]   DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD_URL}@${DB_CONNECT_HOST}:${RHCTL_PG_PORT}/${DB_NAME}"
-echo "[INFO] Test:"
-echo "[INFO]   PGPASSWORD='${DB_PASSWORD}' psql -U ${DB_USER} -d ${DB_NAME} -h ${DB_CONNECT_HOST} -p ${RHCTL_PG_PORT}"
+echo "[INFO] Next: create a database with"
+echo "[INFO]   ./db.sh --action create --host <ip> --port ${RHCTL_PG_PORT}"
 echo "============================================="

@@ -4,10 +4,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # ************************************************************************************
-# Set PostgreSQL remote access to an exact allow-list of client addresses.
+# Set PostgreSQL remote access to an exact client allow-list (pg_hba).
 #
-# Replaces existing remote `host all all …` rules (keeps localhost 127.0.0.1/32
-# and ::1/128). Re-runs overwrite the previous allow-list.
+# Replaces remote `host all all …` rules; keeps localhost `127.0.0.1/32` and
+# `::1/128`. Re-runs overwrite the previous allow-list.
 #
 # If exists, overwrite — safe to re-run.
 #
@@ -15,14 +15,11 @@
 #   ./limit-remote-ips.sh \
 #     --allowed-ips 192.168.1.100,10.0.0.5,192.168.1.0/24 \
 #     --auth-method md5
-#   ./limit-remote-ips.sh \
-#     --allowed-ips 0.0.0.0/0,::/0 \
-#     --auth-method md5
+#   ./limit-remote-ips.sh --allowed-ips 0.0.0.0/0,::/0
 #
 # Required Parameters:
 #   --allowed-ips <ip>[,<ip>...]
-#       Desired final allow-list (overwrites prior remote host-all rules).
-#       Use `0.0.0.0/0,::/0` to allow all IPv4 + IPv6 again.
+#       Default, final remote allow-list (overwrites prior remote host-all rules).
 #         Example ip values: `192.168.1.100`, `10.0.0.5`, `192.168.1.0/24`,
 #           `0.0.0.0/0`, `::/0`
 #
@@ -62,7 +59,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,50p' "$0"
+            sed -n '2,45p' "$0"
             exit 0
             ;;
         --*)

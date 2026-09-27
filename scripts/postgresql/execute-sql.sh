@@ -4,17 +4,15 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # ************************************************************************************
-# Execute one or more SQL files against a PostgreSQL database.
+# Execute SQL files against a PostgreSQL database.
 #
 # Connection resolution (first match wins):
 #   1) DATABASE_URL
-#   2) state file from configure.sh
+#   2) state file from db.sh --action create
 #   3) PG* environment variables
 #
 # Usage:
-#   ./execute-sql.sh \
-#     --dir /opt/pidifa/ddl \
-#     --continue
+#   ./execute-sql.sh --dir /opt/pidifa/ddl --continue
 #
 # Required Parameters:
 #   --dir <directory>
@@ -30,9 +28,9 @@
 #       Postgres connection URL (preferred).
 #         Example url values: `postgres://user:pass@127.0.0.1:5432/mydb`
 #   RHCTL_PG_STATE_FILE=<path>
-#       Latest credentials state file written by `configure.sh`.
+#       Credentials state file from `db.sh --action create`.
 #   PGHOST / PGPORT / PGUSER / PGPASSWORD / PGDATABASE
-#       Libpq connection overrides when `DATABASE_URL` is unset.
+#       Libpq overrides when `DATABASE_URL` is unset.
 #
 # Since : 1.0.1
 # Date  : Sep 26, 2026
@@ -110,7 +108,7 @@ build_psql_args() {
         PSQL_ARGS=(-h "${PGHOST:-127.0.0.1}" -p "${PGPORT:-5432}" -U "$PGUSER" -d "$PGDATABASE")
         return 0
     fi
-    err "Set DATABASE_URL, or run configure.sh first (state file), or set PG* vars"
+    err "Set DATABASE_URL, or run db.sh --action create first (state file), or set PG* vars"
     exit 1
 }
 
