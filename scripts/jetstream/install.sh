@@ -44,6 +44,8 @@
 
 set -e
 
+# ========================================================================= Parameter
+
 NATS_VERSION="${RHCTL_NATS_VERSION:-latest}"
 NATS_ARCHIVE="${RHCTL_NATS_ARCHIVE:-}"
 INSTALL_DIR="/usr/local/bin"
@@ -81,6 +83,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# ========================================================================= Methods
+
 resolve_nats_version() {
   local requested="$1"
   if [[ "$requested" != "latest" ]]; then
@@ -111,6 +115,8 @@ normalize_nats_version() {
   echo "$v"
 }
 
+# ========================================================================= Install
+
 echo "[INFO] Updating package index..."
 sudo apt-get update -y
 
@@ -120,10 +126,6 @@ if [[ -n "$NATS_ARCHIVE" ]]; then
 else
   sudo apt-get install -y curl tar
 fi
-
-# ------------------------------------------------
-# Install NATS Server
-# ------------------------------------------------
 
 if command -v nats-server >/dev/null 2>&1; then
   echo "[INFO] NATS already installed: $(nats-server --version)"
@@ -166,10 +168,6 @@ else
   fi
 fi
 
-# ------------------------------------------------
-# Create system user
-# ------------------------------------------------
-
 if id "nats" &>/dev/null; then
   echo "[INFO] User 'nats' already exists."
 else
@@ -177,26 +175,15 @@ else
   sudo useradd --system --no-create-home --shell /usr/sbin/nologin nats
 fi
 
-# ------------------------------------------------
-# Create directories
-# ------------------------------------------------
-
 echo "[INFO] Creating required directories..."
-
 sudo mkdir -p "$CONFIG_DIR"
 sudo mkdir -p "$DATA_DIR"
-
 sudo chown -R nats:nats "$DATA_DIR"
-
-# ------------------------------------------------
-# Create configuration file
-# ------------------------------------------------
 
 if [[ -f "$CONFIG_FILE" ]]; then
   echo "[INFO] NATS config already exists: $CONFIG_FILE"
 else
   echo "[INFO] Creating NATS configuration..."
-
   sudo tee "$CONFIG_FILE" > /dev/null <<EOF
 port: 4222
 
@@ -206,19 +193,15 @@ jetstream {
   max_file_store: 10GB
 }
 EOF
-
   echo "[INFO] Config file created."
 fi
 
-# ------------------------------------------------
-# Create systemd service
-# ------------------------------------------------
+# ========================================================================= Service
 
 if [[ -f "$SERVICE_FILE" ]]; then
   echo "[INFO] systemd service already exists."
 else
   echo "[INFO] Creating systemd service..."
-
   sudo tee "$SERVICE_FILE" > /dev/null <<EOF
 [Unit]
 Description=NATS Server
@@ -234,15 +217,9 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 EOF
-
   echo "[INFO] systemd service created."
-
   sudo systemctl daemon-reload
 fi
-
-# ------------------------------------------------
-# Enable service
-# ------------------------------------------------
 
 if systemctl is-enabled --quiet nats; then
   echo "[INFO] NATS service already enabled."
@@ -251,10 +228,6 @@ else
   sudo systemctl enable nats
 fi
 
-# ------------------------------------------------
-# Start service
-# ------------------------------------------------
-
 if systemctl is-active --quiet nats; then
   echo "[INFO] NATS service already running."
 else
@@ -262,12 +235,7 @@ else
   sudo systemctl start nats
 fi
 
-# ------------------------------------------------
-# Verify service
-# ------------------------------------------------
-
 echo "[INFO] Verifying NATS service..."
-
 if systemctl is-active --quiet nats; then
   echo "[INFO] NATS service is running."
 else

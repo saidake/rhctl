@@ -36,11 +36,13 @@
 #   RHCTL_NATS_PORT=<port>
 #       Same as `--port`.
 #
-# Since : 1.0.2
-# Date  : Sep 26, 2026
+# Since : 1.0.3
+# Date  : Sep 27, 2026
 # ************************************************************************************
 
 set -euo pipefail
+
+# ========================================================================= Parameter
 
 RHCTL_NATS_HOST="${RHCTL_NATS_HOST:-127.0.0.1}"
 RHCTL_NATS_PORT="${RHCTL_NATS_PORT:-4222}"
@@ -72,23 +74,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+# ========================================================================= Methods
+
 log() { echo "[INFO] $*"; }
 warn() { echo "[WARN] $*"; }
-
-if ! command -v nats-server &>/dev/null; then
-  echo "[ERROR] nats-server not found. Run install.sh first."
-  exit 1
-fi
-
-if [ ! -f "$CONFIG_FILE" ]; then
-  echo "[ERROR] Missing ${CONFIG_FILE}. Run install.sh first."
-  exit 1
-fi
-
-if ! [[ "$RHCTL_NATS_PORT" =~ ^[0-9]+$ ]] || [ "$RHCTL_NATS_PORT" -lt 1 ] || [ "$RHCTL_NATS_PORT" -gt 65535 ]; then
-  echo "[ERROR] Invalid --port: ${RHCTL_NATS_PORT}"
-  exit 1
-fi
 
 # Update a top-level `key: value` in nats.conf. Returns 0 when changed.
 set_nats_kv() {
@@ -141,6 +130,23 @@ configure_firewall() {
   log "Allowed ${port}/tcp in ufw"
 }
 
+# ========================================================================= Config
+
+if ! command -v nats-server &>/dev/null; then
+  echo "[ERROR] nats-server not found. Run install.sh first."
+  exit 1
+fi
+
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "[ERROR] Missing ${CONFIG_FILE}. Run install.sh first."
+  exit 1
+fi
+
+if ! [[ "$RHCTL_NATS_PORT" =~ ^[0-9]+$ ]] || [ "$RHCTL_NATS_PORT" -lt 1 ] || [ "$RHCTL_NATS_PORT" -gt 65535 ]; then
+  echo "[ERROR] Invalid --port: ${RHCTL_NATS_PORT}"
+  exit 1
+fi
+
 # Listen on all interfaces so remote clients can connect.
 if set_nats_kv "host" "0.0.0.0" "$CONFIG_FILE"; then NEED_RESTART=true; fi
 if set_nats_kv "port" "${RHCTL_NATS_PORT}" "$CONFIG_FILE"; then NEED_RESTART=true; fi
@@ -175,6 +181,8 @@ if command -v ss &>/dev/null; then
     ss -tln 2>/dev/null | grep "${RHCTL_NATS_PORT}" || true
   fi
 fi
+
+# ========================================================================= Output
 
 NATS_URL="nats://${RHCTL_NATS_HOST}:${RHCTL_NATS_PORT}"
 

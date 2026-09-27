@@ -101,14 +101,16 @@
 #   RHCTL_PG_PASSWORD_FORMAT=<format>
 #       Same as `--password-format`.
 #   RHCTL_PG_STATE_FILE=<path>
-#       Latest credentials state file (overwritten each init run).
+#       Latest credentials state file (overwritten each configure run).
 #         Example path values: `/var/lib/postgresql/.rhctl-pg-test-credentials`
 #
-# Since : 1.0.1
-# Date  : Sep 26, 2026
+# Since : 1.0.3
+# Date  : Sep 27, 2026
 # ************************************************************************************
 
 set -euo pipefail
+
+# ========================================================================= Parameter
 
 # Empty means "not set" so we can fall back to state-file DB_HOST on re-runs.
 RHCTL_PG_HOST="${RHCTL_PG_HOST:-}"
@@ -189,6 +191,8 @@ case "$RHCTL_PG_AUTH_METHOD" in
         ;;
 esac
 
+# ========================================================================= Methods
+
 log() { echo "[INFO] $*"; }
 warn() { echo "[WARN] $*"; }
 
@@ -239,37 +243,6 @@ apply_profile() {
     esac
 }
 
-# Resolve credential formats: explicit flags win; else random profile / random formats.
-if [ -n "$CREDENTIAL_PROFILE" ]; then
-    apply_profile "$CREDENTIAL_PROFILE"
-elif [ -z "$DB_NAME_FORMAT" ] && [ -z "$USER_NAME_FORMAT" ] && [ -z "$PASSWORD_FORMAT" ]; then
-    CREDENTIAL_PROFILE="$(pick_random "${PROFILES[@]}")"
-    apply_profile "$CREDENTIAL_PROFILE"
-    log "No credential formats specified — randomly selected profile: ${CREDENTIAL_PROFILE}"
-else
-    CREDENTIAL_PROFILE="${CREDENTIAL_PROFILE:-custom}"
-fi
-
-[ -z "$DB_NAME_FORMAT" ] && DB_NAME_FORMAT="$(pick_random "${NAME_FORMATS[@]}")"
-[ -z "$USER_NAME_FORMAT" ] && USER_NAME_FORMAT="$(pick_random "${NAME_FORMATS[@]}")"
-[ -z "$PASSWORD_FORMAT" ] && PASSWORD_FORMAT="$(pick_random "${PASSWORD_FORMATS[@]}")"
-
-if ! in_list "$DB_NAME_FORMAT" "${NAME_FORMATS[@]}"; then
-    echo "[ERROR] Unsupported --db-name-format: ${DB_NAME_FORMAT}"
-    echo "[ERROR] Allowed: ${NAME_FORMATS[*]}"
-    exit 1
-fi
-if ! in_list "$USER_NAME_FORMAT" "${NAME_FORMATS[@]}"; then
-    echo "[ERROR] Unsupported --user-name-format: ${USER_NAME_FORMAT}"
-    echo "[ERROR] Allowed: ${NAME_FORMATS[*]}"
-    exit 1
-fi
-if ! in_list "$PASSWORD_FORMAT" "${PASSWORD_FORMATS[@]}"; then
-    echo "[ERROR] Unsupported --password-format: ${PASSWORD_FORMAT}"
-    echo "[ERROR] Allowed: ${PASSWORD_FORMATS[*]}"
-    exit 1
-fi
-
 rand_chars() {
     local charset="$1"
     local len="$2"
@@ -316,7 +289,6 @@ generate_password() {
 }
 
 sql_quote() {
-    # Escape single quotes for SQL string literals.
     printf "%s" "$1" | sed "s/'/''/g"
 }
 
@@ -324,25 +296,9 @@ url_encode() {
     if command -v python3 &>/dev/null; then
         python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
     else
-        # Fallback: only safe when password is already URL-safe.
         printf "%s" "$1"
     fi
 }
-
-if ! command -v psql &>/dev/null; then
-    echo "[ERROR] psql not found. Run install.sh first."
-    exit 1
-fi
-
-PG_VERSION=$(psql --version 2>&1 | grep -oP '(?<=psql \(PostgreSQL\) )[\d.]+' | head -1 | cut -d. -f1)
-CONF_DIR="/etc/postgresql/${PG_VERSION}/main"
-CONF_FILE="${CONF_DIR}/postgresql.conf"
-HBA_FILE="${CONF_DIR}/pg_hba.conf"
-
-if [ ! -f "$CONF_FILE" ] || [ ! -f "$HBA_FILE" ]; then
-    echo "[ERROR] Expected config under ${CONF_DIR} (version=${PG_VERSION})"
-    exit 1
-fi
 
 set_conf_kv() {
     local key="$1"
@@ -354,7 +310,8 @@ set_conf_kv() {
     current=$(grep -E "^[[:space:]]*${key}[[:space:]]*=" "$file" | head -1 || true)
     if [ -n "$current" ]; then
         local normalized
-        normalized=$(echo "$current" | sed 's/^[[:space:]]*//;s/[[:space:]]*=[[:space:]]*/ = /;s/[[:space:]]\+/ /g')
+        normalized=$(echo "$current" \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*=[[:space:]]*/ = /;s/[[:space:]]\+/ /g')
         if [ "$normalized" = "$expected" ]; then
             log "postgresql.conf '${key}' already set to ${value}"
             return 1
@@ -428,14 +385,97 @@ configure_firewall() {
     log "Allowed ${port}/tcp in ufw"
 }
 
-# --- listen / port ---
-if set_conf_kv "listen_addresses" "'*'" "$CONF_FILE"; then NEED_RESTART=true; fi
-if set_conf_kv "port" "${RHCTL_PG_PORT}" "$CONF_FILE"; then NEED_RESTART=true; fi
+# Resolve credential formats: explicit flags win; else random profile / random formats.
+if [ -n "$CREDENTIAL_PROFILE" ]; then
+    apply_profile "$CREDENTIAL_PROFILE"
+elif [ -z "$DB_NAME_FORMAT" ] && [ -z "$USER_NAME_FORMAT" ] && [ -z "$PASSWORD_FORMAT" ]; then
+    CREDENTIAL_PROFILE="$(pick_random "${PROFILES[@]}")"
+    apply_profile "$CREDENTIAL_PROFILE"
+    log "No credential formats specified — randomly selected profile: ${CREDENTIAL_PROFILE}"
+else
+    CREDENTIAL_PROFILE="${CREDENTIAL_PROFILE:-custom}"
+fi
+
+[ -z "$DB_NAME_FORMAT" ] && DB_NAME_FORMAT="$(pick_random "${NAME_FORMATS[@]}")"
+[ -z "$USER_NAME_FORMAT" ] && USER_NAME_FORMAT="$(pick_random "${NAME_FORMATS[@]}")"
+[ -z "$PASSWORD_FORMAT" ] && PASSWORD_FORMAT="$(pick_random "${PASSWORD_FORMATS[@]}")"
+
+if ! in_list "$DB_NAME_FORMAT" "${NAME_FORMATS[@]}"; then
+    echo "[ERROR] Unsupported --db-name-format: ${DB_NAME_FORMAT}"
+    echo "[ERROR] Allowed: ${NAME_FORMATS[*]}"
+    exit 1
+fi
+if ! in_list "$USER_NAME_FORMAT" "${NAME_FORMATS[@]}"; then
+    echo "[ERROR] Unsupported --user-name-format: ${USER_NAME_FORMAT}"
+    echo "[ERROR] Allowed: ${NAME_FORMATS[*]}"
+    exit 1
+fi
+if ! in_list "$PASSWORD_FORMAT" "${PASSWORD_FORMATS[@]}"; then
+    echo "[ERROR] Unsupported --password-format: ${PASSWORD_FORMAT}"
+    echo "[ERROR] Allowed: ${PASSWORD_FORMATS[*]}"
+    exit 1
+fi
+
+# ========================================================================= PostgreSQL discovery
+
+if ! command -v psql &>/dev/null; then
+    echo "[ERROR] psql not found. Run install.sh first."
+    exit 1
+fi
+
+if ! command -v pg_lsclusters &>/dev/null; then
+    echo "[ERROR] pg_lsclusters not found."
+    echo "[ERROR] This script requires the Debian/Ubuntu postgresql-common package."
+    exit 1
+fi
+
+# Discover the actual PostgreSQL cluster instead of relying on the psql
+# client version. The client version and server version may differ.
+CLUSTER_INFO="$(pg_lsclusters -h 2>/dev/null | awk '$2 == "main" { print; exit }')"
+
+if [ -z "$CLUSTER_INFO" ]; then
+    echo "[ERROR] PostgreSQL 'main' cluster not found."
+    echo "[ERROR] Available clusters:"
+    pg_lsclusters || true
+    exit 1
+fi
+
+PG_VERSION="$(echo "$CLUSTER_INFO" | awk '{print $1}')"
+PG_CLUSTER="$(echo "$CLUSTER_INFO" | awk '{print $2}')"
+CLUSTER_PORT="$(echo "$CLUSTER_INFO" | awk '{print $3}')"
+CLUSTER_STATUS="$(echo "$CLUSTER_INFO" | awk '{print $4}')"
+
+CONF_DIR="/etc/postgresql/${PG_VERSION}/${PG_CLUSTER}"
+CONF_FILE="${CONF_DIR}/postgresql.conf"
+HBA_FILE="${CONF_DIR}/pg_hba.conf"
+
+if [ ! -f "$CONF_FILE" ] || [ ! -f "$HBA_FILE" ]; then
+    echo "[ERROR] Expected PostgreSQL config files were not found:"
+    echo "[ERROR]   ${CONF_FILE}"
+    echo "[ERROR]   ${HBA_FILE}"
+    exit 1
+fi
+
+log "Detected PostgreSQL cluster: ${PG_VERSION}/${PG_CLUSTER}"
+log "Current cluster port: ${CLUSTER_PORT}"
+log "Current cluster status: ${CLUSTER_STATUS}"
+
+# ========================================================================= listen / port
+
+if set_conf_kv "listen_addresses" "'*'" "$CONF_FILE"; then
+    NEED_RESTART=true
+fi
+
+if set_conf_kv "port" "${RHCTL_PG_PORT}" "$CONF_FILE"; then
+    NEED_RESTART=true
+fi
 
 AUTH="$RHCTL_PG_AUTH_METHOD"
 
-# --- remote auth (exact allow-list; re-runs overwrite) ---
+# ========================================================================= remote pg_hba
+
 DESIRED_CIDRS=()
+
 if [ "${#IPS[@]}" -gt 0 ]; then
     for raw in "${IPS[@]}"; do
         ip="$(echo "$raw" | xargs)"
@@ -451,21 +491,134 @@ if [ "${#DESIRED_CIDRS[@]}" -eq 0 ]; then
     exit 1
 fi
 
-if sync_remote_hba_allowlist "${DESIRED_CIDRS[@]}"; then NEED_RESTART=true; fi
+if sync_remote_hba_allowlist "${DESIRED_CIDRS[@]}"; then
+    NEED_RESTART=true
+fi
+
+# ========================================================================= firewall
 
 configure_firewall "$RHCTL_PG_PORT"
 
-# --- credentials: always mint a new random DB + role each run ---
+# ========================================================================= Start / restart PostgreSQL BEFORE using psql
+#
+# This is intentionally before CREATE USER / CREATE DATABASE.
+# Previously the script attempted to use psql first and only started/restarted
+# PostgreSQL afterwards.
+
+if [ "$NEED_RESTART" = true ]; then
+    log "Restarting PostgreSQL to apply configuration"
+    if ! sudo systemctl restart postgresql; then
+        echo "[ERROR] Failed to restart PostgreSQL"
+        sudo systemctl status postgresql --no-pager || true
+        exit 1
+    fi
+else
+    if ! systemctl is-active --quiet postgresql; then
+        warn "PostgreSQL service is not active — attempting start"
+        if ! sudo systemctl start postgresql; then
+            echo "[ERROR] Failed to start PostgreSQL"
+            sudo systemctl status postgresql --no-pager || true
+            exit 1
+        fi
+    else
+        log "PostgreSQL service is already active"
+    fi
+fi
+
+# ========================================================================= Wait until PostgreSQL accepts connections
+
+if ! command -v pg_isready &>/dev/null; then
+    echo "[ERROR] pg_isready not found."
+    exit 1
+fi
+
+log "Waiting for PostgreSQL on 127.0.0.1:${RHCTL_PG_PORT}"
+
+READY=false
+for _ in $(seq 1 30); do
+    if pg_isready \
+        -h 127.0.0.1 \
+        -p "$RHCTL_PG_PORT" \
+        -d postgres \
+        >/dev/null 2>&1; then
+        READY=true
+        break
+    fi
+    sleep 1
+done
+
+if [ "$READY" != true ]; then
+    echo "[ERROR] PostgreSQL is not accepting connections on"
+    echo "[ERROR]   127.0.0.1:${RHCTL_PG_PORT}"
+    echo
+    echo "[ERROR] Cluster status:"
+    pg_lsclusters || true
+    echo
+    echo "[ERROR] Listening sockets:"
+    sudo ss -lntp | grep -E "(:${RHCTL_PG_PORT}[[:space:]]|postgres)" || true
+    echo
+    echo "[ERROR] PostgreSQL service status:"
+    sudo systemctl status postgresql --no-pager || true
+    exit 1
+fi
+
+log "PostgreSQL is accepting connections on 127.0.0.1:${RHCTL_PG_PORT}"
+
+# ========================================================================= Verify runtime configuration
+
+RUNTIME_PORT="$(
+    sudo -u postgres psql \
+        -p "$RHCTL_PG_PORT" \
+        -d postgres \
+        -tAc "SHOW port;" \
+        | tr -d '[:space:]'
+)"
+
+RUNTIME_LISTEN="$(
+    sudo -u postgres psql \
+        -p "$RHCTL_PG_PORT" \
+        -d postgres \
+        -tAc "SHOW listen_addresses;" \
+        | tr -d '[:space:]'
+)"
+
+if [ "$RUNTIME_PORT" != "$RHCTL_PG_PORT" ]; then
+    echo "[ERROR] PostgreSQL runtime port mismatch."
+    echo "[ERROR] Expected: ${RHCTL_PG_PORT}"
+    echo "[ERROR] Actual:   ${RUNTIME_PORT}"
+    exit 1
+fi
+
+log "Runtime listen_addresses=${RUNTIME_LISTEN}"
+log "Runtime port=${RUNTIME_PORT}"
+
+# ========================================================================= credentials
+#
+# PostgreSQL is now guaranteed to be running before these commands execute.
+
 DB_CONNECT_HOST="${RHCTL_PG_HOST:-127.0.0.1}"
 DB_NAME="$(generate_identifier "$DB_NAME_FORMAT")"
 DB_USER="$(generate_identifier "$USER_NAME_FORMAT")"
 DB_PASSWORD="$(generate_password "$PASSWORD_FORMAT")"
 
-# Extremely unlikely with random formats; regenerate if a name already exists.
+# ========================================================================= Ensure unique database / role names
+
 tries=0
 while [ "$tries" -lt 8 ]; do
-    role_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" || true)
-    db_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" || true)
+    role_exists="$(
+        sudo -u postgres psql \
+            -p "$RHCTL_PG_PORT" \
+            -d postgres \
+            -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" \
+            || true
+    )"
+    db_exists="$(
+        sudo -u postgres psql \
+            -p "$RHCTL_PG_PORT" \
+            -d postgres \
+            -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" \
+            || true
+    )"
     if [ "$role_exists" != "1" ] && [ "$db_exists" != "1" ]; then
         break
     fi
@@ -473,10 +626,13 @@ while [ "$tries" -lt 8 ]; do
     [ "$db_exists" = "1" ] && DB_NAME="$(generate_identifier "$DB_NAME_FORMAT")"
     tries=$((tries + 1))
 done
+
 if [ "$tries" -ge 8 ]; then
     echo "[ERROR] Failed to allocate unique database/role names after ${tries} attempts"
     exit 1
 fi
+
+# ========================================================================= Persist state file
 
 sudo mkdir -p "$(dirname "$STATE_FILE")"
 sudo tee "$STATE_FILE" >/dev/null <<EOF
@@ -496,26 +652,26 @@ sudo chown postgres:postgres "$STATE_FILE" 2>/dev/null || true
 log "Generated new credentials → ${STATE_FILE}"
 log "Formats: profile=${CREDENTIAL_PROFILE} db=${DB_NAME_FORMAT} user=${USER_NAME_FORMAT} password=${PASSWORD_FORMAT}"
 
+# ========================================================================= Create role / database
+
 DB_PASSWORD_SQL="$(sql_quote "$DB_PASSWORD")"
 DB_PASSWORD_URL="$(url_encode "$DB_PASSWORD")"
 
-sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD_SQL}';"
+sudo -u postgres psql \
+    -p "$RHCTL_PG_PORT" \
+    -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD_SQL}';"
 log "Created role '${DB_USER}'"
 
-sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
+sudo -u postgres psql \
+    -p "$RHCTL_PG_PORT" \
+    -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
 log "Created database '${DB_NAME}' owned by '${DB_USER}'"
 
-if [ "$NEED_RESTART" = true ]; then
-    log "Restarting PostgreSQL to apply config"
-    sudo systemctl restart postgresql
-else
-    log "No postgresql.conf / pg_hba changes requiring restart"
-fi
-
-if ! systemctl is-active --quiet postgresql; then
-    warn "PostgreSQL service is not active — attempting start"
-    sudo systemctl start postgresql
-fi
+# ========================================================================= Final output
 
 echo "============================================="
 echo "[INFO] PostgreSQL test credentials"

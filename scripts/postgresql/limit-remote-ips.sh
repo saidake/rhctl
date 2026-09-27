@@ -37,11 +37,13 @@
 #   RHCTL_PG_AUTH_METHOD=<method>
 #       Same as `--auth-method`.
 #
-# Since : 1.0.1
-# Date  : Sep 26, 2026
+# Since : 1.0.3
+# Date  : Sep 27, 2026
 # ************************************************************************************
 
 set -euo pipefail
+
+# ========================================================================= Parameter
 
 log() { echo "[INFO] $*"; }
 
@@ -94,18 +96,7 @@ esac
 
 AUTH="$RHCTL_PG_AUTH_METHOD"
 
-if ! command -v psql &>/dev/null; then
-    echo "[ERROR] psql not found. Run install.sh first."
-    exit 1
-fi
-
-PG_VERSION=$(psql --version 2>&1 | grep -oP '(?<=psql \(PostgreSQL\) )[\d.]+' | head -1 | cut -d. -f1)
-HBA_FILE="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
-
-if [ ! -f "$HBA_FILE" ]; then
-    echo "[ERROR] Missing ${HBA_FILE}"
-    exit 1
-fi
+# ========================================================================= Methods
 
 normalize_cidr() {
     local ip="$1"
@@ -116,19 +107,52 @@ normalize_cidr() {
     fi
 }
 
-# Snapshot remote host-all lines (exclude localhost).
 remote_hba_snapshot() {
     sudo grep -E '^host[[:space:]]+all[[:space:]]+all[[:space:]]+' "$HBA_FILE" 2>/dev/null \
         | grep -Ev '[[:space:]](127\.0\.0\.1/32|::1/128)[[:space:]]' || true
 }
 
-# Drop all remote host-all rules; keep localhost.
 remove_remote_hba_rules() {
     sudo sed -i -E \
         '/^host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1\/32|::1\/128)[[:space:]]+/b
          /^host[[:space:]]+all[[:space:]]+all[[:space:]]+/d' \
         "$HBA_FILE"
 }
+
+# ========================================================================= PostgreSQL discovery
+
+if ! command -v psql &>/dev/null; then
+    echo "[ERROR] psql not found. Run install.sh first."
+    exit 1
+fi
+
+if ! command -v pg_lsclusters &>/dev/null; then
+    echo "[ERROR] pg_lsclusters not found."
+    echo "[ERROR] This script requires the Debian/Ubuntu postgresql-common package."
+    exit 1
+fi
+
+CLUSTER_INFO="$(pg_lsclusters -h 2>/dev/null | awk '$2 == "main" { print; exit }')"
+
+if [ -z "$CLUSTER_INFO" ]; then
+    echo "[ERROR] PostgreSQL 'main' cluster not found."
+    echo "[ERROR] Available clusters:"
+    pg_lsclusters || true
+    exit 1
+fi
+
+PG_VERSION="$(echo "$CLUSTER_INFO" | awk '{print $1}')"
+PG_CLUSTER="$(echo "$CLUSTER_INFO" | awk '{print $2}')"
+HBA_FILE="/etc/postgresql/${PG_VERSION}/${PG_CLUSTER}/pg_hba.conf"
+
+if [ ! -f "$HBA_FILE" ]; then
+    echo "[ERROR] Missing ${HBA_FILE}"
+    exit 1
+fi
+
+log "Detected PostgreSQL cluster: ${PG_VERSION}/${PG_CLUSTER}"
+
+# ========================================================================= remote pg_hba
 
 DESIRED_CIDRS=()
 for raw in "${IPS[@]}"; do
@@ -152,6 +176,8 @@ for cidr in "${DESIRED_CIDRS[@]}"; do
 done
 
 AFTER="$(remote_hba_snapshot)"
+
+# ========================================================================= Reload PostgreSQL
 
 if [ "$BEFORE" != "$AFTER" ]; then
     log "Reloading PostgreSQL"
