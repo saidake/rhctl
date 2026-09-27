@@ -31,14 +31,16 @@ For release preparation branches:
 - Prefer this repository's commit style:
 
 ```text
-[Component] type: Short summary
+type: short summary
 ```
+
+The summary starts with a lowercase letter (do not capitalize the first word).
 
 **Examples**:
 
-- `[SSH] feat: Support identity and certificate authentication`
-- `[Upload] fix: Failed to move items when using sudo`
-- `[README] doc: Add SSH auth setup and fix path-mapping examples`
+- `feat: support identity and certificate authentication`
+- `fix: failed to move items when using sudo`
+- `docs: add SSH auth setup and fix path-mapping examples`
 
 Common types: `feat`, `fix`, `docs`/`doc`, `style`, `refactor`, `chore`, `ci`.
 
