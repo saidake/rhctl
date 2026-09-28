@@ -112,8 +112,10 @@ echo "Remote Execution 1.2"
 - `--work-path <path>`: Remote working directory where the bash script will be executed (defaults to the user's home directory: ~).
 
 - `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback).
-- `--identity <path>`: Path to SSH private key. Preferred over password when set.
-- `--certificate <path>`: Path to OpenSSH certificate (requires `--identity`).
+- `--identity <path>`: Path to SSH private key (OpenSSH or PEM). Preferred over password when set.  
+  Example path values: `~/.ssh/id_ed25519`, `~/.ssh/id_rsa.pem`
+- `--certificate <path>`: Optional OpenSSH certificate (requires `--identity`; not a TLS/X.509 PEM cert).  
+  Example path values: `~/.ssh/id_ed25519-cert.pub`
 - `--ssh-port <port>`: Remote SSH port (default: 22).
 
 - `--use-sudo`: Run operations with sudo (default: false).
@@ -205,8 +207,10 @@ rhctl upload \
 
 **Optional Parameters**:
 - `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback)
-- `--identity <path>`: Path to SSH private key. Preferred over password when set.
-- `--certificate <path>`: Path to OpenSSH certificate (requires `--identity`).
+- `--identity <path>`: Path to SSH private key (OpenSSH or PEM). Preferred over password when set.  
+  Example path values: `~/.ssh/id_ed25519`, `~/.ssh/id_rsa.pem`
+- `--certificate <path>`: Optional OpenSSH certificate (requires `--identity`; not a TLS/X.509 PEM cert).  
+  Example path values: `~/.ssh/id_ed25519-cert.pub`
 - `--ssh-port <port>`: Remote SSH port (default: 22)
 
 - `--use-sudo`: Run operations with sudo (default: false).
@@ -293,8 +297,10 @@ rhctl patch \
 **Optional Parameters**:
 - `--recover`: Recover the remote target file from its backup after a patching.
 - `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback)
-- `--identity <path>`: Path to SSH private key. Preferred over password when set.
-- `--certificate <path>`: Path to OpenSSH certificate (requires `--identity`).
+- `--identity <path>`: Path to SSH private key (OpenSSH or PEM). Preferred over password when set.  
+  Example path values: `~/.ssh/id_ed25519`, `~/.ssh/id_rsa.pem`
+- `--certificate <path>`: Optional OpenSSH certificate (requires `--identity`; not a TLS/X.509 PEM cert).  
+  Example path values: `~/.ssh/id_ed25519-cert.pub`
 - `--ssh-port <port>`: Remote SSH port (default: 22)
 
 - `--use-sudo`: Run operations with sudo (default: false).
@@ -419,6 +425,9 @@ group-map:
 [Back to Top](#table-of-contents)  
 
 `rhctl` can authenticate with a password, an SSH private key (`--identity`), or an OpenSSH certificate (`--identity` + `--certificate`). Key-based login is preferred for automation.
+
+- `--identity` accepts an OpenSSH private key or a PEM private key (for example `id_ed25519` or `id_rsa.pem`). If the key is encrypted, pass the passphrase with `--password`.
+- `--certificate` is optional when `--identity` is set. Use it only for OpenSSH user certificates (typically `*-cert.pub`), not TLS/X.509 PEM certificates. A certificate always requires `--identity`.
 
 ## Add Your Public Key to a Remote Server
 Generate a key pair on your local machine (skip if you already have one):

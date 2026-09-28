@@ -769,10 +769,10 @@ impl ServerPool {
             pattern
         );
 
-        // Use a one-liner shell command to safely check for at least one match
-        // Exit 0 if any file/dir exists, exit 1 otherwise
+        // Exit 0 if any match exists, exit 1 otherwise.
+        // `pattern` stays unquoted so the remote shell expands globs (e.g. dir/*).
         let full_cmd = format!(
-            "sh -c 'for f in {}; do [ -e \"$f\" ] && exit 0; done; exit 1'",
+            "for f in {}; do [ -e \"$f\" ] && exit 0; done; exit 1",
             pattern
         );
 
@@ -793,7 +793,7 @@ impl ServerPool {
             }
             Err(e) => {
                 // Exit status 1 means no match
-                if e.contains("exit status 1") {
+                if is_exit_status(&e, 1) {
                     log_debug!(
                         server_metadata,
                         task_name,
@@ -854,7 +854,10 @@ impl ServerPool {
             flag
         );
 
-        let full_cmd = format!("sh -c 'test {} {}'", flag, path);
+        let quoted_path = shlex::try_quote(path).map_err(|e| {
+            format!("Invalid remote path '{}': {}", path, e)
+        })?;
+        let full_cmd = format!("test {} {}", flag, quoted_path);
         let result = self
             .exec(server_metadata, task_name, &full_cmd, use_sudo)
             .await;
@@ -871,7 +874,7 @@ impl ServerPool {
                 Ok(true)
             }
             Err(e) => {
-                if e.contains("exit status 1") {
+                if is_exit_status(&e, 1) {
                     log_debug!(
                         server_metadata,
                         task_name,
@@ -939,174 +942,227 @@ impl ServerPool {
             .await
     }
 
-    async fn exec_with_stream(
-        &self,
-        server_metadata: &Arc<ServerMetadata>,
-        task_name: &str,
-        cmd: &str,
-        use_sudo: bool,
-        print_log: bool,
-    ) -> Result<String, String> {
-        let cmd: String = cmd.to_string();
-        let mut channel_guard = self.get_channel(&server_metadata).await?;
+async fn exec_with_stream(
+    &self,
+    server_metadata: &Arc<ServerMetadata>,
+    task_name: &str,
+    cmd: &str,
+    use_sudo: bool,
+    print_log: bool,
+) -> Result<String, String> {
+    let cmd = cmd.to_string();
+    let mut channel_guard = self.get_channel(server_metadata).await?;
 
-        log_debug!(
-            server_metadata,
-            task_name,
-            "Streaming command: {} (sudo: {})",
-            cmd,
-            use_sudo
-        );
-        let full_cmd = if use_sudo {
-            let escaped = cmd.replace("'", "'\\''");
-            format!("sudo -S bash -c '{}'", escaped)
-        } else {
-            cmd.to_string()
-        };
-        log_debug!(
-            server_metadata,
-            task_name,
-            "Full command: {} (sudo: {})",
-            full_cmd,
-            use_sudo
-        );
-        if use_sudo {
-            channel_guard
-                .channel
-                .request_pty(true, "xterm", 0, 0, 0, 0, &[])
-                .await
-                .map_err(|e| format!("Failed to request pty for sudo. \n\t> {}", e))?;
-        }
+    log_debug!(
+        server_metadata,
+        task_name,
+        "Streaming command: {} (sudo: {})",
+        cmd,
+        use_sudo
+    );
 
+    let full_cmd = if use_sudo {
+        let quoted = shlex::try_quote(cmd.as_str())
+            .map_err(|e| format!("Failed to quote sudo command: {}", e))?;
+
+        // Use an explicit prompt so we can distinguish the sudo password
+        // request from normal command output.
+        format!(
+            "sudo -S -p '[RHCTL_SUDO_PASSWORD]' bash -c {}",
+            quoted
+        )
+    } else {
+        cmd.to_string()
+    };
+
+    log_debug!(
+        server_metadata,
+        task_name,
+        "Full command: {} (sudo: {})",
+        full_cmd,
+        use_sudo
+    );
+
+    if use_sudo {
         channel_guard
             .channel
-            .exec(true, full_cmd.as_bytes().to_vec())
+            .request_pty(true, "xterm", 0, 0, 0, 0, &[])
             .await
-            .map_err(|e| format!("Failed to execute command '{}'. \n\t> {}", cmd, e))?;
-
-        if use_sudo {
-            let mut data = Vec::new();
-            while let Some(msg) = channel_guard.channel.wait().await {
-                match msg {
-                    russh::ChannelMsg::Data { data: channel_data } => {
-                        data.extend_from_slice(&channel_data);
-                        break;
-                    }
-                    _ => continue,
-                }
-            }
-            let pw_with_newline = format!("{}\n", server_metadata.password);
-            channel_guard
-                .channel
-                .data(pw_with_newline.as_bytes())
-                .await
-                .map_err(|e| format!("Failed to send sudo password. \n\t> {}", e))?;
-        }
-
-        let mut stdout_buf = String::new();
-        let mut stderr_buf = String::new();
-        let mut skip_sudo_blank = use_sudo;
-        let mut stdout_collected = Vec::new();
-        let mut stderr_collected = Vec::new();
-        let mut partial_stdout = String::new();
-        let mut partial_stderr = String::new();
-        let mut stdout_progress = CrProgressPrinter::new();
-        let mut stderr_progress = CrProgressPrinter::new();
-
-        while let Some(msg) = channel_guard.channel.wait().await {
-            match msg {
-                ChannelMsg::Data { data } => {
-                    stdout_collected.extend_from_slice(&data);
-                    if print_log {
-                        let data_str = String::from_utf8_lossy(&data);
-                        feed_remote_stream(
-                            &mut partial_stdout,
-                            &mut stdout_progress,
-                            &data_str,
-                            server_metadata,
-                            task_name,
-                            &mut skip_sudo_blank,
-                        )?;
-                    }
-                }
-                ChannelMsg::ExtendedData { data, ext } if ext == 1 => {
-                    stderr_collected.extend_from_slice(&data);
-                    if print_log {
-                        let data_str = String::from_utf8_lossy(&data);
-                        // Remote stderr (e.g. curl progress) streams as REMOTE, not ERROR.
-                        let mut no_sudo_skip = false;
-                        feed_remote_stream(
-                            &mut partial_stderr,
-                            &mut stderr_progress,
-                            &data_str,
-                            server_metadata,
-                            task_name,
-                            &mut no_sudo_skip,
-                        )?;
-                    }
-                }
-                ChannelMsg::ExitStatus { exit_status } => {
-                    if exit_status != 0 {
-                        let stdout_str = String::from_utf8_lossy(&stdout_collected);
-                        let stderr_str = String::from_utf8_lossy(&stderr_collected);
-                        let mut msg: String;
-                        if stderr_str.contains(SUDO_ERR_MSG) {
-                            msg = format!(
-                                "Detected 'sudo' at the start of a command line, but 'use_sudo' is not enabled. Enable 'use_sudo' to run commands with sudo. \n\t> Command line: \n{}",
-                                cmd
-                            );
-                        } else {
-                            msg = format!(
-                                "Command failed with exit status {}. \n\t> Command line: \n{}",
-                                exit_status, cmd
-                            );
-                            if !stdout_str.trim().is_empty() {
-                                msg.push_str(&format!("\nRemote Output:\n\t{}", stdout_str));
-                            }
-                            if !stderr_str.trim().is_empty() {
-                                msg.push_str(&format!("\nRemote Error:\n\t{}", stderr_str));
-                            }
-                        }
-                        return Err(msg);
-                    }
-                    break;
-                }
-                _ => continue,
-            }
-        }
-
-        if print_log {
-            stdout_progress.flush(server_metadata, task_name)?;
-            if !partial_stdout.is_empty()
-                && !(use_sudo && skip_sudo_blank && partial_stdout.trim().is_empty())
-            {
-                stdout_progress.on_lf(&partial_stdout, server_metadata, task_name)?;
-            }
-            stderr_progress.flush(server_metadata, task_name)?;
-            if !partial_stderr.is_empty() {
-                stderr_progress.on_lf(&partial_stderr, server_metadata, task_name)?;
-            }
-        }
-
-        // Collect final output for return
-        stdout_buf = String::from_utf8_lossy(&stdout_collected).to_string();
-        stderr_buf = String::from_utf8_lossy(&stderr_collected).to_string();
-
-        channel_guard
-            .channel
-            .close()
-            .await
-            .map_err(|e| format!("Failed to close channel. \n\t> {}", e))?;
-
-        stdout_buf = stdout_buf.trim().to_string();
-        log_debug!(
-            server_metadata,
-            task_name,
-            "Streaming command output: '{}'",
-            stdout_buf
-        );
-        Ok(stdout_buf)
+            .map_err(|e| format!("Failed to request pty for sudo. \n\t> {}", e))?;
     }
+
+    channel_guard
+        .channel
+        .exec(true, full_cmd.as_bytes().to_vec())
+        .await
+        .map_err(|e| format!("Failed to execute command '{}'. \n\t> {}", cmd, e))?;
+
+    let mut stdout_buf = String::new();
+    let mut stderr_buf = String::new();
+
+    let mut skip_sudo_blank = use_sudo;
+    let mut stdout_collected = Vec::new();
+    let mut stderr_collected = Vec::new();
+
+    let mut partial_stdout = String::new();
+    let mut partial_stderr = String::new();
+
+    let mut stdout_progress = CrProgressPrinter::new();
+    let mut stderr_progress = CrProgressPrinter::new();
+
+    let mut saw_exit_status = false;
+    let mut sudo_password_sent = !use_sudo;
+
+    while let Some(msg) = channel_guard.channel.wait().await {
+        match msg {
+            ChannelMsg::Data { data } => {
+                let data_str = String::from_utf8_lossy(&data);
+
+                // sudo may send its password prompt through the PTY.
+                if use_sudo
+                    && !sudo_password_sent
+                    && data_str.contains("[RHCTL_SUDO_PASSWORD]")
+                {
+                    let pw_with_newline = format!("{}\n", server_metadata.password);
+
+                    channel_guard
+                        .channel
+                        .data(pw_with_newline.as_bytes())
+                        .await
+                        .map_err(|e| {
+                            format!("Failed to send sudo password. \n\t> {}", e)
+                        })?;
+
+                    sudo_password_sent = true;
+
+                    // Do not expose the sudo password prompt in command output.
+                    continue;
+                }
+
+                stdout_collected.extend_from_slice(&data);
+
+                if print_log {
+                    feed_remote_stream(
+                        &mut partial_stdout,
+                        &mut stdout_progress,
+                        &data_str,
+                        server_metadata,
+                        task_name,
+                        &mut skip_sudo_blank,
+                    )?;
+                }
+            }
+
+            ChannelMsg::ExtendedData { data, ext } if ext == 1 => {
+                stderr_collected.extend_from_slice(&data);
+
+                if print_log {
+                    let data_str = String::from_utf8_lossy(&data);
+
+                    // Remote stderr (e.g. curl progress) streams as REMOTE, not ERROR.
+                    let mut no_sudo_skip = false;
+
+                    feed_remote_stream(
+                        &mut partial_stderr,
+                        &mut stderr_progress,
+                        &data_str,
+                        server_metadata,
+                        task_name,
+                        &mut no_sudo_skip,
+                    )?;
+                }
+            }
+
+            ChannelMsg::ExitStatus { exit_status } => {
+                saw_exit_status = true;
+
+                if exit_status != 0 {
+                    let stdout_str = String::from_utf8_lossy(&stdout_collected);
+                    let stderr_str = String::from_utf8_lossy(&stderr_collected);
+
+                    let mut msg;
+
+                    if stderr_str.contains(SUDO_ERR_MSG) {
+                        msg = format!(
+                            "Detected 'sudo' at the start of a command line, but 'use_sudo' is not enabled. Enable 'use_sudo' to run commands with sudo. \n\t> Command line: \n{}",
+                            cmd
+                        );
+                    } else {
+                        msg = format!(
+                            "Command failed with exit status {}. \n\t> Command line: \n{}",
+                            exit_status, cmd
+                        );
+
+                        if !stdout_str.trim().is_empty() {
+                            msg.push_str(&format!(
+                                "\nRemote Output:\n\t{}",
+                                stdout_str
+                            ));
+                        }
+
+                        if !stderr_str.trim().is_empty() {
+                            msg.push_str(&format!(
+                                "\nRemote Error:\n\t{}",
+                                stderr_str
+                            ));
+                        }
+                    }
+
+                    return Err(msg);
+                }
+
+                break;
+            }
+
+            _ => continue,
+        }
+    }
+
+    if !saw_exit_status {
+        return Err(format!(
+            "Command finished without an exit status. \n\t> Command line: \n{}",
+            cmd
+        ));
+    }
+
+    if print_log {
+        stdout_progress.flush(server_metadata, task_name)?;
+        if !partial_stdout.is_empty()
+            && !(use_sudo
+                && skip_sudo_blank
+                && partial_stdout.trim().is_empty())
+        {
+            stdout_progress.on_lf(
+                &partial_stdout,
+                server_metadata,
+                task_name,
+            )?;
+        }
+
+        stderr_progress.flush(server_metadata, task_name)?;
+
+        if !partial_stderr.is_empty() {
+            stderr_progress.on_lf(
+                &partial_stderr,
+                server_metadata,
+                task_name,
+            )?;
+        }
+    }
+
+    stdout_buf = String::from_utf8_lossy(&stdout_collected).to_string();
+    stderr_buf = String::from_utf8_lossy(&stderr_collected).to_string();
+
+    channel_guard
+        .channel
+        .close()
+        .await
+        .map_err(|e| format!("Failed to close channel. \n\t> {}", e))?;
+
+    stdout_buf = stdout_buf.trim().to_string();
+
+    Ok(stdout_buf)
+}
 
     pub async fn upload_file_or_dir_contents_into_dir(
         &self,
@@ -1753,6 +1809,16 @@ impl ServerPool {
         .await?;
         Ok(temp_dir)
     }
+}
+
+/// True when `err` reports exactly this numeric exit status (not a prefix match like 1 vs 10).
+fn is_exit_status(err: &str, code: u32) -> bool {
+    let marker = "exit status ";
+    let Some(rest) = err.split(marker).nth(1) else {
+        return false;
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u32>().ok() == Some(code)
 }
 
 /// Expand a leading `~/` to the user's home directory.
