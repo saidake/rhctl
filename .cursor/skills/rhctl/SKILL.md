@@ -71,7 +71,7 @@ rhctl execute \
 - `--connect-timeout <duration>`: e.g. `20s`, `5m`, `1h`
 - `--max-sessions-per-server <num>` / `--max-channels-per-session <num>`
 - `--session-acquire-timeout <duration>` / `--max-session-lifetime <duration>`
-- `--log-level <level>`: `debug` | `info` | `warn` | `error` (or `LOG_LEVEL`)
+- `--debug`: Enable debug logging (default: info)
 
 Path placeholders `${NAME}` expand from the process environment.
 
@@ -102,7 +102,7 @@ rhctl upload \
 - `--host`, `--user`
 - At least one of `--transfer <local=remote-dir>` (repeatable) or `--transfer-file <path>`
 
-**Optional Parameters**: Same SSH / sudo / rsync / silent / timeout / session / `--log-level` options as `execute`.
+**Optional Parameters**: Same SSH / sudo / rsync / silent / timeout / session / `--debug` options as `execute`.
 
 ### rhctl patch
 
@@ -129,7 +129,7 @@ rhctl patch \
 
 **Optional Parameters**:
 - `--recover`: Restore `remote-path` from `remote-backup`
-- Same SSH / sudo / rsync / silent / timeout / session / `--log-level` options as `execute`
+- Same SSH / sudo / rsync / silent / timeout / session / `--debug` options as `execute`
 
 ### rhctl run
 

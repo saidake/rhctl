@@ -131,7 +131,7 @@ echo "Remote Execution 1.2"
   Example duration values: `20s`, `5m`, `1h`
 
 **Optional Global Parameters**:
-- `--log-level <level>`: Set log level (debug, info, warn, error; default: info). Also accepts `LOG_LEVEL` from the environment.
+- `--debug`: Enable debug logging (default: info).
 - Path placeholders `${NAME}` are expanded from the process environment.  
   Example:
   ```bash
@@ -224,7 +224,7 @@ rhctl upload \
   Example duration values: `20s`, `5m`, `1h`
 
 **Optional Global Parameters**:
-- `--log-level <level>`: Set log level (debug, info, warn, error; default: info). Also accepts `LOG_LEVEL` from the environment.
+- `--debug`: Enable debug logging (default: info).
 - Path placeholders `${NAME}` are expanded from the process environment.  
   Example:  
     ```properties
@@ -311,7 +311,9 @@ rhctl patch \
 - `--max-session-lifetime <duration>`: Maximum lifetime of an SSH session before it is automatically closed.  
   Example duration values: `20s`, `5m`, `1h`
 
-
+**Optional Global Parameters**:
+- `--debug`: Enable debug logging (default: info).
+- Path placeholders `${NAME}` are expanded from the process environment.
 
 ## rhctl run
 [Back to Top](#table-of-contents)  

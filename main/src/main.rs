@@ -52,9 +52,9 @@ struct Cli {
     #[arg(
         long,
         global = true,
-        help = "Global log level (debug, info, warn, error)"
+        help = "Enable debug logging (default: info)"
     )]
-    log_level: Option<String>,
+    debug: bool,
 }
 
 #[derive(Subcommand)]
@@ -319,22 +319,16 @@ async fn main() {
     // Path placeholders (${NAME}) resolve from the process environment; YAML mode
     // may also supply values via var-map (those override env).
     let env_vars: HashMap<String, String> = HashMap::new();
-    let log_level = cli
-        .log_level
-        .clone()
-        .or_else(|| std::env::var("LOG_LEVEL").ok())
-        .unwrap_or_else(|| "info".to_string());
+    let log_level = if cli.debug {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
 
     // Initialize logging
     env_logger::Builder::new()
         .format(|buf, record| writeln!(buf, "{}", record.args()))
-        .filter_level(match log_level.as_str() {
-            "debug" => log::LevelFilter::Debug,
-            "info" => log::LevelFilter::Info,
-            "warn" => log::LevelFilter::Warn,
-            "error" => log::LevelFilter::Error,
-            _ => log::LevelFilter::Info,
-        })
+        .filter_level(log_level)
         .filter_module("russh", log::LevelFilter::Info)
         .filter_module("russh_keys", log::LevelFilter::Info)
         .init();
