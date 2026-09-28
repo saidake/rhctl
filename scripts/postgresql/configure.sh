@@ -375,5 +375,5 @@ else
     echo "[INFO]   ALLOW_IPS=(none — local 127.0.0.1 / ::1 only)"
 fi
 echo "[INFO] Next: create a database with"
-echo "[INFO]   ./db.sh --action create --host <ip> --port ${RHCTL_PG_PORT}"
+echo "[INFO]   ./db.sh --action create --port ${RHCTL_PG_PORT}"
 echo "============================================="

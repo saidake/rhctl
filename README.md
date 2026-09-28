@@ -639,7 +639,7 @@ MailHog is a lightweight email testing tool that acts as a local SMTP server.
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
-    --script "scripts/postgresql/db.sh --action create --host 192.168.75.128 --port 5432" \
+    --script "scripts/postgresql/db.sh --action create --port 5432" \
     --use-sudo
   ```
   Example list:

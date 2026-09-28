@@ -200,25 +200,27 @@ rhctl execute \
   --host 192.168.75.128 \
   --user test99 \
   --password testpwd \
-  --script "$SCRIPT_ROOT/postgresql/db.sh --action create --host 192.168.75.128 --port 5432" \
+  --script "$SCRIPT_ROOT/postgresql/db.sh --action create --port 5432" \
   --use-sudo
 ```
 
-**Required Parameters**:
+**Parameters (common)**:
 - `--action <action>`: `create` | `list` | `delete`
-
-**Optional Parameters**:
-- `--host <host>`: Address in DATABASE_URL for `create` (default: `127.0.0.1`)
 - `--port <port>`: PostgreSQL port (default: `5432`)
-- `--db-name <name>`: Database name for `delete` (required for delete)
-- `--user-name <name>`: Role to drop with `delete` (default: database owner)
-- `--credential-profile <profile>`: Format bundle for `create` — `dev_simple`, `dev_hex`, `app_snake`, `hardened`
-- `--db-name-format <format>`: `p_alnum`, `u_hex`, `app_alnum`, `db_snake`, `r_digit`
-- `--user-name-format <format>`: Same values as `--db-name-format`
-- `--password-format <format>`: `alnum24`, `alnum32`, `hex48`, `alnum_sym28`, `base58_32`
+
+**Parameters (create)**:
+- `--max-length`: Use maximum lengths (DB/user name 63; password 72). Default: random length in range.
+- Mints random DB/role/password with dense charsets within PostgreSQL limits. `DATABASE_URL` uses `<host>` as a placeholder.
+
+**Parameters (list)**:
+- (none beyond common)
+
+**Parameters (delete)**:
+- `--db-name <name>`: Database name (required)
+- `--user-name <name>`: Role to drop (default: database owner)
 
 **Override Parameters**:
-- `RHCTL_PG_HOST`, `RHCTL_PG_PORT`, `RHCTL_PG_STATE_FILE`, `RHCTL_PG_CREDENTIAL_PROFILE`, `RHCTL_PG_DB_NAME_FORMAT`, `RHCTL_PG_USER_NAME_FORMAT`, `RHCTL_PG_PASSWORD_FORMAT`
+- `RHCTL_PG_PORT`, `RHCTL_PG_STATE_FILE`, `RHCTL_PG_MAX_LENGTH`
 
 ### `$SCRIPT_ROOT/postgresql/execute-sql.sh`
 

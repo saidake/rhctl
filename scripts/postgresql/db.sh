@@ -12,95 +12,80 @@
 #   delete — drop a database and optionally its owner role
 #
 # Usage:
-#   ./db.sh --action create --host 192.168.75.129 --port 5432
+#   ./db.sh --action create --port 5432
 #   ./db.sh --action list --port 5432
 #   ./db.sh --action delete --db-name mydb --user-name myuser --port 5432
 #
-# Required Parameters:
+# Parameters (common):
 #   --action <action>
 #       Default, operation to run.
 #         Example action values: `create`, `list`, `delete`
-#
-# Optional Parameters:
-#   --host <host>
-#       Address printed in DATABASE_URL for `create` (default: `127.0.0.1`).
-#         Example host values: `192.168.75.129`, `db.example.com`, `127.0.0.1`
 #   --port <port>
 #       PostgreSQL port (default: `5432`).
 #         Example port values: `5432`, `5433`
+#
+# Parameters (create):
+#   --max-length
+#       Use maximum lengths for DB name, user name, and password
+#       (identifiers: 63; password: 72). Default: random length in range.
+#
+# Parameters (list):
+#   (none beyond common)
+#
+# Parameters (delete):
 #   --db-name <name>
-#       Database name for `delete` (required for delete).
-#         Example name values: `db_a1b2c3d4_e5f6`
+#       Database name to drop (required for delete).
+#         Example name values: `xk7m2npq9r4s…`
 #   --user-name <name>
-#       Role to drop with `delete` (default: database owner).
-#         Example name values: `app_k3m9x2p7q1`
-#   --credential-profile <profile>
-#       Name + password format bundle for `create`.
-#         Example profile values: `dev_simple`, `dev_hex`, `app_snake`, `hardened`
-#   --db-name-format <format>
-#       Database identifier format for `create`.
-#         Example format values / generated names:
-#           `p_alnum`   → `p7k2m9xq4n1b`
-#           `u_hex`     → `u0a1b2c3d4e5f678`
-#           `app_alnum` → `app_k3m9x2p7q1`
-#           `db_snake`  → `db_a1b2c3d4_e5f6`
-#           `r_digit`   → `rabcd12345678`
-#   --user-name-format <format>
-#       Role identifier format for `create` (same values as `--db-name-format`).
-#   --password-format <format>
-#       Password format for `create`.
-#         Example format values: `alnum24`, `alnum32`, `hex48`, `alnum_sym28`, `base58_32`
+#       Role to drop (default: database owner).
+#         Example name values: `ab3c8d1ef…`
 #
 # Override Parameters:
-#   RHCTL_PG_HOST=<host>
-#       Same as `--host`.
 #   RHCTL_PG_PORT=<port>
 #       Same as `--port`.
 #   RHCTL_PG_STATE_FILE=<path>
 #       Credentials state file written by `create` (used by execute-sql.sh).
 #         Example path values: `/var/lib/postgresql/.rhctl-pg-test-credentials`
-#   RHCTL_PG_CREDENTIAL_PROFILE=<profile>
-#       Same as `--credential-profile`.
-#   RHCTL_PG_DB_NAME_FORMAT=<format>
-#       Same as `--db-name-format`.
-#   RHCTL_PG_USER_NAME_FORMAT=<format>
-#       Same as `--user-name-format`.
-#   RHCTL_PG_PASSWORD_FORMAT=<format>
-#       Same as `--password-format`.
+#   RHCTL_PG_MAX_LENGTH=1
+#       Same as `--max-length` when set to a non-empty value.
 #
 # Since : 1.0.3
-# Date  : Sep 27, 2026
+# Date  : Sep 28, 2026
 # ************************************************************************************
 
 set -euo pipefail
 
 # ========================================================================= Parameter
 
-RHCTL_PG_HOST="${RHCTL_PG_HOST:-}"
 RHCTL_PG_PORT="${RHCTL_PG_PORT:-5432}"
 STATE_FILE="${RHCTL_PG_STATE_FILE:-/var/lib/postgresql/.rhctl-pg-test-credentials}"
-CREDENTIAL_PROFILE="${RHCTL_PG_CREDENTIAL_PROFILE:-}"
-DB_NAME_FORMAT="${RHCTL_PG_DB_NAME_FORMAT:-}"
-USER_NAME_FORMAT="${RHCTL_PG_USER_NAME_FORMAT:-}"
-PASSWORD_FORMAT="${RHCTL_PG_PASSWORD_FORMAT:-}"
+MAX_LENGTH=false
+if [ -n "${RHCTL_PG_MAX_LENGTH:-}" ]; then
+    MAX_LENGTH=true
+fi
 ACTION=""
 DELETE_DB_NAME=""
 DELETE_USER_NAME=""
 
-NAME_FORMATS=(p_alnum u_hex app_alnum db_snake r_digit)
-PASSWORD_FORMATS=(alnum24 alnum32 hex48 alnum_sym28 base58_32)
-PROFILES=(dev_simple dev_hex app_snake hardened)
 PROTECTED_DBS=(postgres template0 template1)
 PROTECTED_ROLES=(postgres)
+
+# Unquoted PG identifier: [a-z][a-z0-9_]*, max NAMEDATALEN-1 (63).
+IDENT_MIN_LEN=24
+IDENT_MAX_LEN=63
+# Quoted password: broad printable set; length within a strong range.
+PASSWORD_MIN_LEN=32
+PASSWORD_MAX_LEN=72
+# '-' last so `tr` treats it as literal, not a range.
+PASSWORD_CHARSET='A-Za-z0-9!@#%^&*_+=[]{}|;:,.<>?/~-'
+
+# Placeholder in printed DATABASE_URL / state file (replace with the client-facing host).
+DB_HOST_PLACEHOLDER='<host>'
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --action)
             ACTION="$2"
-            shift 2
-            ;;
-        --host)
-            RHCTL_PG_HOST="$2"
             shift 2
             ;;
         --port)
@@ -115,24 +100,12 @@ while [ "$#" -gt 0 ]; do
             DELETE_USER_NAME="$2"
             shift 2
             ;;
-        --credential-profile)
-            CREDENTIAL_PROFILE="$2"
-            shift 2
-            ;;
-        --db-name-format)
-            DB_NAME_FORMAT="$2"
-            shift 2
-            ;;
-        --user-name-format)
-            USER_NAME_FORMAT="$2"
-            shift 2
-            ;;
-        --password-format)
-            PASSWORD_FORMAT="$2"
-            shift 2
+        --max-length)
+            MAX_LENGTH=true
+            shift
             ;;
         -h|--help)
-            sed -n '2,75p' "$0"
+            sed -n '2,55p' "$0"
             exit 0
             ;;
         --*)
@@ -174,41 +147,10 @@ in_list() {
     return 1
 }
 
-pick_random() {
-    local arr=("$@")
-    local n=${#arr[@]}
-    local i=$((RANDOM % n))
-    echo "${arr[$i]}"
-}
-
-apply_profile() {
-    case "$1" in
-        dev_simple)
-            DB_NAME_FORMAT="${DB_NAME_FORMAT:-p_alnum}"
-            USER_NAME_FORMAT="${USER_NAME_FORMAT:-p_alnum}"
-            PASSWORD_FORMAT="${PASSWORD_FORMAT:-alnum24}"
-            ;;
-        dev_hex)
-            DB_NAME_FORMAT="${DB_NAME_FORMAT:-u_hex}"
-            USER_NAME_FORMAT="${USER_NAME_FORMAT:-u_hex}"
-            PASSWORD_FORMAT="${PASSWORD_FORMAT:-hex48}"
-            ;;
-        app_snake)
-            DB_NAME_FORMAT="${DB_NAME_FORMAT:-db_snake}"
-            USER_NAME_FORMAT="${USER_NAME_FORMAT:-app_alnum}"
-            PASSWORD_FORMAT="${PASSWORD_FORMAT:-alnum32}"
-            ;;
-        hardened)
-            DB_NAME_FORMAT="${DB_NAME_FORMAT:-db_snake}"
-            USER_NAME_FORMAT="${USER_NAME_FORMAT:-r_digit}"
-            PASSWORD_FORMAT="${PASSWORD_FORMAT:-alnum_sym28}"
-            ;;
-        *)
-            echo "[ERROR] Unsupported --credential-profile: $1"
-            echo "[ERROR] Allowed: ${PROFILES[*]}"
-            exit 1
-            ;;
-    esac
+rand_int() {
+    local min="$1"
+    local max="$2"
+    echo $((min + RANDOM % (max - min + 1)))
 }
 
 rand_chars() {
@@ -225,32 +167,28 @@ rand_chars() {
     printf '%s' "$out"
 }
 
+# Random-length unquoted identifier using the full allowed charset.
 generate_identifier() {
-    case "$1" in
-        p_alnum)   echo "p$(rand_chars 'a-z0-9' 12)" ;;
-        u_hex)     echo "u$(rand_chars 'a-f0-9' 16)" ;;
-        app_alnum) echo "app_$(rand_chars 'a-z0-9' 10)" ;;
-        db_snake)  echo "db_$(rand_chars 'a-z0-9' 8)_$(rand_chars 'a-z0-9' 4)" ;;
-        r_digit)   echo "r$(rand_chars 'a-z' 4)$(rand_chars '0-9' 8)" ;;
-        *)
-            echo "[ERROR] Internal: unknown identifier format $1" >&2
-            exit 1
-            ;;
-    esac
+    local len first rest
+    if [ "$MAX_LENGTH" = true ]; then
+        len="$IDENT_MAX_LEN"
+    else
+        len="$(rand_int "$IDENT_MIN_LEN" "$IDENT_MAX_LEN")"
+    fi
+    first="$(rand_chars 'a-z' 1)"
+    rest="$(rand_chars 'a-z0-9_' "$((len - 1))")"
+    printf '%s%s' "$first" "$rest"
 }
 
+# Random-length password using a dense printable charset (SQL-quoted / URL-encoded later).
 generate_password() {
-    case "$1" in
-        alnum24)     rand_chars 'A-Za-z0-9' 24 ;;
-        alnum32)     rand_chars 'A-Za-z0-9' 32 ;;
-        hex48)       rand_chars 'a-f0-9' 48 ;;
-        alnum_sym28) rand_chars 'A-Za-z0-9!@#%^*_-' 28 ;;
-        base58_32)   rand_chars '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz' 32 ;;
-        *)
-            echo "[ERROR] Internal: unknown password format $1" >&2
-            exit 1
-            ;;
-    esac
+    local len
+    if [ "$MAX_LENGTH" = true ]; then
+        len="$PASSWORD_MAX_LEN"
+    else
+        len="$(rand_int "$PASSWORD_MIN_LEN" "$PASSWORD_MAX_LEN")"
+    fi
+    rand_chars "$PASSWORD_CHARSET" "$len"
 }
 
 sql_quote() {
@@ -367,37 +305,10 @@ fi
 
 # ========================================================================= Action: create
 
-if [ -n "$CREDENTIAL_PROFILE" ]; then
-    apply_profile "$CREDENTIAL_PROFILE"
-elif [ -z "$DB_NAME_FORMAT" ] && [ -z "$USER_NAME_FORMAT" ] && [ -z "$PASSWORD_FORMAT" ]; then
-    CREDENTIAL_PROFILE="$(pick_random "${PROFILES[@]}")"
-    apply_profile "$CREDENTIAL_PROFILE"
-    log "No credential formats specified — randomly selected profile: ${CREDENTIAL_PROFILE}"
-else
-    CREDENTIAL_PROFILE="${CREDENTIAL_PROFILE:-custom}"
-fi
-
-[ -z "$DB_NAME_FORMAT" ] && DB_NAME_FORMAT="$(pick_random "${NAME_FORMATS[@]}")"
-[ -z "$USER_NAME_FORMAT" ] && USER_NAME_FORMAT="$(pick_random "${NAME_FORMATS[@]}")"
-[ -z "$PASSWORD_FORMAT" ] && PASSWORD_FORMAT="$(pick_random "${PASSWORD_FORMATS[@]}")"
-
-if ! in_list "$DB_NAME_FORMAT" "${NAME_FORMATS[@]}"; then
-    echo "[ERROR] Unsupported --db-name-format: ${DB_NAME_FORMAT}"
-    exit 1
-fi
-if ! in_list "$USER_NAME_FORMAT" "${NAME_FORMATS[@]}"; then
-    echo "[ERROR] Unsupported --user-name-format: ${USER_NAME_FORMAT}"
-    exit 1
-fi
-if ! in_list "$PASSWORD_FORMAT" "${PASSWORD_FORMATS[@]}"; then
-    echo "[ERROR] Unsupported --password-format: ${PASSWORD_FORMAT}"
-    exit 1
-fi
-
-DB_CONNECT_HOST="${RHCTL_PG_HOST:-127.0.0.1}"
-DB_NAME="$(generate_identifier "$DB_NAME_FORMAT")"
-DB_USER="$(generate_identifier "$USER_NAME_FORMAT")"
-DB_PASSWORD="$(generate_password "$PASSWORD_FORMAT")"
+DB_CONNECT_HOST="$DB_HOST_PLACEHOLDER"
+DB_NAME="$(generate_identifier)"
+DB_USER="$(generate_identifier)"
+DB_PASSWORD="$(generate_password)"
 
 tries=0
 while [ "$tries" -lt 8 ]; do
@@ -406,8 +317,8 @@ while [ "$tries" -lt 8 ]; do
     if [ "$role_exists" != "1" ] && [ "$db_exists" != "1" ]; then
         break
     fi
-    [ "$role_exists" = "1" ] && DB_USER="$(generate_identifier "$USER_NAME_FORMAT")"
-    [ "$db_exists" = "1" ] && DB_NAME="$(generate_identifier "$DB_NAME_FORMAT")"
+    [ "$role_exists" = "1" ] && DB_USER="$(generate_identifier)"
+    [ "$db_exists" = "1" ] && DB_NAME="$(generate_identifier)"
     tries=$((tries + 1))
 done
 
@@ -425,15 +336,11 @@ DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
 DB_HOST=${DB_CONNECT_HOST}
 DB_PORT=${RHCTL_PG_PORT}
-DB_CREDENTIAL_PROFILE=${CREDENTIAL_PROFILE}
-DB_NAME_FORMAT=${DB_NAME_FORMAT}
-DB_USER_NAME_FORMAT=${USER_NAME_FORMAT}
-DB_PASSWORD_FORMAT=${PASSWORD_FORMAT}
 EOF
 sudo chmod 600 "$STATE_FILE"
 sudo chown postgres:postgres "$STATE_FILE" 2>/dev/null || true
 log "Generated new credentials → ${STATE_FILE}"
-log "Formats: profile=${CREDENTIAL_PROFILE} db=${DB_NAME_FORMAT} user=${USER_NAME_FORMAT} password=${PASSWORD_FORMAT}"
+log "Lengths: db=${#DB_NAME} user=${#DB_USER} password=${#DB_PASSWORD}"
 
 # ========================================================================= Create role / database
 
@@ -455,7 +362,6 @@ echo "[INFO]   DB_USER=${DB_USER}"
 echo "[INFO]   DB_PASSWORD=${DB_PASSWORD}"
 echo "[INFO]   DB_HOST=${DB_CONNECT_HOST}"
 echo "[INFO]   DB_PORT=${RHCTL_PG_PORT}"
-echo "[INFO]   CREDENTIAL_PROFILE=${CREDENTIAL_PROFILE}"
 echo "[INFO]   DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD_URL}@${DB_CONNECT_HOST}:${RHCTL_PG_PORT}/${DB_NAME}"
 echo "[INFO] Test:"
 echo "[INFO]   PGPASSWORD='${DB_PASSWORD}' psql -U ${DB_USER} -d ${DB_NAME} -h ${DB_CONNECT_HOST} -p ${RHCTL_PG_PORT}"
