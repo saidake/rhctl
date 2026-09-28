@@ -182,7 +182,7 @@ rhctl execute \
 **Optional Parameters**:
 - `--port <port>`: Listen port (default: `5432`). Example: `5432`, `5433`, `48985`
 - `--auth-method <method>`: pg_hba auth (default: `md5`). Example: `md5`, `scram-sha-256`, `password`
-- `--allowed-ips <ip>[,<ip>...]`: Remote allow-list; re-runs overwrite (default: `0.0.0.0/0,::/0`). Example: `192.168.1.100`, `10.0.0.5`, `192.168.1.0/24`, `0.0.0.0/0`, `::/0`
+- `--allowed-ips <ip>[,<ip>...]`: Remote allow-list; re-runs overwrite. When omitted, remote rules are cleared (local `127.0.0.1` / `::1` only). Example: `192.168.1.100`, `10.0.0.5`, `192.168.1.0/24`, `0.0.0.0/0`, `::/0`
 
 **Override Parameters**:
 - `RHCTL_PG_PORT`, `RHCTL_PG_AUTH_METHOD`, `RHCTL_PG_ALLOW_IPS` — same as the flags above

@@ -4,10 +4,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # ************************************************************************************
-# Configure installed PostgreSQL for remote access (listen, port, pg_hba, firewall)
+# Configure installed PostgreSQL (listen, port, pg_hba, firewall)
 # and ensure the service accepts connections.
 #
 # Does not create databases or roles — use db.sh --action create.
+#
+# Remote pg_hba access requires --allowed-ips; without it, only local
+# 127.0.0.1 / ::1 rules remain.
 #
 # If exists, overwrite — safe to re-run.
 #
@@ -29,8 +32,8 @@
 #       pg_hba auth method (default: `md5`).
 #         Example method values: `md5`, `scram-sha-256`, `password`
 #   --allowed-ips <ip>[,<ip>...]
-#       Remote pg_hba allow-list; re-runs overwrite prior remote host-all rules
-#       (default: `0.0.0.0/0,::/0`).
+#       Remote pg_hba allow-list; re-runs overwrite prior remote host-all rules.
+#       When omitted, remote rules are cleared (local `127.0.0.1` / `::1` only).
 #         Example ip values: `192.168.1.100`, `10.0.0.5`, `192.168.1.0/24`,
 #           `0.0.0.0/0`, `::/0`
 #
@@ -244,20 +247,24 @@ AUTH="$RHCTL_PG_AUTH_METHOD"
 # ========================================================================= remote pg_hba
 
 DESIRED_CIDRS=()
+ALLOW_IPS_EXPLICIT=false
 
 if [ "${#IPS[@]}" -gt 0 ]; then
+    ALLOW_IPS_EXPLICIT=true
     for raw in "${IPS[@]}"; do
         ip="$(echo "$raw" | xargs)"
         [ -z "$ip" ] && continue
         DESIRED_CIDRS+=("$(normalize_cidr "$ip")")
     done
-else
-    DESIRED_CIDRS=("0.0.0.0/0" "::/0")
+fi
+
+if [ "$ALLOW_IPS_EXPLICIT" = true ] && [ "${#DESIRED_CIDRS[@]}" -eq 0 ]; then
+    echo "[ERROR] --allowed-ips produced an empty allow-list"
+    exit 1
 fi
 
 if [ "${#DESIRED_CIDRS[@]}" -eq 0 ]; then
-    echo "[ERROR] --allowed-ips produced an empty allow-list"
-    exit 1
+    log "No --allowed-ips — clearing remote pg_hba rules (local only)"
 fi
 
 if sync_remote_hba_allowlist "${DESIRED_CIDRS[@]}"; then
@@ -360,12 +367,12 @@ log "Runtime port=${RUNTIME_PORT}"
 # ========================================================================= Final output
 
 echo "============================================="
-echo "[INFO] PostgreSQL server configured for remote access"
+echo "[INFO] PostgreSQL server configured"
 echo "[INFO]   LISTEN=* PORT=${RHCTL_PG_PORT} AUTH=${AUTH}"
-if [ "${#IPS[@]}" -gt 0 ]; then
+if [ "${#DESIRED_CIDRS[@]}" -gt 0 ]; then
     echo "[INFO]   ALLOW_IPS=${DESIRED_CIDRS[*]}"
 else
-    echo "[INFO]   ALLOW_IPS=0.0.0.0/0 ::/0"
+    echo "[INFO]   ALLOW_IPS=(none — local 127.0.0.1 / ::1 only)"
 fi
 echo "[INFO] Next: create a database with"
 echo "[INFO]   ./db.sh --action create --host <ip> --port ${RHCTL_PG_PORT}"
