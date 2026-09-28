@@ -12,55 +12,43 @@
 # If exists, overwrite — safe to re-run.
 #
 # Usage:
-#   ./configure.sh \
-#     --host 192.168.75.128 \
-#     --port 4222
-#   ./configure.sh \
-#     --host 192.168.75.128
+#   ./configure.sh --port 4222
+#   ./configure.sh
 #
 # Required Parameters:
 #   (none)
 #
 # Optional Parameters:
-#   --host <host>
-#       Address printed in NATS_URL (default: `127.0.0.1`).
-#       Use the target server IP/hostname when clients connect remotely.
-#         Example host values: `192.168.75.128`, `nats.example.com`, `127.0.0.1`
 #   --port <port>
 #       Listen port written to nats.conf (default: `4222`).
 #         Example port values: `4222`, `4223`, `14222`
 #
 # Override Parameters:
-#   RHCTL_NATS_HOST=<host>
-#       Same as `--host`.
 #   RHCTL_NATS_PORT=<port>
 #       Same as `--port`.
 #
 # Since : 1.0.3
-# Date  : Sep 27, 2026
+# Date  : Sep 28, 2026
 # ************************************************************************************
 
 set -euo pipefail
 
 # ========================================================================= Parameter
 
-RHCTL_NATS_HOST="${RHCTL_NATS_HOST:-127.0.0.1}"
 RHCTL_NATS_PORT="${RHCTL_NATS_PORT:-4222}"
 CONFIG_FILE="/etc/nats/nats.conf"
 NEED_RESTART=false
+# Placeholder in printed NATS_URL (replace with the client-facing host).
+NATS_HOST_PLACEHOLDER='<host>'
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --host)
-      RHCTL_NATS_HOST="$2"
-      shift 2
-      ;;
     --port)
       RHCTL_NATS_PORT="$2"
       shift 2
       ;;
     -h|--help)
-      sed -n '2,50p' "$0"
+      sed -n '2,40p' "$0"
       exit 0
       ;;
     --*)
@@ -184,11 +172,11 @@ fi
 
 # ========================================================================= Output
 
-NATS_URL="nats://${RHCTL_NATS_HOST}:${RHCTL_NATS_PORT}"
+NATS_URL="nats://${NATS_HOST_PLACEHOLDER}:${RHCTL_NATS_PORT}"
 
 echo "============================================="
 echo "[INFO] NATS JetStream connection"
-echo "[INFO]   NATS_HOST=${RHCTL_NATS_HOST}"
+echo "[INFO]   NATS_HOST=${NATS_HOST_PLACEHOLDER}"
 echo "[INFO]   NATS_PORT=${RHCTL_NATS_PORT}"
 echo "[INFO]   NATS_URL=${NATS_URL}"
 echo "[INFO] Test:"

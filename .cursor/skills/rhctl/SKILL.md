@@ -299,18 +299,18 @@ rhctl execute \
   --host 192.168.75.128 \
   --user test99 \
   --password testpwd \
-  --script "$SCRIPT_ROOT/jetstream/configure.sh --host 192.168.75.128 --port 4222" \
+  --script "$SCRIPT_ROOT/jetstream/configure.sh --port 4222" \
   --use-sudo
 ```
 
 **Required Parameters**: (none)
 
 **Optional Parameters**:
-- `--host <host>`: Address printed in NATS_URL (default: `127.0.0.1`). Use the client-visible IP/hostname for remote clients
 - `--port <port>`: Listen port in nats.conf (default: `4222`)
+- `NATS_URL` uses `<host>` as a placeholder for the client-facing address.
 
 **Override Parameters**:
-- `RHCTL_NATS_HOST`, `RHCTL_NATS_PORT`
+- `RHCTL_NATS_PORT`
 
 ### `$SCRIPT_ROOT/docker/install.sh`
 

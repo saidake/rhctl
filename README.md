@@ -697,7 +697,7 @@ NATS Server with JetStream enabled for persistent messaging streams.
     --host 192.168.75.128 \
     --user test99 \
     --password testpwd \
-    --script "scripts/jetstream/configure.sh --host 192.168.75.128 --port 4222" \
+    --script "scripts/jetstream/configure.sh --port 4222" \
     --use-sudo
   ```
 
@@ -722,9 +722,9 @@ NATS Server with JetStream enabled for persistent messaging streams.
 [test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS service is running
 [test99@192.168.75.128][EXECUTE][REMOTE] =============================================
 [test99@192.168.75.128][EXECUTE][REMOTE] [INFO] NATS JetStream connection
-[test99@192.168.75.128][EXECUTE][REMOTE] [INFO]   NATS_HOST=192.168.75.128
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO]   NATS_HOST=<host>
 [test99@192.168.75.128][EXECUTE][REMOTE] [INFO]   NATS_PORT=4222
-[test99@192.168.75.128][EXECUTE][REMOTE] [INFO]   NATS_URL=nats://192.168.75.128:4222
+[test99@192.168.75.128][EXECUTE][REMOTE] [INFO]   NATS_URL=nats://<host>:4222
 [test99@192.168.75.128][EXECUTE][REMOTE] =============================================
 ```
 
