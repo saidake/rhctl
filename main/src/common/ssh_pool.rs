@@ -769,10 +769,10 @@ impl ServerPool {
             pattern
         );
 
-        // Use a one-liner shell command to safely check for at least one match
-        // Exit 0 if any file/dir exists, exit 1 otherwise
+        // Exit 0 if any match exists, exit 1 otherwise.
+        // `pattern` stays unquoted so the remote shell expands globs (e.g. dir/*).
         let full_cmd = format!(
-            "sh -c 'for f in {}; do [ -e \"$f\" ] && exit 0; done; exit 1'",
+            "for f in {}; do [ -e \"$f\" ] && exit 0; done; exit 1",
             pattern
         );
 
@@ -793,7 +793,7 @@ impl ServerPool {
             }
             Err(e) => {
                 // Exit status 1 means no match
-                if e.contains("exit status 1") {
+                if is_exit_status(&e, 1) {
                     log_debug!(
                         server_metadata,
                         task_name,
@@ -854,7 +854,10 @@ impl ServerPool {
             flag
         );
 
-        let full_cmd = format!("sh -c 'test {} {}'", flag, path);
+        let quoted_path = shlex::try_quote(path).map_err(|e| {
+            format!("Invalid remote path '{}': {}", path, e)
+        })?;
+        let full_cmd = format!("test {} {}", flag, quoted_path);
         let result = self
             .exec(server_metadata, task_name, &full_cmd, use_sudo)
             .await;
@@ -871,7 +874,7 @@ impl ServerPool {
                 Ok(true)
             }
             Err(e) => {
-                if e.contains("exit status 1") {
+                if is_exit_status(&e, 1) {
                     log_debug!(
                         server_metadata,
                         task_name,
@@ -958,8 +961,10 @@ impl ServerPool {
             use_sudo
         );
         let full_cmd = if use_sudo {
-            let escaped = cmd.replace("'", "'\\''");
-            format!("sudo -S bash -c '{}'", escaped)
+            let quoted = shlex::try_quote(cmd.as_str()).map_err(|e| {
+                format!("Failed to quote sudo command: {}", e)
+            })?;
+            format!("sudo -S bash -c {}", quoted)
         } else {
             cmd.to_string()
         };
@@ -985,22 +990,48 @@ impl ServerPool {
             .map_err(|e| format!("Failed to execute command '{}'. \n\t> {}", cmd, e))?;
 
         if use_sudo {
-            let mut data = Vec::new();
-            while let Some(msg) = channel_guard.channel.wait().await {
-                match msg {
-                    russh::ChannelMsg::Data { data: channel_data } => {
-                        data.extend_from_slice(&channel_data);
+            // Wait for sudo password prompt (stdout) OR an early ExitStatus.
+            // Root / NOPASSWD often finishes with no prompt; discarding ExitStatus
+            // here makes failed commands (e.g. `test`) look like success.
+            loop {
+                match channel_guard.channel.wait().await {
+                    Some(russh::ChannelMsg::Data { data: _channel_data }) => {
+                        let pw_with_newline = format!("{}\n", server_metadata.password);
+                        channel_guard
+                            .channel
+                            .data(pw_with_newline.as_bytes())
+                            .await
+                            .map_err(|e| format!("Failed to send sudo password. \n\t> {}", e))?;
                         break;
                     }
-                    _ => continue,
+                    Some(ChannelMsg::ExitStatus { exit_status }) => {
+                        if exit_status != 0 {
+                            return Err(format!(
+                                "Command failed with exit status {}. \n\t> Command line: \n{}",
+                                exit_status, cmd
+                            ));
+                        }
+                        channel_guard
+                            .channel
+                            .close()
+                            .await
+                            .map_err(|e| format!("Failed to close channel. \n\t> {}", e))?;
+                        log_debug!(
+                            server_metadata,
+                            task_name,
+                            "Streaming command output: ''"
+                        );
+                        return Ok(String::new());
+                    }
+                    Some(_) => continue,
+                    None => {
+                        return Err(format!(
+                            "Command channel closed before sudo prompt or exit status. \n\t> Command line: \n{}",
+                            cmd
+                        ));
+                    }
                 }
             }
-            let pw_with_newline = format!("{}\n", server_metadata.password);
-            channel_guard
-                .channel
-                .data(pw_with_newline.as_bytes())
-                .await
-                .map_err(|e| format!("Failed to send sudo password. \n\t> {}", e))?;
         }
 
         let mut stdout_buf = String::new();
@@ -1012,6 +1043,7 @@ impl ServerPool {
         let mut partial_stderr = String::new();
         let mut stdout_progress = CrProgressPrinter::new();
         let mut stderr_progress = CrProgressPrinter::new();
+        let mut saw_exit_status = false;
 
         while let Some(msg) = channel_guard.channel.wait().await {
             match msg {
@@ -1046,6 +1078,7 @@ impl ServerPool {
                     }
                 }
                 ChannelMsg::ExitStatus { exit_status } => {
+                    saw_exit_status = true;
                     if exit_status != 0 {
                         let stdout_str = String::from_utf8_lossy(&stdout_collected);
                         let stderr_str = String::from_utf8_lossy(&stderr_collected);
@@ -1073,6 +1106,13 @@ impl ServerPool {
                 }
                 _ => continue,
             }
+        }
+
+        if !saw_exit_status {
+            return Err(format!(
+                "Command finished without an exit status. \n\t> Command line: \n{}",
+                cmd
+            ));
         }
 
         if print_log {
@@ -1753,6 +1793,16 @@ impl ServerPool {
         .await?;
         Ok(temp_dir)
     }
+}
+
+/// True when `err` reports exactly this numeric exit status (not a prefix match like 1 vs 10).
+fn is_exit_status(err: &str, code: u32) -> bool {
+    let marker = "exit status ";
+    let Some(rest) = err.split(marker).nth(1) else {
+        return false;
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u32>().ok() == Some(code)
 }
 
 /// Expand a leading `~/` to the user's home directory.
