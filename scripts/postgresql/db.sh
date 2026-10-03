@@ -87,7 +87,7 @@ PASSWORD_MAX_LEN=72
 PASSWORD_CHARSET='A-Za-z0-9!@#%^&*_+=[]{}|;:,.<>?/~-'
 
 # Placeholder in printed DATABASE_URL / state file (replace with the client-facing host).
-DB_HOST_PLACEHOLDER='<host>'
+DB_HOST_PLACEHOLDER='127.0.0.1'
 
 while [ "$#" -gt 0 ]; do
     case "$1" in

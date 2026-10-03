@@ -126,6 +126,7 @@ echo "Remote Execution 1.2"
 - `--mode <sync|async>`: Execution mode: 'sync' (run sequentially) or 'async' (run concurrently). Applies to scripts; commands always run sequentially after scripts.
 - `--work-path <path>`: Remote working directory (defaults to `~`).
 - `--env-extract-regex <regex>` + `--env-name <KEY>`: Must appear together with the **same count**; paired by order. Search clean output lines (skip `\r`), take the **last** match of capture group 1 per regex, upsert each `KEY=value` into remote `/etc/rhctl/.env`. Prefer `--use-sudo` / root.  
+  Use **single quotes** around the regex so `\[` / `\]` are not stripped by the shell (double quotes turn `\[INFO\]` into a character class `[INFO]`).  
   Example:
   ```bash
   --env-extract-regex '\[INFO\][[:space:]]+DATABASE_URL=(.*)' \

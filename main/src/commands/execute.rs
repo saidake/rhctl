@@ -74,6 +74,9 @@ pub fn extract_env_value(output: &str, pattern: &str) -> Result<String, String> 
 
     let mut last: Option<String> = None;
     for line in output.split('\n') {
+        // PTY often uses CRLF; strip trailing CR before matching.
+        let line = line.trim_end_matches('\r');
+        // Skip progress/spinner lines that rewrite mid-line with CR.
         if line.contains('\r') {
             continue;
         }
@@ -85,9 +88,35 @@ pub fn extract_env_value(output: &str, pattern: &str) -> Result<String, String> 
     }
 
     last.ok_or_else(|| {
-        format!(
-            "No match for --env-extract-regex in remote output (skipped lines containing '\\r')"
-        )
+        let sample: Vec<&str> = output
+            .lines()
+            .map(|l| l.trim_end_matches('\r'))
+            .filter(|l| !l.contains('\r') && !l.trim().is_empty())
+            .rev()
+            .take(5)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let sample_txt = if sample.is_empty() {
+            "(no clean stdout lines collected)".to_string()
+        } else {
+            sample.join("\n\t")
+        };
+        let mut msg = format!(
+            "No match for --env-extract-regex in remote output (skipped mid-line '\\r' progress)\n\
+             \tPattern: {}\n\
+             \tRecent clean lines:\n\t{}",
+            pattern, sample_txt
+        );
+        // After shell double-quotes, `\[INFO\]` often becomes `[INFO]` (a character class).
+        if pattern.contains('[') && !pattern.contains("\\[") {
+            msg.push_str(
+                "\n\tHint: use single quotes so brackets stay escaped, e.g. \
+                 --env-extract-regex '\\[INFO\\]\\s+DATABASE_URL=(.*)'",
+            );
+        }
+        msg
     })
 }
 
@@ -118,7 +147,8 @@ fn python_str_literal(s: &str) -> String {
 }
 
 fn build_upsert_env_command(env_name: &str, value: &str) -> String {
-    // python3 -c arg is single-quoted for nesting under `sudo bash -c '…'`.
+    // Avoid indented `if` blocks: Rust `\n\` line-continuations strip leading spaces,
+    // which caused IndentationError under `python3 -c`.
     let py = format!(
         "from pathlib import Path\n\
 dir_path = Path({dir})\n\
@@ -127,9 +157,7 @@ dir_path.mkdir(parents=True, exist_ok=True)\n\
 dir_path.chmod(0o700)\n\
 key = {key}\n\
 value = {value}\n\
-lines = []\n\
-if env_file.exists():\n\
-    lines = [ln for ln in env_file.read_text(encoding='utf-8').splitlines() if not ln.startswith(key + '=')]\n\
+lines = [ln for ln in (env_file.read_text(encoding='utf-8').splitlines() if env_file.exists() else []) if not ln.startswith(key + '=')]\n\
 lines.append(key + '=' + value)\n\
 env_file.write_text('\\n'.join(lines) + '\\n', encoding='utf-8')\n\
 env_file.chmod(0o600)\n",
@@ -375,6 +403,13 @@ mod tests {
         let out = "[INFO] DATABASE_URL=first\nprogress 10%\rprogress 50%\r\n[INFO] DATABASE_URL=second\n";
         let v = extract_env_value(out, r"\[INFO\] DATABASE_URL=(.*)").unwrap();
         assert_eq!(v, "second");
+    }
+
+    #[test]
+    fn extract_accepts_trailing_cr_from_pty() {
+        let out = "[INFO]   DATABASE_URL=postgres://u:p@127.0.0.1:5432/db\r\n";
+        let v = extract_env_value(out, r"\[INFO\]\s+DATABASE_URL=(.*)").unwrap();
+        assert_eq!(v, "postgres://u:p@127.0.0.1:5432/db");
     }
 
     #[test]
