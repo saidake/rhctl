@@ -105,10 +105,12 @@ pub struct ExecuteStep {
     /// Remote shell commands (no local upload).
     #[serde(default)]
     pub cmds: Vec<String>,
-    /// Regex with one capture group; must be set with `env-name`.
-    pub env_extract_regex: Option<String>,
-    /// Env key for remote `/etc/rhctl/.env`; must be set with `env-extract-regex`.
-    pub env_name: Option<String>,
+    /// Regexes with one capture group each; paired by index with `env-name`.
+    #[serde(default)]
+    pub env_extract_regex: Vec<String>,
+    /// Env keys for remote `/etc/rhctl/.env`; paired by index with `env-extract-regex`.
+    #[serde(default)]
+    pub env_name: Vec<String>,
     /// Working directory on the remote host. `remote-path` is accepted as an alias.
     #[serde(default, alias = "remote-path")]
     pub work_path: Option<String>,

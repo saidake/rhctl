@@ -179,8 +179,8 @@ pub fn parse_execute_config_from_cmd(
     certificate_file: Option<String>,
     script: Vec<String>,
     cmds: Vec<String>,
-    env_extract_regex: Option<String>,
-    env_name: Option<String>,
+    env_extract_regex: Vec<String>,
+    env_name: Vec<String>,
     work_path: Option<String>,
     mode: Option<String>,
 
@@ -213,17 +213,12 @@ pub fn parse_execute_config_from_cmd(
         );
         exit(1);
     }
-    match (&env_extract_regex, &env_name) {
-        (None, None) | (Some(_), Some(_)) => {}
-        _ => {
-            log_error_with_host_direct!(
-                user,
-                host,
-                EXECUTE_TASK_NAME,
-                "--env-extract-regex and --env-name must be provided together"
-            );
-            exit(1);
-        }
+    if let Err(e) = crate::commands::execute::validate_env_extract_pairs(
+        &env_extract_regex,
+        &env_name,
+    ) {
+        log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
+        exit(1);
     }
 
     ExecuteCmdConfig {
@@ -253,8 +248,8 @@ pub fn parse_execute_config_from_cmd(
             })
             .collect(),
         cmds,
-        env_extract_regex,
-        env_name,
+        env_extract_regexes: env_extract_regex,
+        env_names: env_name,
         mode: mode.unwrap_or(DEFAULT_EXECUTE_MODE.to_string()),
         work_path: substitute_vars(
             &work_path.unwrap_or_else(|| DEFAULT_EXECUTE_WORK_PATH.to_string()),
@@ -543,15 +538,12 @@ fn build_execute_step_configs(
         );
         exit(1);
     }
-    match (&execute.env_extract_regex, &execute.env_name) {
-        (None, None) | (Some(_), Some(_)) => {}
-        _ => {
-            log_error_direct!(
-                "Execute step in config '{}': env-extract-regex and env-name must be set together",
-                named_config.name
-            );
-            exit(1);
-        }
+    if let Err(e) = crate::commands::execute::validate_env_extract_pairs(
+        &execute.env_extract_regex,
+        &execute.env_name,
+    ) {
+        log_error_direct!("Execute step in config '{}': {}", named_config.name, e);
+        exit(1);
     }
 
     let mut configs = Vec::new();
@@ -583,8 +575,8 @@ fn build_execute_step_configs(
                     })
                     .collect(),
                 cmds: execute.cmds.clone(),
-                env_extract_regex: execute.env_extract_regex.clone(),
-                env_name: execute.env_name.clone(),
+                env_extract_regexes: execute.env_extract_regex.clone(),
+                env_names: execute.env_name.clone(),
                 mode: execute
                     .mode
                     .clone()

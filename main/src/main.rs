@@ -180,17 +180,15 @@ enum Commands {
 
         #[arg(
             long,
-            requires = "env_name",
-            help = "Regex with one capture group; last match on clean lines (no \\r) is saved. Requires --env-name."
+            help = "Regex with one capture group; last match on clean lines (no \\r). Repeatable; pair by order with --env-name."
         )]
-        env_extract_regex: Option<String>,
+        env_extract_regex: Vec<String>,
 
         #[arg(
             long,
-            requires = "env_extract_regex",
-            help = "Env key written to remote /etc/rhctl/.env (chmod 600). Requires --env-extract-regex."
+            help = "Env key written to remote /etc/rhctl/.env (chmod 600). Repeatable; pair by order with --env-extract-regex."
         )]
-        env_name: Option<String>,
+        env_name: Vec<String>,
 
         #[arg(
             long,

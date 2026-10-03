@@ -132,12 +132,12 @@ pub struct ExecuteCmdConfig {
     #[serde(default, skip)]
     pub cmds: Vec<String>,
 
-    /// Regex with one capture group; last match on clean (no `\\r`) lines wins.
+    /// Paired with `env_names` by index. Each regex needs one capture group.
     #[serde(default, skip)]
-    pub env_extract_regex: Option<String>,
-    /// Env key written to remote `/etc/rhctl/.env` (requires `--env-extract-regex`).
+    pub env_extract_regexes: Vec<String>,
+    /// Paired with `env_extract_regexes` by index. Written to remote `/etc/rhctl/.env`.
     #[serde(default, skip)]
-    pub env_name: Option<String>,
+    pub env_names: Vec<String>,
 
     pub mode: String,
     pub work_path: String,

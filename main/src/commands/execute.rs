@@ -40,6 +40,28 @@ fn build_remote_cmd_command(work_path: &str, cmd: &str) -> String {
     format!("cd {} && {}", work_path, cmd)
 }
 
+pub fn validate_env_extract_pairs(
+    regexes: &[String],
+    names: &[String],
+) -> Result<(), String> {
+    if regexes.is_empty() && names.is_empty() {
+        return Ok(());
+    }
+    if regexes.is_empty() || names.is_empty() {
+        return Err(
+            "--env-extract-regex and --env-name must be provided together (same count)".to_string(),
+        );
+    }
+    if regexes.len() != names.len() {
+        return Err(format!(
+            "--env-extract-regex count ({}) must match --env-name count ({})",
+            regexes.len(),
+            names.len()
+        ));
+    }
+    Ok(())
+}
+
 /// Last capture-group match on lines that do not contain `\\r` (progress output).
 pub fn extract_env_value(output: &str, pattern: &str) -> Result<String, String> {
     let re = Regex::new(pattern).map_err(|e| format!("Invalid --env-extract-regex: {}", e))?;
@@ -162,15 +184,7 @@ pub async fn run(
         return Err("Provide at least one --script or --cmd".to_string());
     }
 
-    match (&config.env_extract_regex, &config.env_name) {
-        (None, None) => {}
-        (Some(_), Some(_)) => {}
-        _ => {
-            return Err(
-                "--env-extract-regex and --env-name must be provided together".to_string(),
-            );
-        }
-    }
+    validate_env_extract_pairs(&config.env_extract_regexes, &config.env_names)?;
 
     let mut all_output = String::new();
 
@@ -314,8 +328,10 @@ pub async fn run(
         all_output.push_str(&out);
     }
 
-    if let (Some(pattern), Some(env_name)) =
-        (&config.env_extract_regex, &config.env_name)
+    for (pattern, env_name) in config
+        .env_extract_regexes
+        .iter()
+        .zip(config.env_names.iter())
     {
         let value = extract_env_value(&all_output, pattern)?;
         persist_env_value(

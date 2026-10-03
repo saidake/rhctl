@@ -125,11 +125,13 @@ echo "Remote Execution 1.2"
 **Optional Parameters**:
 - `--mode <sync|async>`: Execution mode: 'sync' (run sequentially) or 'async' (run concurrently). Applies to scripts; commands always run sequentially after scripts.
 - `--work-path <path>`: Remote working directory (defaults to `~`).
-- `--env-extract-regex <regex>` + `--env-name <KEY>`: Must appear together. Search clean output lines (skip lines containing `\r`), take the **last** match of capture group 1, upsert `KEY=value` into remote `/etc/rhctl/.env` (`chmod 700` dir, `chmod 600` file). Prefer `--use-sudo` / root.  
+- `--env-extract-regex <regex>` + `--env-name <KEY>`: Must appear together with the **same count**; paired by order. Search clean output lines (skip `\r`), take the **last** match of capture group 1 per regex, upsert each `KEY=value` into remote `/etc/rhctl/.env`. Prefer `--use-sudo` / root.  
   Example:
   ```bash
   --env-extract-regex '\[INFO\][[:space:]]+DATABASE_URL=(.*)' \
-  --env-name DB_URL
+  --env-name DB_URL \
+  --env-extract-regex '\[INFO\][[:space:]]+DB_USER=(.*)' \
+  --env-name DB_USER
   ```
 
 - `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback).

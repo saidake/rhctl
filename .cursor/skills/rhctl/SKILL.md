@@ -72,7 +72,7 @@ rhctl execute \
 
 **Optional Parameters**:
 - `--cmd <command>`: Remote shell command (no upload); repeatable
-- `--env-extract-regex` + `--env-name`: Must appear together. Last capture-group match on clean lines (skip `\r` progress) → upsert `/etc/rhctl/.env` (`chmod 600`)
+- `--env-extract-regex` + `--env-name`: Must appear together with the same count (paired by order). Last capture-group match on clean lines (skip `\r`) → upsert each key in `/etc/rhctl/.env` (`chmod 600`)
 - `--mode <sync|async>`: `sync` (sequential) or `async` (concurrent) for scripts
 - `--work-path <path>`: Remote working directory (default: `~`)
 - `--password <password>`: SSH password (also sudo / key passphrase fallback)
