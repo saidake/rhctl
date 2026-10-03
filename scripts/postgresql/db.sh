@@ -10,16 +10,18 @@
 #   create — mint random DB + role + password; write state file; print URL
 #   list   — list non-template databases and owners
 #   delete — drop a database and optionally its owner role
+#   clear  — drop all non-system databases and non-system roles
 #
 # Usage:
 #   ./db.sh --action create --port 5432
 #   ./db.sh --action list --port 5432
 #   ./db.sh --action delete --db-name mydb --user-name myuser --port 5432
+#   ./db.sh --action clear --port 5432
 #
 # Parameters (common):
 #   --action <action>
 #       Default, operation to run.
-#         Example action values: `create`, `list`, `delete`
+#         Example action values: `create`, `list`, `delete`, `clear`
 #   --port <port>
 #       PostgreSQL port (default: `5432`).
 #         Example port values: `5432`, `5433`
@@ -39,6 +41,11 @@
 #   --user-name <name>
 #       Role to drop (default: database owner).
 #         Example name values: `ab3c8d1ef…`
+#
+# Parameters (clear):
+#   (none beyond common)
+#       Keeps system DBs (`postgres`, `template0`, `template1`) and the
+#       `postgres` role / `pg_*` system roles.
 #
 # Override Parameters:
 #   RHCTL_PG_PORT=<port>
@@ -105,7 +112,7 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         -h|--help)
-            sed -n '2,55p' "$0"
+            sed -n '2,65p' "$0"
             exit 0
             ;;
         --*)
@@ -120,14 +127,14 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$ACTION" in
-    create|list|delete) ;;
+    create|list|delete|clear) ;;
     "")
-        echo "[ERROR] Required: --action create|list|delete"
+        echo "[ERROR] Required: --action create|list|delete|clear"
         exit 1
         ;;
     *)
         echo "[ERROR] Unsupported --action: ${ACTION}"
-        echo "[ERROR] Allowed: create, list, delete"
+        echo "[ERROR] Allowed: create, list, delete, clear"
         exit 1
         ;;
 esac
@@ -243,6 +250,72 @@ if [ "$ACTION" = "list" ]; then
             [ -z "$db" ] && continue
             printf "%-32s %s\n" "$db" "$owner"
         done
+    echo "============================================="
+    exit 0
+fi
+
+# ========================================================================= Action: clear
+
+if [ "$ACTION" = "clear" ]; then
+    log "Clearing non-system databases and roles on port ${RHCTL_PG_PORT}"
+
+    mapfile -t DROP_DBS < <(
+        psql_admin -tAc \
+            "SELECT datname FROM pg_database
+             WHERE NOT datistemplate
+               AND datname <> 'postgres'
+             ORDER BY 1;" \
+            | sed '/^$/d'
+    )
+
+    DROPPED_DBS=0
+    for db in "${DROP_DBS[@]+"${DROP_DBS[@]}"}"; do
+        [ -z "$db" ] && continue
+        if in_list "$db" "${PROTECTED_DBS[@]}"; then
+            warn "Skipping protected database '${db}'"
+            continue
+        fi
+        log "Dropping database '${db}'"
+        psql_admin -v ON_ERROR_STOP=1 -c \
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$(sql_quote "$db")' AND pid <> pg_backend_pid();" \
+            >/dev/null || true
+        psql_admin -v ON_ERROR_STOP=1 -c "DROP DATABASE \"${db}\";"
+        log "Dropped database '${db}'"
+        DROPPED_DBS=$((DROPPED_DBS + 1))
+    done
+
+    mapfile -t DROP_ROLES < <(
+        psql_admin -tAc \
+            "SELECT rolname FROM pg_roles
+             WHERE rolname <> 'postgres'
+               AND rolname NOT LIKE 'pg\_%' ESCAPE '\'
+             ORDER BY 1;" \
+            | sed '/^$/d'
+    )
+
+    DROPPED_ROLES=0
+    for role in "${DROP_ROLES[@]+"${DROP_ROLES[@]}"}"; do
+        [ -z "$role" ] && continue
+        if in_list "$role" "${PROTECTED_ROLES[@]}"; then
+            warn "Skipping protected role '${role}'"
+            continue
+        fi
+        owns="$(psql_admin -tAc "SELECT count(*) FROM pg_database WHERE pg_catalog.pg_get_userbyid(datdba)='$(sql_quote "$role")'" | tr -d '[:space:]')"
+        if [ "${owns:-0}" != "0" ]; then
+            warn "Role '${role}' still owns ${owns} database(s) — not dropped"
+            continue
+        fi
+        log "Dropping role '${role}'"
+        psql_admin -v ON_ERROR_STOP=1 -c "DROP ROLE \"${role}\";"
+        log "Dropped role '${role}'"
+        DROPPED_ROLES=$((DROPPED_ROLES + 1))
+    done
+
+    echo "============================================="
+    echo "[INFO] Clear complete"
+    echo "[INFO]   Dropped databases: ${DROPPED_DBS}"
+    echo "[INFO]   Dropped roles:     ${DROPPED_ROLES}"
+    echo "[INFO]   Kept: postgres DB + template* + postgres/pg_* roles"
     echo "============================================="
     exit 0
 fi

@@ -24,7 +24,7 @@ Put script path + args in **one** quoted `--script` value. Use `--use-sudo` when
 
 ### rhctl execute
 
-Runs one or more local Bash scripts on a remote host.
+Runs local Bash scripts and/or remote shell commands on a host.
 
 ```bash
 rhctl execute \
@@ -34,15 +34,16 @@ rhctl execute \
   [--password <pass>] \
   [--identity <key>] \
   [--certificate <cert>] \
-  --script <script-or-cmdline> \
   [--script <script-or-cmdline> ...] \
+  [--cmd <remote-command> ...] \
+  [--env-extract-regex <regex> --env-name <KEY>] \
   [--work-path <path>] \
   [--mode sync|async] \
   [--use-sudo] \
   [options]
 ```
 
-Example (script with args):
+Example (script with args + save DATABASE_URL):
 
 ```bash
 rhctl execute \
@@ -50,16 +51,29 @@ rhctl execute \
   --user test99 \
   --password testpwd \
   --script "$SCRIPT_ROOT/postgresql/db.sh --action create --port 5432" \
+  --env-extract-regex '\[INFO\][[:space:]]+DATABASE_URL=(.*)' \
+  --env-name DB_URL \
+  --use-sudo
+```
+
+Example (direct command):
+
+```bash
+rhctl execute \
+  --host 192.168.75.129 \
+  --user root \
+  --cmd "systemctl status nats" \
   --use-sudo
 ```
 
 **Required Parameters**:
-- `--host <ip/hostname>`: Remote host IP or hostname
-- `--user <username>`: Remote username
-- `--script <cmdline>`: Local bash script path, optionally followed by args (shell-style quoting). Supports multiple.
+- `--host`, `--user`
+- At least one of `--script` or `--cmd`
 
 **Optional Parameters**:
-- `--mode <sync|async>`: `sync` (sequential) or `async` (concurrent)
+- `--cmd <command>`: Remote shell command (no upload); repeatable
+- `--env-extract-regex` + `--env-name`: Must appear together. Last capture-group match on clean lines (skip `\r` progress) → upsert `/etc/rhctl/.env` (`chmod 600`)
+- `--mode <sync|async>`: `sync` (sequential) or `async` (concurrent) for scripts
 - `--work-path <path>`: Remote working directory (default: `~`)
 - `--password <password>`: SSH password (also sudo / key passphrase fallback)
 - `--identity <path>`: SSH private key (preferred over password)
@@ -207,7 +221,7 @@ rhctl execute \
 ```
 
 **Parameters (common)**:
-- `--action <action>`: `create` | `list` | `delete`
+- `--action <action>`: `create` | `list` | `delete` | `clear`
 - `--port <port>`: PostgreSQL port (default: `5432`)
 
 **Parameters (create)**:
@@ -220,6 +234,9 @@ rhctl execute \
 **Parameters (delete)**:
 - `--db-name <name>`: Database name (required)
 - `--user-name <name>`: Role to drop (default: database owner)
+
+**Parameters (clear)**:
+- (none beyond common) — drops all non-system DBs/roles; keeps `postgres` / `template*` / `pg_*`
 
 **Override Parameters**:
 - `RHCTL_PG_PORT`, `RHCTL_PG_STATE_FILE`, `RHCTL_PG_MAX_LENGTH`

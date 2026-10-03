@@ -178,6 +178,9 @@ pub fn parse_execute_config_from_cmd(
     identity_file: Option<String>,
     certificate_file: Option<String>,
     script: Vec<String>,
+    cmds: Vec<String>,
+    env_extract_regex: Option<String>,
+    env_name: Option<String>,
     work_path: Option<String>,
     mode: Option<String>,
 
@@ -200,6 +203,29 @@ pub fn parse_execute_config_from_cmd(
         host,
         EXECUTE_TASK_NAME,
     );
+
+    if script.is_empty() && cmds.is_empty() {
+        log_error_with_host_direct!(
+            user,
+            host,
+            EXECUTE_TASK_NAME,
+            "Provide at least one --script or --cmd"
+        );
+        exit(1);
+    }
+    match (&env_extract_regex, &env_name) {
+        (None, None) | (Some(_), Some(_)) => {}
+        _ => {
+            log_error_with_host_direct!(
+                user,
+                host,
+                EXECUTE_TASK_NAME,
+                "--env-extract-regex and --env-name must be provided together"
+            );
+            exit(1);
+        }
+    }
+
     ExecuteCmdConfig {
         server_metadata: build_server_metadata(
             host,
@@ -220,16 +246,19 @@ pub fn parse_execute_config_from_cmd(
         scripts: script
             .into_iter()
             .map(|s| {
-                resolve_script_invocation(&s, &vars).unwrap_or_else(|e| {
+                resolve_script_invocation(&s, vars).unwrap_or_else(|e| {
                     log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
                     exit(1);
                 })
             })
             .collect(),
+        cmds,
+        env_extract_regex,
+        env_name,
         mode: mode.unwrap_or(DEFAULT_EXECUTE_MODE.to_string()),
         work_path: substitute_vars(
             &work_path.unwrap_or_else(|| DEFAULT_EXECUTE_WORK_PATH.to_string()),
-            &vars,
+            vars,
         )
         .unwrap_or_else(|e| {
             log_error_with_host_direct!(user, host, EXECUTE_TASK_NAME, "{}", e);
@@ -507,6 +536,24 @@ fn build_execute_step_configs(
     common: &Option<crate::domain::yml_config::CommonConfig>,
     var_map: &HashMap<String, String>,
 ) -> Vec<(ExecuteCmdConfig, HashMap<String, String>)> {
+    if execute.scripts.is_empty() && execute.cmds.is_empty() {
+        log_error_direct!(
+            "Execute step in config '{}' requires scripts and/or cmds",
+            named_config.name
+        );
+        exit(1);
+    }
+    match (&execute.env_extract_regex, &execute.env_name) {
+        (None, None) | (Some(_), Some(_)) => {}
+        _ => {
+            log_error_direct!(
+                "Execute step in config '{}': env-extract-regex and env-name must be set together",
+                named_config.name
+            );
+            exit(1);
+        }
+    }
+
     let mut configs = Vec::new();
     for server in servers {
         configs.push((
@@ -535,6 +582,9 @@ fn build_execute_step_configs(
                         })
                     })
                     .collect(),
+                cmds: execute.cmds.clone(),
+                env_extract_regex: execute.env_extract_regex.clone(),
+                env_name: execute.env_name.clone(),
                 mode: execute
                     .mode
                     .clone()

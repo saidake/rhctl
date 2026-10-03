@@ -128,6 +128,17 @@ pub struct ExecuteCmdConfig {
     #[serde(skip)]
     pub scripts: Vec<ScriptInvocation>,
 
+    /// Remote shell commands (no local upload). Run after scripts when both are set.
+    #[serde(default, skip)]
+    pub cmds: Vec<String>,
+
+    /// Regex with one capture group; last match on clean (no `\\r`) lines wins.
+    #[serde(default, skip)]
+    pub env_extract_regex: Option<String>,
+    /// Env key written to remote `/etc/rhctl/.env` (requires `--env-extract-regex`).
+    #[serde(default, skip)]
+    pub env_name: Option<String>,
+
     pub mode: String,
     pub work_path: String,
 }

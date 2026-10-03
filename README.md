@@ -55,7 +55,7 @@ sudo chmod +x /usr/local/bin/rhctl
 # Commands
 ## rhctl execute
 [Back to Top](#table-of-contents)  
-Runs one or more local Bash scripts on a remote server in a specified working directory.
+Runs local Bash scripts and/or remote shell commands on a remote server in a specified working directory.
 
 **Usage**
 ```bash
@@ -66,8 +66,9 @@ rhctl execute \
   [--password <pass>] \
   [--identity <key>] \
   [--certificate <cert>] \
-  --script <script-or-cmdline> \
   [--script <script-or-cmdline> ...] \
+  [--cmd <remote-command> ...] \
+  [--env-extract-regex <regex> --env-name <KEY>] \
   [--work-path <path>] \
   [--mode sync|async] \
   [options]
@@ -90,6 +91,17 @@ rhctl execute \
   --user test99 \
   --password testpwd \
   --script "/path/to/scripts/postgresql/db.sh --action create --port 5432" \
+  --env-extract-regex '\[INFO\][[:space:]]+DATABASE_URL=(.*)' \
+  --env-name DB_URL \
+  --use-sudo
+```
+
+**Example with a direct remote command**:
+```bash
+rhctl execute \
+  --host 192.168.75.128 \
+  --user root \
+  --cmd "systemctl status nats" \
   --use-sudo
 ```
 
@@ -105,11 +117,20 @@ echo "Remote Execution 1.2"
 **Required Parameters**:
 - `--host <ip/hostname>`: Remote host IP or hostname
 - `--user <username>`: Remote username
-- `--script <cmdline>`: Local bash script path, optionally followed by args (shell-style quoting). Supports multiple.
+- At least one of:
+  - `--script <cmdline>`: Local bash script path, optionally followed by args (shell-style quoting). Supports multiple.
+  - `--cmd <command>`: Remote shell command (no local upload). Supports multiple.  
+    Example: `--cmd "systemctl status nats"`
 
 **Optional Parameters**:
-- `--mode <sync|async>`: Execution mode: 'sync' (run sequentially) or 'async' (run concurrently).
-- `--work-path <path>`: Remote working directory where the bash script will be executed (defaults to the user's home directory: ~).
+- `--mode <sync|async>`: Execution mode: 'sync' (run sequentially) or 'async' (run concurrently). Applies to scripts; commands always run sequentially after scripts.
+- `--work-path <path>`: Remote working directory (defaults to `~`).
+- `--env-extract-regex <regex>` + `--env-name <KEY>`: Must appear together. Search clean output lines (skip lines containing `\r`), take the **last** match of capture group 1, upsert `KEY=value` into remote `/etc/rhctl/.env` (`chmod 700` dir, `chmod 600` file). Prefer `--use-sudo` / root.  
+  Example:
+  ```bash
+  --env-extract-regex '\[INFO\][[:space:]]+DATABASE_URL=(.*)' \
+  --env-name DB_URL
+  ```
 
 - `--password <password>`: Remote password (optional when `--identity` is set; also used for sudo and as a private-key passphrase fallback).
 - `--identity <path>`: Path to SSH private key (OpenSSH or PEM). Preferred over password when set.  

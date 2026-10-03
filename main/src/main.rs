@@ -140,7 +140,7 @@ enum Commands {
         max_session_lifetime: Option<Duration>,
     },
 
-    #[command(about = "Execute a local bash script remotely")]
+    #[command(about = "Execute local bash scripts and/or remote commands via SSH")]
     Execute {
         #[arg(long, help = "Remote host IP or hostname")]
         host: String,
@@ -171,6 +171,26 @@ enum Commands {
             help = "Local bash script to run remotely; optional args after the path (e.g. 'configure.sh --port 5432'). Supports multiple."
         )]
         script: Vec<String>,
+
+        #[arg(
+            long,
+            help = "Remote shell command to run (no local upload). Supports multiple. Example: --cmd \"systemctl status nats\""
+        )]
+        cmd: Vec<String>,
+
+        #[arg(
+            long,
+            requires = "env_name",
+            help = "Regex with one capture group; last match on clean lines (no \\r) is saved. Requires --env-name."
+        )]
+        env_extract_regex: Option<String>,
+
+        #[arg(
+            long,
+            requires = "env_extract_regex",
+            help = "Env key written to remote /etc/rhctl/.env (chmod 600). Requires --env-extract-regex."
+        )]
+        env_name: Option<String>,
 
         #[arg(
             long,
@@ -483,6 +503,9 @@ async fn main() {
             identity,
             certificate,
             script,
+            cmd,
+            env_extract_regex,
+            env_name,
             work_path,
             mode,
 
@@ -496,7 +519,6 @@ async fn main() {
             max_session_lifetime,
             ..
         } => {
-            // println!("script: {:#?}",script);
             let config = parse_execute_config_from_cmd(
                 &host,
                 &user,
@@ -505,6 +527,9 @@ async fn main() {
                 identity,
                 certificate,
                 script,
+                cmd,
+                env_extract_regex,
+                env_name,
                 work_path,
                 mode,
                 use_sudo,

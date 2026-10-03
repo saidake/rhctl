@@ -100,7 +100,15 @@ pub struct ExecuteStep {
     pub silent: Option<bool>,
 
     /// Script command lines: path plus optional args, e.g. `configure.sh --port 5432`.
+    #[serde(default)]
     pub scripts: Vec<String>,
+    /// Remote shell commands (no local upload).
+    #[serde(default)]
+    pub cmds: Vec<String>,
+    /// Regex with one capture group; must be set with `env-name`.
+    pub env_extract_regex: Option<String>,
+    /// Env key for remote `/etc/rhctl/.env`; must be set with `env-extract-regex`.
+    pub env_name: Option<String>,
     /// Working directory on the remote host. `remote-path` is accepted as an alias.
     #[serde(default, alias = "remote-path")]
     pub work_path: Option<String>,
