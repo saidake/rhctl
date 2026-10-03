@@ -12,38 +12,6 @@ use serde::Deserialize;
 use std::hash::{Hash, Hasher};
 use std::{collections::HashMap, time::Duration};
 
-pub trait TargetConfig {
-    fn target_servers(&self) -> &Vec<String>;
-    fn target_groups(&self) -> &Vec<String>;
-}
-
-impl TargetConfig for UploadConfig {
-    fn target_servers(&self) -> &Vec<String> {
-        &self.target_servers
-    }
-    fn target_groups(&self) -> &Vec<String> {
-        &self.target_groups
-    }
-}
-
-impl TargetConfig for PatchConfig {
-    fn target_servers(&self) -> &Vec<String> {
-        &self.target_servers
-    }
-    fn target_groups(&self) -> &Vec<String> {
-        &self.target_groups
-    }
-}
-
-impl TargetConfig for ExecuteConfig {
-    fn target_servers(&self) -> &Vec<String> {
-        &self.target_servers
-    }
-    fn target_groups(&self) -> &Vec<String> {
-        &self.target_groups
-    }
-}
-
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct ServerConfig {
@@ -82,9 +50,10 @@ impl Hash for ServerConfig {
         self.ssh_port.hash(state);
     }
 }
+
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
-pub struct UploadConfig {
+pub struct UploadStep {
     pub use_rsync: Option<bool>,
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
@@ -97,14 +66,14 @@ pub struct UploadConfig {
     pub transfers: Vec<String>,
 
     #[serde(default)]
-    pub target_servers: Vec<String>, // explicitly list server names
+    pub target_servers: Vec<String>,
     #[serde(default)]
-    pub target_groups: Vec<String>, // or use group names
+    pub target_groups: Vec<String>,
 }
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
-pub struct PatchConfig {
+pub struct PatchStep {
     pub use_rsync: Option<bool>,
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
@@ -125,20 +94,31 @@ pub struct PatchConfig {
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
-pub struct ExecuteConfig {
+pub struct ExecuteStep {
     pub use_rsync: Option<bool>,
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
 
     /// Script command lines: path plus optional args, e.g. `configure.sh --port 5432`.
     pub scripts: Vec<String>,
-    pub work_path: Option<String>, // optional working directory
+    /// Working directory on the remote host. `remote-path` is accepted as an alias.
+    #[serde(default, alias = "remote-path")]
+    pub work_path: Option<String>,
     pub mode: Option<String>,
 
     #[serde(default)]
     pub target_servers: Vec<String>,
     #[serde(default)]
     pub target_groups: Vec<String>,
+}
+
+/// Ordered pipeline step for `rhctl run`.
+#[derive(Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum RunStep {
+    Upload(UploadStep),
+    Execute(ExecuteStep),
+    Patch(PatchStep),
 }
 
 #[derive(Clone, Deserialize, Default)]
@@ -150,28 +130,27 @@ pub struct NamedConfig {
     pub use_sudo: Option<bool>,
     pub silent: Option<bool>,
 
+    /// Default targets for all runs (overridable per step when step lists are non-empty).
     #[serde(default)]
-    pub upload: Vec<UploadConfig>,
+    pub target_servers: Vec<String>,
     #[serde(default)]
-    pub patch: Vec<PatchConfig>,
+    pub target_groups: Vec<String>,
+
+    /// Config-scoped `${NAME}` overlays (override global `var-map` / env).
     #[serde(default)]
-    pub execute: Vec<ExecuteConfig>,
+    pub var_map: HashMap<String, String>,
+
+    /// Ordered upload / execute / patch steps.
+    #[serde(default)]
+    pub runs: Vec<RunStep>,
 }
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct CommonConfig {
-    // #[serde(default)]
-    // pub global: Option<GlobalConfig>,
     #[serde(default)]
     pub server: Option<ServerConfigLimits>,
 }
-
-// #[derive(Clone, Deserialize, Default)]
-// #[serde(rename_all = "kebab-case")]
-// pub struct GlobalConfig {
-//     pub max_global_channels: Option<usize>,
-// }
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]

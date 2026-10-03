@@ -133,7 +133,7 @@ rhctl patch \
 
 ### rhctl run
 
-Run batch upload/execute/patch tasks from a YAML config (servers/groups in parallel).
+Batch pipeline from YAML. Steps under `runs:` run **in order**; servers within a step run in parallel. A failed step aborts the rest.
 
 ```bash
 rhctl run --config <yml-file-path> --config-name <name>
@@ -143,7 +143,9 @@ rhctl run --config <yml-file-path> --config-name <name>
 - `--config <yml-file-path>`
 - `--config-name <name>`
 
-For YAML shape and field details, read `README.md` (`rhctl run` section).
+Config shape: config-level `target-servers` / `var-map`, ordered `runs:` with `type: upload|execute|patch`. Execute accepts `work-path` (alias `remote-path`).
+
+For full YAML field details, read `README.md` (`rhctl run` section).
 
 ## Scripts
 

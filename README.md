@@ -323,7 +323,7 @@ rhctl patch \
 
 ## rhctl run
 [Back to Top](#table-of-contents)  
-Run batch operations defined in YAML config file. Supports multiple upload/execute/patch tasks across servers/groups in parallel.
+Run batch operations defined in a YAML config. Steps under `runs:` execute **in order** (upload → execute → patch as listed). Within each step, target servers run in parallel. A failed step aborts the rest.
 
 **Usage**:
 ```bash
@@ -354,46 +354,41 @@ servers:
     password: "testpwd"
     connect_timeout: 60s  
 
-# Command configurations
-# Define sets of upload, patch, execute operations
+# Command configurations — ordered pipeline under `runs:`
 configs:   
   - name: "dev-deploy"   
     
-    # General command options (applied to all operations in this config)
+    # General command options (applied to all steps unless overridden)
     use-sudo: false
     use-rsync: false
     silent: false
-    
-    upload:
-      - transfer-file: "config/path-mapping.properties"
-        # transfers:
-        #   - "assets/example1.txt=~/examples"
 
-        # Specify which servers or groups this command targets
-        target-servers: ["test-server1","test-server2"] 
-        # target-groups: ["dev"]
-        
-        # Override common/general options for this command
-        # use-sudo: false
-        # use-rsync: false
-        # silent: false
+    target-servers: ["test-server1","test-server2"] 
+    # target-groups: ["dev"]
 
-    patch:
-      - local-path: "assets/example-patch.txt"
+    var-map: # config-scoped; overrides global var-map / env
+      ASSETS_ROOT: "/path/to/assets"
+
+    runs:
+      - type: upload
+        # transfer-file: "config/path-mapping.properties"
+        transfers:
+          - "${ASSETS_ROOT}/example1.txt=~/examples"
+        # Optional per-step target override:
+        # target-servers: ["test-server1"]
+
+      - type: patch
+        local-path: "${ASSETS_ROOT}/example-patch.txt"
         remote-upload: "/tmp/example-patch.txt.upload"
         remote-path: "~/examples/example-patch-remote.txt"
         remote-backup: "/tmp/example-patch-remote.txt.bak"
-        target-servers: ["test-server1","test-server2"]  
-        # target-groups: ["dev"]
 
-    execute:
-      - remote-path: "~"
+      - type: execute
+        work-path: "~"          # alias: remote-path
         scripts: 
-          - "assets/example-bash1.sh"
-          - "assets/example-bash2.sh"
+          - "${ASSETS_ROOT}/example-bash1.sh"
+          - "${ASSETS_ROOT}/example-bash2.sh"
         mode: sync
-        target-servers: ["test-server1","test-server2"]  
-        # target-groups: ["dev"]
 
 # Common configuration (Optional)
 # Applies to all servers unless overridden in individual server or command configs.
@@ -407,7 +402,7 @@ common:
 
 # Global variables  (Optional)
 # Provide values for ${VAR_NAME} placeholders in paths.
-# Entries here override the same name from the process environment.
+# Entries here are overridden by the same name in a config's var-map.
 var-map:
   ASSETS_ROOT: "/path/to/assets"
 

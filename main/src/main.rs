@@ -30,8 +30,8 @@ use crate::domain::constants::{
 };
 use crate::domain::yml_config::ServerConfig;
 use crate::handlers::command_handler::{
-    parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
-    parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
+    parse_execute_config_from_cmd, parse_patch_config_from_cmd, parse_run_steps,
+    parse_upload_config_from_cmd, ParsedRunStep,
 };
 use crate::utils::file_utils::{load_yaml_config, resolve_upload_mappings};
 use crate::utils::log_utils::{ask_user_and_abort_option, flush_logs_and_exit, init_logger};
@@ -739,142 +739,189 @@ async fn main() {
                 .map(|s| (s.name.clone(), s.clone()))
                 .collect();
 
-            // Parse all command configs with vars
-            let upload_configs = parse_upload_configs(
-                &named_config,
-                &yml_config,
-                &failed_servers,
-                &server_config_map,
-            );
-            let execute_configs = parse_execute_configs(
-                &named_config,
-                &yml_config,
-                &failed_servers,
-                &server_config_map,
-            );
-            let patch_configs = parse_patch_configs(
-                &named_config,
+            let run_steps = parse_run_steps(
+                named_config,
                 &yml_config,
                 &failed_servers,
                 &server_config_map,
             );
 
-            // Spawn threads for upload commands
-            for (config, _) in upload_configs {
-                let server_metadata = Arc::new(config.server_metadata.clone());
-                let mappings = match resolve_upload_mappings(
-                    config.transfer_file.as_deref(),
-                    &config.transfers,
-                    &yml_config.var_map,
-                ) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        log_error_root!("{}", e);
-                        flush_logs_and_exit(log_handle).await;
-                    }
+            let total_steps = run_steps.len();
+            for (idx, step) in run_steps.into_iter().enumerate() {
+                let step_no = idx + 1;
+                let step_kind = match &step {
+                    ParsedRunStep::Upload(_) => "upload",
+                    ParsedRunStep::Execute(_) => "execute",
+                    ParsedRunStep::Patch(_) => "patch",
                 };
-                // println!("Mappings after load: {:#?}", mappings);
-                let global_server_pool_clone = global_server_pool.clone();
-                let handle = tokio::spawn(async move {
-                    if let Err(e) = global_server_pool_clone
-                        .check_global_remote_temp_dir(
-                            &server_metadata,
-                            UPLOAD_TASK_NAME,
-                            config.use_sudo,
-                            config.silent,
-                        )
-                        .await
-                    {
-                        log_error!(&server_metadata, UPLOAD_TASK_NAME, "{}", e);
-                        return;
-                    }
-                    let result = commands::upload::run(
-                        &config,
-                        &mappings,
-                        &server_metadata,
-                        global_server_pool_clone.clone(),
-                    )
-                    .await;
-                    if let Err(e) = result {
-                        log_error!(
-                            &server_metadata,
-                            UPLOAD_TASK_NAME,
-                            "Upload failed: \n\t> {}",
-                            e
-                        );
-                    }
-                });
-                tasks.push(handle);
-            }
+                log_info_direct!(
+                    "Running step {}/{} ({}) ...",
+                    step_no,
+                    total_steps,
+                    step_kind
+                );
 
-            // Spawn threads for execute commands
-            for (config, _) in execute_configs {
-                let server_metadata = Arc::new(config.server_metadata.clone());
-                let global_server_pool_clone = global_server_pool.clone();
-                let handle = tokio::spawn(async move {
-                    if let Err(e) = global_server_pool_clone
-                        .check_global_remote_temp_dir(
-                            &server_metadata,
-                            EXECUTE_TASK_NAME,
-                            config.use_sudo,
-                            config.silent,
-                        )
-                        .await
-                    {
-                        log_error!(&server_metadata, EXECUTE_TASK_NAME, "{}", e);
-                        return;
-                    }
-                    let result = commands::execute::run(
-                        &config,
-                        &server_metadata,
-                        global_server_pool_clone.clone(),
-                    )
-                    .await;
-                    if let Err(e) = result {
-                        log_error!(
-                            &server_metadata,
-                            EXECUTE_TASK_NAME,
-                            "Execute failed: \n\t> {}",
-                            e
-                        );
-                    }
-                });
-                tasks.push(handle);
-            }
+                let mut step_tasks: Vec<JoinHandle<Result<(), String>>> = Vec::new();
 
-            // Spawn threads for patch commands
-            for (config, _) in patch_configs {
-                let server_metadata = Arc::new(config.server_metadata.clone());
-                let global_server_pool_clone = global_server_pool.clone();
-                let handle = tokio::spawn(async move {
-                    if let Err(e) = global_server_pool_clone
-                        .check_global_remote_temp_dir(
-                            &server_metadata,
-                            PATCH_TASK_NAME,
-                            config.use_sudo,
-                            config.silent,
-                        )
-                        .await
-                    {
-                        log_error!(&server_metadata, PATCH_TASK_NAME, "{}", e);
-                        return;
+                match step {
+                    ParsedRunStep::Upload(configs) => {
+                        for (config, vars) in configs {
+                            let server_metadata = Arc::new(config.server_metadata.clone());
+                            let mappings = match resolve_upload_mappings(
+                                config.transfer_file.as_deref(),
+                                &config.transfers,
+                                &vars,
+                            ) {
+                                Ok(m) => m,
+                                Err(e) => {
+                                    log_error_root!("{}", e);
+                                    flush_logs_and_exit(log_handle).await;
+                                }
+                            };
+                            let global_server_pool_clone = global_server_pool.clone();
+                            let handle = tokio::spawn(async move {
+                                if let Err(e) = global_server_pool_clone
+                                    .check_global_remote_temp_dir(
+                                        &server_metadata,
+                                        UPLOAD_TASK_NAME,
+                                        config.use_sudo,
+                                        config.silent,
+                                    )
+                                    .await
+                                {
+                                    log_error!(&server_metadata, UPLOAD_TASK_NAME, "{}", e);
+                                    return Err(e);
+                                }
+                                match commands::upload::run(
+                                    &config,
+                                    &mappings,
+                                    &server_metadata,
+                                    global_server_pool_clone.clone(),
+                                )
+                                .await
+                                {
+                                    Ok(()) => Ok(()),
+                                    Err(e) => {
+                                        log_error!(
+                                            &server_metadata,
+                                            UPLOAD_TASK_NAME,
+                                            "Upload failed: \n\t> {}",
+                                            e
+                                        );
+                                        Err(e)
+                                    }
+                                }
+                            });
+                            step_tasks.push(handle);
+                        }
                     }
-                    let result = commands::patch::run(
-                        &config,
-                        &server_metadata,
-                        global_server_pool_clone.clone(),
-                    )
-                    .await;
-                    if let Err(e) = result {
-                        log_error!(
-                            &server_metadata,
-                            PATCH_TASK_NAME,
-                            "Patch failed: \n\t> {}",
-                            e
-                        );
+                    ParsedRunStep::Execute(configs) => {
+                        for (config, _) in configs {
+                            let server_metadata = Arc::new(config.server_metadata.clone());
+                            let global_server_pool_clone = global_server_pool.clone();
+                            let handle = tokio::spawn(async move {
+                                if let Err(e) = global_server_pool_clone
+                                    .check_global_remote_temp_dir(
+                                        &server_metadata,
+                                        EXECUTE_TASK_NAME,
+                                        config.use_sudo,
+                                        config.silent,
+                                    )
+                                    .await
+                                {
+                                    log_error!(&server_metadata, EXECUTE_TASK_NAME, "{}", e);
+                                    return Err(e);
+                                }
+                                match commands::execute::run(
+                                    &config,
+                                    &server_metadata,
+                                    global_server_pool_clone.clone(),
+                                )
+                                .await
+                                {
+                                    Ok(()) => Ok(()),
+                                    Err(e) => {
+                                        log_error!(
+                                            &server_metadata,
+                                            EXECUTE_TASK_NAME,
+                                            "Execute failed: \n\t> {}",
+                                            e
+                                        );
+                                        Err(e)
+                                    }
+                                }
+                            });
+                            step_tasks.push(handle);
+                        }
                     }
-                });
-                tasks.push(handle);
+                    ParsedRunStep::Patch(configs) => {
+                        for (config, _) in configs {
+                            let server_metadata = Arc::new(config.server_metadata.clone());
+                            let global_server_pool_clone = global_server_pool.clone();
+                            let handle = tokio::spawn(async move {
+                                if let Err(e) = global_server_pool_clone
+                                    .check_global_remote_temp_dir(
+                                        &server_metadata,
+                                        PATCH_TASK_NAME,
+                                        config.use_sudo,
+                                        config.silent,
+                                    )
+                                    .await
+                                {
+                                    log_error!(&server_metadata, PATCH_TASK_NAME, "{}", e);
+                                    return Err(e);
+                                }
+                                match commands::patch::run(
+                                    &config,
+                                    &server_metadata,
+                                    global_server_pool_clone.clone(),
+                                )
+                                .await
+                                {
+                                    Ok(()) => Ok(()),
+                                    Err(e) => {
+                                        log_error!(
+                                            &server_metadata,
+                                            PATCH_TASK_NAME,
+                                            "Patch failed: \n\t> {}",
+                                            e
+                                        );
+                                        Err(e)
+                                    }
+                                }
+                            });
+                            step_tasks.push(handle);
+                        }
+                    }
+                }
+
+                let results = join_all(step_tasks).await;
+                let mut step_failed = false;
+                for result in results {
+                    match result {
+                        Ok(Ok(())) => {}
+                        Ok(Err(_)) => step_failed = true,
+                        Err(e) => {
+                            log_error_root!("Step {} task join error: {}", step_no, e);
+                            step_failed = true;
+                        }
+                    }
+                }
+                if step_failed {
+                    log_error_root!(
+                        "Step {}/{} ({}) failed — aborting remaining steps.",
+                        step_no,
+                        total_steps,
+                        step_kind
+                    );
+                    flush_logs_and_exit(log_handle).await;
+                }
+                log_info_direct!(
+                    "Step {}/{} ({}) completed.",
+                    step_no,
+                    total_steps,
+                    step_kind
+                );
             }
         }
     }

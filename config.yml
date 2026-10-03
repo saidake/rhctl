@@ -15,7 +15,7 @@ servers:
     connect_timeout: 60s  
 
 # Command configurations
-# Define sets of upload, patch, execute operations
+# Ordered upload / execute / patch steps under `runs:`
 configs:   
   - name: "dev-deploy"   
     
@@ -23,38 +23,31 @@ configs:
     use-sudo: false
     use-rsync: false
     silent: false
-    
-    upload:
-      - transfer-file: "config/path-mapping.properties"
-        # Or inline:
+
+    target-servers: ["test-server1","test-server2"] 
+    # target-groups: ["dev"]
+
+    var-map:
+      ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rhctl/assets"
+
+    runs:
+      - type: upload
+        transfer-file: "config/path-mapping.properties"
         # transfers:
-        #   - "assets/example1.txt=~/examples"
+        #   - "${ASSETS_ROOT}/example1.txt=~/examples"
 
-        # Specify which servers or groups this command targets
-        target-servers: ["test-server1","test-server2"] 
-        # target-groups: ["dev"]
-        
-        # Override common/general options for this command
-        # use-sudo: false
-        # use-rsync: false
-        # silent: false
-
-    patch:
-      - local-path: "assets/example-patch.txt"
+      - type: patch
+        local-path: "${ASSETS_ROOT}/example-patch.txt"
         remote-upload: "/tmp/example-patch.txt.upload"
         remote-path: "~/examples/example-patch-remote.txt"
         remote-backup: "/tmp/example-patch-remote.txt.bak"
-        target-servers: ["test-server1","test-server2"]  
-        # target-groups: ["dev"]
 
-    execute:
-      - remote-path: "~"
+      - type: execute
+        work-path: "~"
         scripts: 
-          - "assets/example-bash1.sh"
-          - "assets/example-bash2.sh"
+          - "${ASSETS_ROOT}/example-bash1.sh"
+          - "${ASSETS_ROOT}/example-bash2.sh"
         mode: sync
-        target-servers: ["test-server1","test-server2"]  
-        # target-groups: ["dev"]
 
 # Common configuration (Optional)
 # Applies to all servers unless overridden in individual server or command configs.
@@ -67,8 +60,8 @@ common:
     max_session_lifetime: 10m
 
 # Global variables  (Optional)
-# Provide global variables used in the provided paths. 
-# Can be referenced in paths using ${VAR_NAME}
+# Provide values for ${VAR_NAME} placeholders in paths.
+# Entries here are overridden by the same name in a config's var-map.
 var-map:
   ASSETS_ROOT: "/mnt/c/Users/saidake/Desktop/DevProjects/rhctl/assets"
 

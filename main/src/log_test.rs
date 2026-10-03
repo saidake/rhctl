@@ -23,8 +23,8 @@ mod utils;
 
 use crate::{common::ssh_pool::{PoolOptions, ServerPool}, utils::log_utils::init_logger};
 use crate::handlers::command_handler::{
-    parse_execute_config_from_cmd, parse_execute_configs, parse_patch_config_from_cmd,
-    parse_patch_configs, parse_upload_config_from_cmd, parse_upload_configs,
+    parse_execute_config_from_cmd, parse_patch_config_from_cmd, parse_run_steps,
+    parse_upload_config_from_cmd,
 };
 use crate::utils::file_utils::load_properties;
 use crate::utils::file_utils::load_yaml_config;
